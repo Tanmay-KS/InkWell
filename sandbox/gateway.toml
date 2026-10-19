@@ -1,0 +1,72 @@
+# Ledger — OpenShell gateway configuration.
+#
+# Install location on the gateway host:
+#   ~/.config/openshell/gateway.toml
+#
+# Install:
+#   cp sandbox/gateway.toml ~/.config/openshell/gateway.toml
+#   systemctl --user restart openshell-gateway
+#
+# Validate before restarting:
+#   openshell-gateway config preflight --path ~/.config/openshell/gateway.toml
+#
+# Every gateway TOML file must start with the [openshell] table and
+# `version = 2`, or the gateway refuses to start with `missing_version`.
+
+[openshell]
+version = 2
+
+[openshell.gateway]
+# The Docker driver runs each sandbox as a container on the gateway host.
+# It is the only driver this project targets; the MicroVM driver is never
+# auto-detected and would need an explicit opt-in plus KVM.
+compute_driver = "docker"
+
+# When a policy change fails to load, fail_closed (the default) blocks all
+# sandbox network traffic until a valid policy is submitted. retain_last_valid
+# keeps the previous policy live instead. We keep the default: a broken policy
+# must not silently open the door.
+# policy_validation_failure_mode = "fail_closed"
+
+# TLS material for the guest trust chain. The package-managed local CA is
+# used when this is unset.
+# guest_tls_ca = "/path/to/ca.pem"
+
+[openshell.drivers.docker]
+socket_path = "/var/run/docker.sock"
+
+# Docker Desktop must have host networking enabled and cannot use Enhanced
+# Container Isolation. On Linux, host networking is the default.
+# grpc_endpoint = "127.0.0.1:50051"
+
+# ---------------------------------------------------------------------------
+# Supervisor middleware (Phase 2 — the privacy router)
+# ---------------------------------------------------------------------------
+# The gateway calls every registered service at startup to read its
+# capabilities and verify protocol compatibility. If a registered service is
+# unavailable or incompatible, THE GATEWAY DOES NOT START.
+#
+# That is why the block below is commented out: the router service does not
+# exist until Phase 2, and leaving it registered would take the gateway down.
+#
+# To enable it in Phase 2:
+#   1. bring the service up and make it reachable from BOTH the gateway host
+#      and the sandbox supervisors (from inside a container that is
+#      `host.openshell.internal:50051`),
+#   2. uncomment this block,
+#   3. restart the gateway,
+#   4. attach the middleware in sandbox/policy.yaml under `network_middlewares`.
+#
+# Then attach it to traffic with:
+#   openshell policy set ledger-hermes --policy sandbox/policy.yaml --wait
+#
+# [[openshell.supervisor.middleware]]
+# name = "ledger-router"
+# grpc_endpoint = "http://host.openshell.internal:50051"
+# allow_insecure_transport = true
+# max_payload_bytes = 262144
+# timeout = "500ms"
+#
+# `allow_insecure_transport` permits a plaintext http:// endpoint with no peer
+# authentication. It is for local development only. For anything else, set
+# `tls_ca_cert_path` to a private CA and drop the flag.

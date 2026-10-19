@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# OpenShell provider profile — Tavily search.
+#
+# Import:
+#   openshell profile lint -f sandbox/providers/tavily.yaml
+#   openshell profile import -f sandbox/providers/tavily.yaml
+#
+# Create the provider instance:
+#   TAVILY_API_KEY=... openshell provider create \
+#     --name tavily --type tavily --from-existing
+#
+# Credential scope: TAVILY_API_KEY, sent as a bearer authorization header to
+#                   api.tavily.com and nowhere else.
+# Endpoint access:  api.tavily.com, read-write, L7 enforced.
+#
+# Why this host is on the allowlist at all: the plan routes Tavily through the
+# privacy router so personal details are stripped from the outbound query
+# before the request leaves the sandbox. In Phase 1 this rule exists as
+# structure only. In Phase 2 the router middleware attaches to this host and
+# redacts the request body.
+#
+# NOTE on the leak surface: Tavily's `include_raw_content` returns the full
+# cleaned page HTML of every result, and `include_answer` makes Tavily
+# generate a server-side LLM answer from the query. The query string is only
+# one of three places a personal detail can escape — see docs/phase0-runbook.md.
+
+id: tavily
+display_name: Tavily
+description: Tavily search and extract API
+category: knowledge
+inference_capable: false
+
+credentials:
+  - name: api_key
+    description: Tavily API key
+    env_vars: [TAVILY_API_KEY]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+
+discovery:
+  credentials: [api_key]
+
+endpoints:
+  - host: api.tavily.com
+    port: 443
+    path: /search
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+
+binaries:
+  - /usr/bin/python3.*
+  - /usr/local/bin/python3.*
+  - /opt/hermes/.venv/**
+  - /usr/bin/curl
+  - /usr/local/bin/curl

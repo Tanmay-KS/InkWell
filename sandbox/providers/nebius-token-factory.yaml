@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# OpenShell provider profile — Nebius Token Factory.
+#
+# Import:
+#   openshell profile lint -f sandbox/providers/nebius-token-factory.yaml
+#   openshell profile import -f sandbox/providers/nebius-token-factory.yaml
+#
+# Create the provider instance (reads NEBIUS_API_KEY from the environment):
+#   NEBIUS_API_KEY=... openshell provider create \
+#     --name nebius --type nebius-token-factory --from-existing
+#
+# Credential scope: NEBIUS_API_KEY, sent as a bearer authorization header to
+#                   api.tokenfactory.nebius.com and nowhere else.
+# Endpoint access:  api.tokenfactory.nebius.com, read-write, L7 enforced.
+# Smoke test:       openshell sandbox exec -n ledger-hermes --no-login-shell -- \
+#                     curl -sS https://api.tokenfactory.nebius.com/v1/models
+#
+# The host MUST match Hermes's built-in nebius-token-factory provider
+# exactly. Hermes pins base_url to https://api.tokenfactory.nebius.com/v1
+# (plugins/model-providers/nebius-token-factory/__init__.py). If the two
+# disagree, Hermes aims at a host the credential is not bound to and OpenShell
+# answers `credential_endpoint_mismatch`.
+#
+# The env var name is also deliberately identical to the one Hermes reads
+# (NEBIUS_API_KEY). OpenShell injects an opaque placeholder under that name,
+# Hermes picks it up with no glue code, and the sandbox proxy substitutes the
+# real value only for requests bound to this profile's endpoints.
+
+id: nebius-token-factory
+display_name: Nebius Token Factory
+description: Nebius Token Factory inference, OCR, and redaction endpoints
+category: inference
+inference_capable: true
+
+credentials:
+  - name: api_key
+    description: Nebius Token Factory API key
+    env_vars: [NEBIUS_API_KEY]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+
+discovery:
+  credentials: [api_key]
+
+endpoints:
+  - host: api.tokenfactory.nebius.com
+    port: 443
+    path: /v1/**
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+
+binaries:
+  # The client binary is what actually opens the connection, and OpenShell
+  # matches the REAL path the kernel reports — not the symlink. Hermes runs
+  # from a uv-managed virtualenv, so both the venv and the system interpreter
+  # paths are listed. Verify with `readlink -f` inside the sandbox and with
+  # the path OpenShell names when it denies a connection.
+  - /usr/bin/python3.*
+  - /usr/local/bin/python3.*
+  - /opt/hermes/.venv/**
+  - /usr/bin/curl
+  - /usr/local/bin/curl

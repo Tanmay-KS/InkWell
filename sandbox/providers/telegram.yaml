@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# OpenShell provider profile — Telegram Bot API.
+#
+# Import:
+#   openshell profile lint -f sandbox/providers/telegram.yaml
+#   openshell profile import -f sandbox/providers/telegram.yaml
+#
+# Create the provider instance:
+#   TELEGRAM_BOT_TOKEN=... openshell provider create \
+#     --name telegram --type telegram --from-existing
+#
+# Credential scope: TELEGRAM_BOT_TOKEN, sent as a bearer authorization header
+#                   to api.telegram.org and nowhere else.
+# Endpoint access:  api.telegram.org, read-write, L7 enforced.
+#
+# Why this is in the Phase 0 tree: the plan's Phase 4 deliverable is a
+# Telegram/Slack chat interface. Hermes's messaging gateway reaches out to
+# api.telegram.org from inside the sandbox, so the egress policy needs the
+# structure in place before we wire the bot — otherwise the first message
+# test fails on a policy denial instead of on a real bug.
+#
+# Hermes's gateway is long-lived, so this host also has to survive the
+# policy being reloaded: network rules hot-reload into a running sandbox and
+# open connections opened under the previous rules are closed.
+
+id: telegram
+display_name: Telegram
+description: Telegram Bot API for the Hermes messaging gateway
+category: messaging
+inference_capable: false
+
+credentials:
+  - name: bot_token
+    description: Telegram bot token
+    env_vars: [TELEGRAM_BOT_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+
+discovery:
+  credentials: [bot_token]
+
+endpoints:
+  - host: api.telegram.org
+    port: 443
+    path: /**
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+
+binaries:
+  - /usr/bin/python3.*
+  - /usr/local/bin/python3.*
+  - /opt/hermes/.venv/**
+  - /usr/bin/curl
+  - /usr/local/bin/curl

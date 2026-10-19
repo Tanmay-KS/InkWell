@@ -1,0 +1,51 @@
+# Ledger — sandbox workload image.
+#
+# Build:
+#   docker build -t ledger-hermes:local -f sandbox/Dockerfile.hermes .
+#
+# Run it as an OpenShell sandbox:
+#   openshell sandbox create --name ledger-hermes \
+#     --from ledger-hermes:local --policy sandbox/policy.yaml -- chat
+#
+# The upstream image is nousresearch/hermes-agent (Nous Research, MIT).
+# We inherit it whole rather than rebuilding Hermes from source: the image
+# already pins Python, uv, Chromium, node, and a fixed SQLite build, and
+# `hermes update` inside a container refuses to mutate the install tree
+# anyway — upgrades happen by pulling a new image.
+
+FROM nousresearch/hermes-agent:latest
+
+USER root
+
+# Document ingestion needs an OCR fallback and a PDF text extractor. The
+# primary extraction path is the vision model on Token Factory
+# (nvidia/NVIDIA-Nemotron-3-Nano-Omni), but a local extractor keeps a
+# document readable when the model call is unavailable or when a page must
+# never leave the sandbox at all.
+RUN apt-get -o Acquire::Retries=3 update && \
+    apt-get install -y --no-install-recommends \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# OpenShell uses the image WORKDIR as the sandbox workspace. The upstream
+# image works out of /opt/hermes, which is the immutable install tree — we
+# do not want the workspace to be the install tree, and we do not want the
+# install tree writable.
+WORKDIR /sandbox
+RUN mkdir -p /sandbox && chown 10000:10000 /sandbox
+
+# The upstream image ends with `USER root` because its s6-overlay entrypoint
+# needs root to chown the data volume and drop privileges per supervised
+# service. OpenShell rejects a root workload unless the policy names a
+# non-root run_as_user, and our policy pins UID 10000 (the `hermes` account).
+#
+# We therefore replace the entrypoint: no s6 tree, no PID-1 privilege dance,
+# just Hermes running directly as the unprivileged sandbox user. OpenShell
+# provides process supervision at the sandbox level via --restart-policy.
+#
+# See sandbox/docker-entrypoint.sh for the rationale.
+USER 10000
+ENTRYPOINT ["/usr/local/bin/hermes-direct"]
+CMD ["chat"]

@@ -1,0 +1,67 @@
+[project]
+name = "ledger"
+version = "0.1.0"
+description = "Privacy-routed personal agent for deadlines, renewals, and entitlements"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "pyyaml>=6.0",
+    "ruff>=0.5",
+]
+ocr = [
+    "pillow>=10.3",
+    "pypdf>=4.3",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = [
+    "agent",
+    "agent.ingestion",
+    "agent.memory",
+    "agent.deadlines",
+    "agent.actions",
+    "privacy_router",
+    "search",
+    "jobs",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "E501",   # line length is handled by the formatter
+    "RUF001", # ambiguous unicode — fine in docs
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"eval/*" = ["E402", "F401"]
+"sandbox/*" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+markers = [
+    "network: test requires live network access or API credentials",
+    "sandbox: test requires a running OpenShell gateway",
+]

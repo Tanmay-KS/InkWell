@@ -1,0 +1,172 @@
+# Ledger — OpenShell sandbox policy.
+#
+# Apply with:
+#   openshell sandbox create --name ledger-hermes \
+#     --from ledger-hermes:local --policy sandbox/policy.yaml -- hermes chat
+#
+# Replace on a running sandbox with:
+#   openshell policy set ledger-hermes --policy sandbox/policy.yaml --wait
+#
+# IMPORTANT: `openshell policy set` REPLACES every section. OpenShell enriches
+# the base policy at startup with baseline filesystem paths and can reject a
+# replacement that removes them — so the read_only/read_write lists below
+# already include every baseline path. Do not trim them when editing.
+#
+# Verify what the sandbox actually enforces:
+#   openshell policy get ledger-hermes --base    # what we set
+#   openshell policy get ledger-hermes --full    # base + provider-contributed rules
+#   openshell policy list ledger-hermes          # revision status ("Loaded")
+#
+# ---------------------------------------------------------------------------
+# Filesystem
+# ---------------------------------------------------------------------------
+# The baseline paths OpenShell adds automatically when the effective policy has
+# at least one network rule are: read-only /usr /lib /etc /app /var/log /proc
+# /dev/urandom, and read-write /tmp /dev/null. They are listed explicitly here
+# so that `policy set` does not remove them.
+#
+# The upstream Hermes image is an immutable install tree: /opt/hermes is
+# root-owned and read-only to the runtime user, and Hermes refuses in-place
+# edits to it. All mutable state lives under /opt/data (HERMES_HOME).
+version: 1
+
+filesystem_policy:
+  include_workdir: false
+  read_only:
+    - /usr
+    - /lib
+    - /etc
+    - /var/log
+    - /proc
+    - /dev/urandom
+    - /opt/hermes
+  read_write:
+    - /sandbox
+    - /opt/data
+    - /tmp
+    - /dev/null
+
+landlock:
+  compatibility: best_effort
+
+# ---------------------------------------------------------------------------
+# Process
+# ---------------------------------------------------------------------------
+# OpenShell REJECTS an image whose USER is root unless the creation policy
+# names a non-root run_as_user. The upstream Hermes image ends with
+# `USER root` because its s6-overlay entrypoint needs root to chown the data
+# volume and drop privileges per service. Under OpenShell the workload is
+# already unprivileged and there is no s6 tree, so we run as the image's
+# `hermes` account instead.
+#
+# UID 10000 comes from the upstream Dockerfile: `useradd -u 10000 -m -d
+# /opt/data hermes`. The data volume must be owned by this UID — setup.sh
+# does that before the sandbox is created.
+process:
+  run_as_user: "10000"
+  run_as_group: "10000"
+
+# ---------------------------------------------------------------------------
+# Network
+# ---------------------------------------------------------------------------
+# Deny-by-default. Anything not listed here cannot be reached at all, and the
+# DNS answers for allowed hosts come back with placeholder addresses.
+#
+# `binaries` must list the REAL path of the executable that opens the
+# connection — not a symlink. A script runs as its interpreter, so a Python
+# client is listed as the interpreter, never as "python" on PATH. The Hermes
+# virtualenv's python resolves to /usr/local/bin/python3.*; verify with
+# `readlink -f /opt/hermes/.venv/bin/python` inside the sandbox, and read the
+# path OpenShell names when it denies a connection (`openshell logs`).
+network_policies:
+  token_factory:
+    name: Nebius Token Factory inference
+    endpoints:
+      - host: api.tokenfactory.nebius.com
+        port: 443
+        path: /v1/**
+        protocol: rest
+        access: read-write
+        enforcement: enforce
+    binaries:
+      - path: /usr/local/bin/python3.*
+      - path: /usr/bin/python3.*
+      - path: /opt/hermes/.venv/**
+      - path: /usr/bin/curl
+      - path: /usr/local/bin/curl
+
+  tavily:
+    name: Tavily search and extract
+    endpoints:
+      - host: api.tavily.com
+        port: 443
+        path: /search
+        protocol: rest
+        access: read-write
+        enforcement: enforce
+    binaries:
+      - path: /usr/local/bin/python3.*
+      - path: /usr/bin/python3.*
+      - path: /opt/hermes/.venv/**
+      - path: /usr/bin/curl
+      - path: /usr/local/bin/curl
+
+  telegram:
+    name: Telegram Bot API
+    endpoints:
+      - host: api.telegram.org
+        port: 443
+        path: /**
+        protocol: rest
+        access: read-write
+        enforcement: enforce
+    binaries:
+      - path: /usr/local/bin/python3.*
+      - path: /usr/bin/python3.*
+      - path: /opt/hermes/.venv/**
+      - path: /usr/bin/curl
+      - path: /usr/local/bin/curl
+
+# ---------------------------------------------------------------------------
+# Middleware (Phase 2 — the privacy router)
+# ---------------------------------------------------------------------------
+# The router is a supervisor middleware service. It is selected by DESTINATION
+# HOST, so one entry covers both destinations that need personal details
+# stripped: the inference endpoint (Super/Ultra tiers) and Tavily.
+#
+# THIS BLOCK IS COMMENTED OUT ON PURPOSE. The gateway refuses to start if a
+# registered middleware service is unavailable, and it refuses to accept a
+# policy that names a service it cannot validate. The router service does not
+# exist until Phase 2, so leaving this uncommented would break Phase 0 and
+# Phase 1.
+#
+# To enable it in Phase 2:
+#   1. uncomment the registration in sandbox/gateway.toml
+#   2. bring sandbox/middleware/ledger-router up and make it reachable from
+#      both the gateway host and the sandbox supervisors
+#   3. uncomment the block below
+#   4. openshell policy set ledger-hermes --policy sandbox/policy.yaml --wait
+#
+# ROUTER ON / OFF for the Phase 2 leak test is the PRESENCE OF THIS ENTRY.
+# Router OFF = no `network_middlewares` entry at all. Router ON = the entry is
+# attached. The endpoints above stay `enforcement: enforce` in both
+# conditions, so the only variable is the router.
+#
+# network_middlewares:
+#   ledger_router:
+#     name: Ledger privacy router
+#     middleware: ledger-router
+#     order: 10
+#     on_error: fail_closed
+#     config:
+#       mode: redact
+#       redact_models:
+#         - nvidia/nemotron-3-super-120b-a12b
+#         - nvidia/Nemotron-3-Ultra-550b-a55b
+#       redact_hosts:
+#         - api.tavily.com
+#       audit_log_path: /var/log/ledger/audit.jsonl
+#     endpoints:
+#       include:
+#         - api.tokenfactory.nebius.com
+#         - api.tavily.com
