@@ -201,9 +201,10 @@ preflight_docker() {
 
     fail "the Docker daemon is not reachable"
     info "the OpenShell gateway creates its Docker client at startup and exits without it"
-    info "fix it with:  sudo systemctl start docker"
+    info "diagnose with:  openshell doctor check"
+    info "fix it with:    sudo systemctl start docker"
     if ! id -nG 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
-        info "and:          sudo usermod -aG docker \$USER   (then log out and back in)"
+        info "and:            sudo usermod -aG docker \$USER   (then log out and back in)"
     fi
     die "Docker is required before the rest of the setup can run"
 }

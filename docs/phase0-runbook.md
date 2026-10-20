@@ -106,7 +106,7 @@ openshell gateway select local
 |---|---|---|
 | Installer exits with "require either dpkg or rpm" | unsupported distro | use 1b |
 | `openshell status` cannot reach the gateway | systemd user service did not start | `systemctl --user status openshell-gateway`; otherwise use 1c |
-| **Gateway exits immediately: "failed to create Docker client: Socket not found"** | **the daemon is not running** | `sudo systemctl start docker` — this is a gateway prerequisite, not just a sandbox one |
+| **Gateway exits immediately: "failed to create Docker client: Socket not found"** | **the daemon is not running** | `sudo systemctl start docker` — this is a gateway prerequisite, not just a sandbox one. `openshell doctor check` reports the same thing |
 | Gateway will not start | a registered middleware service is down | see the middleware note in `sandbox/gateway.toml` — we deliberately keep that block commented out until Phase 2 |
 | `openshell-gateway config preflight` says `missing_version` | gateway.toml lacks `[openshell] version = 2` | use the file in `sandbox/` |
 | `credential_endpoint_mismatch` on every call | the provider profile's endpoint list does not cover the host Hermes actually used | compare `hermes config get model --json` base_url against the profile's `endpoints` |
