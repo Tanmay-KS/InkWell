@@ -70,6 +70,17 @@ sandbox-down: ## Delete the sandbox
 sandbox-logs: ## Tail sandbox logs (shows denied connections)
 	openshell logs ledger-hermes --tail
 
+.PHONY: verify
+verify: ## Run the Phase 0 exit verification (pass/fail table)
+	bash $(SANDBOX)/verify.sh
+
+.PHONY: gateway-preflight
+gateway-preflight: ## Validate sandbox/gateway.toml with the real OpenShell binary
+	@command -v openshell-gateway >/dev/null 2>&1 \
+		&& openshell-gateway config preflight --path $(SANDBOX)/gateway.toml \
+		&& echo "gateway.toml OK" \
+		|| echo "openshell-gateway not installed — skipping"
+
 .PHONY: sandbox-policy
 sandbox-policy: ## Show the effective policy (base + provider rules)
 	openshell policy get ledger-hermes --full

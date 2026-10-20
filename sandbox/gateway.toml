@@ -20,7 +20,23 @@ version = 2
 # The Docker driver runs each sandbox as a container on the gateway host.
 # It is the only driver this project targets; the MicroVM driver is never
 # auto-detected and would need an explicit opt-in plus KVM.
+#
+# NOTE: the upstream packaged default pins "podman". We pin "docker"
+# deliberately. The gateway creates its compute-driver client during
+# startup and EXITS if that client cannot be created — so a reachable
+# Docker daemon is a prerequisite for the gateway itself, not just for
+# creating sandboxes. `sandbox/setup.sh` checks this before anything else.
 compute_driver = "docker"
+
+# The driver pulls the sandbox runtime and supervisor images from
+# ghcr.io on first sandbox creation:
+#
+#   ghcr.io/nvidia/openshell/sandbox:0.1.4
+#   ghcr.io/nvidia/openshell/supervisor:0.1.4
+#
+# (the tags are "0.1.4", not "v0.1.4"). The host needs outbound HTTPS to
+# ghcr.io. For an air-gapped host, pre-load the images and set
+# image_pull_policy = "never" in [openshell.drivers.docker].
 
 # When a policy change fails to load, fail_closed (the default) blocks all
 # sandbox network traffic until a valid policy is submitted. retain_last_valid
@@ -29,7 +45,12 @@ compute_driver = "docker"
 # policy_validation_failure_mode = "fail_closed"
 
 # TLS material for the guest trust chain. The package-managed local CA is
-# used when this is unset.
+# used when this is unset. The packaged systemd unit generates the mTLS
+# PKI into ~/.local/state/openshell/tls on first start; where that unit
+# is unavailable, generate it by hand:
+#   openshell-gateway generate-certs \
+#     --output-dir ~/.local/state/openshell/tls \
+#     --server-san host.openshell.internal
 # guest_tls_ca = "/path/to/ca.pem"
 
 [openshell.drivers.docker]

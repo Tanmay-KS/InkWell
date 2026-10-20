@@ -91,6 +91,52 @@ This would surface much later as phantom memory corruption in Phase 3.
 **Fix:** a named Docker volume, created with the `sandbox-attachable` label
 and chowned to UID 10000 before first boot.
 
+### F-009 · The gateway needs Docker at startup, not just for sandboxes
+**Owner:** Person A · **Phase:** 0
+The OpenShell gateway creates its compute-driver client during startup and
+**exits** if it cannot: `failed to create Docker client: Socket not found:
+/var/run/docker.sock`. A stopped Docker daemon therefore takes down the
+gateway, not just sandbox creation — and the error names the socket, not
+the missing daemon, which reads like a path problem.
+**Cost if unresolved:** confusing failure, and a gateway that appears to
+install fine and then silently dies.
+**Detection:** `sudo systemctl start docker` then `openshell status`.
+**Fix:** `sandbox/setup.sh` now runs a Docker preflight before anything
+else, and `sandbox/verify.sh` checks it as a required precondition.
+
+### F-010 · The upstream installer does not support Arch-family distributions
+**Owner:** Person A · **Phase:** 0
+`install.sh` supports exactly three Linux paths — `deb`, `rpm` and `snap` —
+and on a host with neither `dpkg` nor `rpm` it exits with *"Linux installs
+require either dpkg or rpm"*. There is no `pacman` path and no generic
+tarball install documented.
+**Cost if unresolved:** a dead end that looks like "OpenShell does not run
+on this distro".
+**Detection:** read `linux_package_method()` in `install.sh`.
+**Fix:** the RPMs are plain archives and `bsdtar` (libarchive) reads them.
+`sandbox/setup.sh` now detects the no-dpkg/no-rpm case and extracts the
+RPMs itself. The packages carry the CLI, gateway, prover, systemd user
+unit and config-migration helper; the container images come from ghcr.io
+(`ghcr.io/nvidia/openshell/{sandbox,supervisor}:0.1.4` — note the tag has
+no `v`).
+
+### F-011 · A negative routing test can pass for the wrong reason
+**Owner:** Person A · **Phase:** 0
+The first version of the credential-scoping test sent the host's **real**
+`NEBIUS_API_KEY` to `example.com`. Three separate problems: it put a live
+secret on a command line; the sandbox holds an opaque *placeholder*, not
+the real key, so the test never exercised the binding it was meant to
+test; and `example.com` is not in `network_policies`, so the request died
+at the policy layer and never reached the credential check.
+**Cost if unresolved:** a Phase 0 exit condition that looks satisfied and
+proves nothing — the worst possible failure mode for a privacy project.
+**Detection:** the test asserted on a 403, and a policy denial also
+produces a 403.
+**Fix:** the test now expands `$NEBIUS_API_KEY` *inside* the sandbox and
+sends the placeholder to `api.tavily.com` — allowed by policy, not bound to
+the credential — and distinguishes `credential_endpoint_mismatch` from
+`policy_denied`. See `sandbox/verify.sh` check 4.
+
 ---
 
 ## Observed frictions

@@ -214,3 +214,81 @@ def test_profile_ids_are_kebab_case(profile_path: Path):
     profile_id = profile["id"]
     assert profile_id == profile_id.lower()
     assert all(c.isalnum() or c == "-" for c in profile_id), profile_id
+
+
+# --- the verification script ------------------------------------------------
+
+
+def test_verify_script_is_valid_bash():
+    """A syntax error in the exit-condition script would make Phase 0
+    unfalsifiable, so it is checked like any other code."""
+    import subprocess
+
+    result = subprocess.run(
+        ["bash", "-n", str(SANDBOX / "verify.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_setup_script_is_valid_bash():
+    import subprocess
+
+    result = subprocess.run(
+        ["bash", "-n", str(SANDBOX / "setup.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def _verify_script_text() -> str:
+    return (SANDBOX / "verify.sh").read_text(encoding="utf-8")
+
+
+def test_negative_check_targets_a_policy_allowed_host():
+    """The credential-scoping test is only meaningful if the host it
+    targets is ALLOWED by the policy.
+
+    A request to a host outside `network_policies` is denied at the policy
+    layer and never reaches the credential binding — so the test would
+    appear to pass while proving nothing. This is exactly the bug that
+    was in the first version of the script.
+    """
+    text = _verify_script_text()
+    assert 'UNBOUND_HOST="api.tavily.com"' in text, (
+        "verify.sh must name the unbound host explicitly"
+    )
+
+    policy = load_yaml(SANDBOX / "policy.yaml")
+    policy_hosts = {
+        endpoint["host"]
+        for rule in policy["network_policies"].values()
+        for endpoint in rule["endpoints"]
+    }
+    assert "api.tavily.com" in policy_hosts, (
+        "the host the negative check targets must be allowed by the policy, "
+        "otherwise the check never reaches the credential binding"
+    )
+
+
+def test_negative_check_does_not_send_the_real_key():
+    """The sandbox holds an opaque placeholder, not the real key.
+
+    Interpolating the host's $NEBIUS_API_KEY into the command would put a
+    live secret on a command line AND would not exercise the binding at
+    all. The variable must be expanded inside the sandbox.
+    """
+    text = _verify_script_text()
+    # The only NEBIUS_API_KEY reference must be inside an escaped
+    # double-quoted command string, i.e. expanded by the sandbox shell.
+    assert "Authorization: Bearer \\$NEBIUS_API_KEY" in text, (
+        "the placeholder must be expanded inside the sandbox, not on the host"
+    )
+    assert "Bearer ${NEBIUS_API_KEY" not in text, (
+        "the real key must never be interpolated into the sandbox command"
+    )
+

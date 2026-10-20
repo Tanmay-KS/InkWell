@@ -70,14 +70,18 @@ $EDITOR .env                     # set NEBIUS_API_KEY
 # 2. OpenShell + provider + image + sandbox + verification
 bash sandbox/setup.sh
 
-# 3. check that model calls really route to Token Factory
+# 3. prove the Phase 0 exit condition (one pass/fail table)
+bash sandbox/verify.sh
+
+# 4. check that model calls really route to Token Factory
 openshell policy get ledger-hermes --full
 openshell logs ledger-hermes --tail
 openshell term                   # live view: gateways, providers, sandboxes, blocked traffic
 ```
 
 `bash sandbox/setup.sh --dry-run` exercises everything except the steps
-that need a real key.
+that need a real key. `bash sandbox/verify.sh` is the artifact that proves
+the Phase 0 exit condition — it is the file a reviewer runs.
 
 ### Requirements
 

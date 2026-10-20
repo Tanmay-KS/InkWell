@@ -16,12 +16,16 @@ when it fails.
 
 | Requirement | Why | Check |
 |---|---|---|
-| Linux with Docker Engine 28.0+ | OpenShell's Docker compute driver | `docker version` |
+| Linux with Docker Engine 28.0+ **running** | OpenShell's Docker driver — and the gateway creates its Docker client at startup, so a stopped daemon stops the gateway too | `docker info` |
+| Your user in the `docker` group | the daemon socket is root-owned | `id -nG \| grep docker` |
 | A Nebius Token Factory API key | every model call | <https://tokenfactory.nebius.com/> |
 | `jq` (optional) | pretty-printing model catalogs | `jq --version` |
 | ~10 GB disk | the Hermes image is large (Chromium is baked in) | `df -h` |
+| `bsdtar` (only on non-deb/rpm distros) | extracts the OpenShell RPMs | `command -v bsdtar` |
 
-Copy the environment template and fill in the key:
+Copy the environment template and fill in the key. **Do not put the key in
+a chat message or a commit** — `.env` is gitignored, and `setup.sh` and
+`verify.sh` both read it from there.
 
 ```bash
 cp .env.example .env
@@ -32,14 +36,6 @@ $EDITOR .env          # set NEBIUS_API_KEY
 
 ## 1. Install OpenShell
 
-```bash
-curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
-openshell status
-```
-
-The installer puts the CLI on `PATH`, installs a local gateway, and registers
-it at `https://127.0.0.1:17670`.
-
 **Pin the version.** We are building against `v0.1.4`; the middleware
 contract in particular is marked as evolving.
 
@@ -47,22 +43,73 @@ contract in particular is marked as evolving.
 export OPENSHELL_VERSION=v0.1.4
 ```
 
-On a distribution that is not Debian/Ubuntu or Fedora/RHEL there is no
-package — take the release tarball instead:
+### 1a. Debian / Ubuntu / Fedora / RHEL
 
 ```bash
-curl -LsSf -o openshell.tar.gz \
-  "https://github.com/NVIDIA/OpenShell/releases/download/v0.1.4/openshell-x86_64-unknown-linux-musl.tar.gz"
+curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+openshell status
+```
+
+The installer picks a `.deb` or an `.rpm` based on the host package
+manager, installs the CLI, the gateway and the prover, starts the gateway
+as a systemd **user** service, and registers it at
+`https://127.0.0.1:17670`.
+
+### 1b. Everything else (Arch, CachyOS, Gentoo…)
+
+The upstream installer supports exactly three Linux paths — `deb`, `rpm`
+and `snap` — and on a host with neither `dpkg` nor `rpm` it exits with
+*"Linux installs require either dpkg or rpm"*.
+
+The RPMs still work: they are plain archives, and `bsdtar` (libarchive)
+reads RPMs. They contain the CLI, the gateway, the prover, the systemd user
+unit and the config-migration helper. The container images are **not** in
+the RPM — the Docker driver pulls those from ghcr.io on first sandbox
+creation.
+
+```bash
+sudo bsdtar xf openshell-0.1.4-1.fc44.x86_64.rpm            -C /
+sudo bsdtar xf openshell-gateway-0.1.4-1.fc44.x86_64.rpm    -C /
+sudo bsdtar xf openshell-prover-0.1.4-1.fc44.x86_64.rpm     -C /
+
+systemctl --user daemon-reload
+systemctl --user enable --now openshell-gateway
+openshell status
+```
+
+`bash sandbox/setup.sh` does all of this automatically when it detects a
+host with neither `dpkg` nor `rpm`.
+
+### 1c. Where systemd --user is not available
+
+The packaged unit does three things at startup: seeds `gateway.toml`,
+runs `openshell-gateway config preflight`, and generates the mTLS PKI. If
+`systemctl --user` is unavailable, do it by hand:
+
+```bash
+mkdir -p ~/.config/openshell
+cp sandbox/gateway.toml ~/.config/openshell/gateway.toml
+
+openshell-gateway config preflight --path ~/.config/openshell/gateway.toml
+openshell-gateway generate-certs \
+  --output-dir ~/.local/state/openshell/tls \
+  --server-san host.openshell.internal
+
+openshell-gateway --config ~/.config/openshell/gateway.toml &
+openshell gateway add https://127.0.0.1:17670 --local --name local
+openshell gateway select local
 ```
 
 ### What could go wrong
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Installer picks the wrong package | unsupported distro | use the tarball |
-| `openshell status` cannot reach the gateway | systemd user service did not start | `systemctl --user status openshell-gateway` |
+| Installer exits with "require either dpkg or rpm" | unsupported distro | use 1b |
+| `openshell status` cannot reach the gateway | systemd user service did not start | `systemctl --user status openshell-gateway`; otherwise use 1c |
+| **Gateway exits immediately: "failed to create Docker client: Socket not found"** | **the daemon is not running** | `sudo systemctl start docker` — this is a gateway prerequisite, not just a sandbox one |
 | Gateway will not start | a registered middleware service is down | see the middleware note in `sandbox/gateway.toml` — we deliberately keep that block commented out until Phase 2 |
 | `openshell-gateway config preflight` says `missing_version` | gateway.toml lacks `[openshell] version = 2` | use the file in `sandbox/` |
+| `credential_endpoint_mismatch` on every call | the provider profile's endpoint list does not cover the host Hermes actually used | compare `hermes config get model --json` base_url against the profile's `endpoints` |
 
 ---
 
@@ -189,7 +236,8 @@ openshell sandbox create \
   -- chat
 ```
 
-`bash sandbox/setup.sh --check` runs all four verification steps below.
+`bash sandbox/setup.sh --check` runs `bash sandbox/verify.sh`, which performs
+every check in 7.1–7.6 below.
 
 ### 7.1 The effective policy contains the endpoint
 
@@ -229,30 +277,70 @@ curl -sS https://api.tokenfactory.nebius.com/v1/models?verbose=true \
   -H "Authorization: Bearer $NEBIUS_API_KEY" | jq -r '.data[].id'
 ```
 
-### 7.4 NEGATIVE — the credential is not usable anywhere else
+### 7.4 NEGATIVE — the credential is scoped to one destination
 
 This is the step that proves routing is *enforced* rather than *configured*.
 
+The test sends the **sandbox's own opaque placeholder** to a host that the
+policy allows but that the Token Factory credential is **not** bound to
+(`api.tavily.com`). OpenShell must refuse it with
+`credential_endpoint_mismatch`.
+
+Two things this test must not do:
+
+- **Do not send the real key.** The sandbox never holds the real key — it
+  holds a placeholder — so sending the host's `NEBIUS_API_KEY` would put a
+  live secret on a command line *and* would not exercise the binding at
+  all. The variable has to be expanded **inside** the sandbox.
+- **Do not target a host the policy already blocks.** A request to a host
+  outside `network_policies` dies at the policy layer and never reaches the
+  credential check, so the test would be inconclusive.
+
 ```bash
 openshell sandbox exec -n ledger-hermes --no-login-shell -- \
-  /usr/bin/curl -sS -o /dev/null -w '%{http_code}\n' \
-  -H "Authorization: Bearer $NEBIUS_API_KEY" https://example.com/
+  /bin/sh -c 'curl -sS -o /dev/null -w "%{http_code}" \
+      -H "Authorization: Bearer $NEBIUS_API_KEY" \
+      https://api.tavily.com/search'
 ```
 
-Expect `403` and a `credential_endpoint_mismatch` in the log. The same
-placeholder sent to Token Factory succeeds; sent anywhere else, it is refused.
+Expect `credential_endpoint_mismatch` and HTTP 403. The same placeholder
+sent to Token Factory succeeds; sent anywhere else, it is refused.
 
-A second version of the same proof, this time from inside the agent's
-configuration:
+### 7.5 NEGATIVE — the agent cannot be pointed at another host
+
+Hermes honours `NEBIUS_BASE_URL`. Pointing it somewhere else must be
+refused by the runtime, because the credential is bound to Token Factory
+only. This is the strongest form of the routing proof: the agent actively
+tries to leave and the sandbox says no.
 
 ```bash
 openshell sandbox exec -n ledger-hermes --no-login-shell -- \
-  env NEBIUS_BASE_URL=https://api.example.invalid/v1 \
+  /usr/bin/env NEBIUS_BASE_URL=https://api.example.invalid/v1 \
   /opt/hermes/.venv/bin/hermes chat --provider nebius -q 'ping'
 ```
 
-Hermes honours `NEBIUS_BASE_URL` and aims at the wrong host; OpenShell
-refuses the request because the credential is bound to Token Factory only.
+### 7.6 The egress allowlist is exactly what we intended
+
+```bash
+openshell policy get ledger-hermes --full | grep -oE 'host: [a-z0-9.-]+' | sort -u
+```
+
+Expect exactly three destinations: `api.tokenfactory.nebius.com`,
+`api.tavily.com`, `api.telegram.org` (plus `host.openshell.internal` for
+gateway-internal traffic). Anything else is a hole.
+
+---
+
+### 7.7 Run all of it at once
+
+```bash
+bash sandbox/verify.sh
+```
+
+One command, one pass/fail table, exit code 0 only if every required check
+passed. **This is the artifact that proves the Phase 0 exit condition** —
+it is the file a reviewer runs, and it is the same file `setup.sh --check`
+delegates to.
 
 ---
 
@@ -340,16 +428,23 @@ numbers are in [`docs/ocr-decision.md`](ocr-decision.md).
 
 ## Phase 0 exit checklist
 
+Run `bash sandbox/verify.sh` and paste its table into the friction log. The
+checklists below are the human version of what that script asserts.
+
 **Person A — infra (not yet run):**
 
 - [ ] `openshell status` reaches the gateway
+- [ ] the Docker daemon is running and the gateway starts
 - [ ] all three provider profiles lint and import cleanly
 - [ ] the `nebius` provider instance is created
 - [ ] the image builds and the sandbox reaches `Ready`
 - [ ] 7.1 the effective policy shows the Token Factory endpoint
+- [ ] 7.1 the workload runs as UID 10000, not root
 - [ ] 7.2 the log shows a connection to Token Factory
 - [ ] 7.3 a real model call returns `LEDGER-OK`
-- [ ] 7.4 the credential is refused on a foreign host
+- [ ] 7.4 the placeholder is refused on a host the credential is not bound to
+- [ ] 7.5 the agent cannot be pointed at another host
+- [ ] 7.6 the allowlist contains exactly the three intended destinations
 - [ ] `tesseract` measured **inside the sandbox image**, so the local path's accuracy is known in the environment it will actually run in (F-020)
 
 **Person B — agent and benchmarks (done):**
@@ -364,7 +459,9 @@ numbers are in [`docs/ocr-decision.md`](ocr-decision.md).
 - [x] this runbook updated with what actually differed
 - [x] friction log updated — F-009 … F-020
 
-If any of 7.1–7.4 fails at EOD Oct 20, that is the go/no-go signal for the
+**The exit condition is met when `bash sandbox/verify.sh` exits 0.**
+
+If any of 7.1–7.6 fails at EOD Oct 20, that is the go/no-go signal for the
 fallback stack. The cleanest fallback keeps OpenShell and swaps the
 inference provider: OpenShell ships a ready-made `nvidia` profile for
 NVIDIA NIM, and Hermes has a first-class `nvidia` provider. Everything else

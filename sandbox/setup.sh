@@ -104,10 +104,22 @@ install_openshell() {
         return
     fi
 
+    # The upstream installer supports exactly three Linux paths: a Debian
+    # package, an RPM package, or the snap. On a distribution with neither
+    # dpkg nor rpm (Arch, CachyOS, Gentoo) the installer exits with
+    # "Linux installs require either dpkg or rpm".
+    #
+    # The RPM route still works: the packages are plain archives, and
+    # bsdtar (libarchive) reads RPMs. They contain the CLI, the gateway,
+    # the prover, the systemd user unit and the config-migration helper —
+    # everything except the container images, which the Docker driver pulls
+    # from ghcr.io on first sandbox creation.
+    if ! command -v dpkg >/dev/null 2>&1 && ! command -v rpm >/dev/null 2>&1; then
+        install_openshell_from_rpm
+        return
+    fi
+
     info "installing from https://github.com/NVIDIA/OpenShell/releases (${OPENSHELL_VERSION})"
-    info "the installer picks a Debian/Ubuntu .deb or a Fedora/RHEL .rpm"
-    info "on other distributions, install the release tarball manually:"
-    info "  https://github.com/NVIDIA/OpenShell/releases/download/${OPENSHELL_VERSION}/openshell-x86_64-unknown-linux-musl.tar.gz"
 
     if [ "$DRY_RUN" -eq 1 ]; then
         info "would run: curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh"
@@ -116,6 +128,84 @@ install_openshell() {
 
     curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
     ok "installed"
+}
+
+install_openshell_from_rpm() {
+    info "no dpkg and no rpm on this host — extracting the release RPMs instead"
+
+    if ! command -v bsdtar >/dev/null 2>&1; then
+        die "bsdtar is required to extract the RPMs on a non-deb/rpm host (pacman -S libarchive)"
+    fi
+
+    local arch pkg tmpdir file
+    case "$(uname -m)" in
+        x86_64|amd64) arch="x86_64" ;;
+        aarch64|arm64) arch="aarch64" ;;
+        *) die "no OpenShell release is published for architecture: $(uname -m)" ;;
+    esac
+
+    tmpdir="$(mktemp -d)"
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        info "would download and extract the openshell, openshell-gateway and openshell-prover ${OPENSHELL_VERSION} rpms"
+        info "would run: systemctl --user daemon-reload && systemctl --user enable --now openshell-gateway"
+        rm -rf "$tmpdir"
+        return
+    fi
+
+    for pkg in openshell openshell-gateway openshell-prover; do
+        file="${pkg}-${OPENSHELL_VERSION#v}-1.fc44.${arch}.rpm"
+        info "downloading ${file}"
+        curl -LsSf --retry 3 -o "${tmpdir}/${file}" \
+            "https://github.com/NVIDIA/OpenShell/releases/download/${OPENSHELL_VERSION}/${file}" \
+            || { rm -rf "$tmpdir"; die "failed to download ${file}"; }
+        bsdtar xf "${tmpdir}/${file}" -C / || { rm -rf "$tmpdir"; die "failed to extract ${file}"; }
+    done
+    rm -rf "$tmpdir"
+    ok "OpenShell binaries installed"
+
+    # The packaged unit generates the mTLS PKI and seeds gateway.toml on
+    # first start. Where systemd --user is unavailable, the gateway has to
+    # be run directly.
+    if command -v systemctl >/dev/null 2>&1 \
+       && systemctl --user is-system-running >/dev/null 2>&1; then
+        systemctl --user daemon-reload
+        systemctl --user enable --now openshell-gateway
+        ok "gateway user service started"
+    else
+        warn "systemd --user is unavailable — start the gateway manually:"
+        warn "  openshell-gateway generate-certs --output-dir ~/.local/state/openshell/tls --server-san host.openshell.internal"
+        warn "  openshell-gateway --config ~/.config/openshell/gateway.toml"
+    fi
+}
+
+# The OpenShell gateway creates its Docker client during startup, so a
+# reachable Docker daemon is a prerequisite for the gateway itself — not
+# just for creating sandboxes.
+preflight_docker() {
+    step "Docker"
+
+    if ! command -v docker >/dev/null 2>&1; then
+        die "docker is not on PATH — the OpenShell gateway will not start without it"
+    fi
+
+    if docker info >/dev/null 2>&1; then
+        ok "daemon reachable (server $(docker version --format '{{.ServerVersion}}' 2>/dev/null))"
+        return
+    fi
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        info "docker daemon is not running — would report this as a blocker"
+        return
+    fi
+
+    fail "the Docker daemon is not reachable"
+    info "the OpenShell gateway creates its Docker client at startup and exits without it"
+    info "fix it with:  sudo systemctl start docker"
+    if ! id -nG 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
+        info "and:          sudo usermod -aG docker \$USER   (then log out and back in)"
+    fi
+    die "Docker is required before the rest of the setup can run"
 }
 
 register_gateway() {
@@ -349,61 +439,14 @@ attach_provider() {
 check_routing() {
     step "Routing verification"
 
-    local failures=0
-
-    info "1/4 effective policy shows the Token Factory endpoint and credential binding"
-    if openshell policy get "$SANDBOX_NAME" --full 2>/dev/null \
-        | grep -q 'api.tokenfactory.nebius.com'; then
-        ok "Token Factory endpoint present in the effective policy"
-    else
-        fail "Token Factory endpoint MISSING from the effective policy"
-        failures=$((failures + 1))
+    if [ "$DRY_RUN" -eq 1 ]; then
+        info "would run: bash ${SCRIPT_DIR}/verify.sh"
+        return 0
     fi
 
-    info "2/4 sandbox logs show a connection to api.tokenfactory.nebius.com"
-    if openshell logs "$SANDBOX_NAME" --since 10m --source sandbox 2>/dev/null \
-        | grep -q 'api.tokenfactory.nebius.com'; then
-        ok "connection observed in the sandbox log"
-    else
-        warn "no Token Factory connection in the last 10m (expected if the agent has not run yet)"
-    fi
-
-    info "3/4 a real model call succeeds from inside the sandbox"
-    if [ "$DRY_RUN" -eq 0 ]; then
-        if openshell sandbox exec -n "$SANDBOX_NAME" --no-login-shell -- \
-            /opt/hermes/.venv/bin/hermes chat \
-            --provider nebius \
-            --model "${LEDGER_MODEL_NANO:-nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B}" \
-            -q 'Reply with exactly: LEDGER-OK' 2>&1 | tee /tmp/ledger-model-check.log | grep -q 'LEDGER-OK'; then
-            ok "model call succeeded"
-        else
-            fail "model call failed — see /tmp/ledger-model-check.log"
-            failures=$((failures + 1))
-        fi
-    fi
-
-    info "4/4 NEGATIVE test: the credential is not usable against any other host"
-    if [ "$DRY_RUN" -eq 0 ]; then
-        local out
-        out="$(openshell sandbox exec -n "$SANDBOX_NAME" --no-login-shell -- \
-            /usr/bin/curl -sS -o /dev/null -w '%{http_code}' \
-            -H "Authorization: Bearer ${NEBIUS_API_KEY:-placeholder}" \
-            https://example.com/ 2>&1 || true)"
-        if echo "$out" | grep -q 'credential_endpoint_mismatch' \
-           || echo "$out" | grep -qE '^(403|401)$'; then
-            ok "cross-host credential use was refused (${out})"
-        else
-            fail "the credential was NOT refused on a foreign host (got: ${out})"
-            fail "routing is not being enforced by the runtime — this is a Phase 0 blocker"
-            failures=$((failures + 1))
-        fi
-    fi
-
-    if [ "$failures" -gt 0 ]; then
-        fail "${failures} routing check(s) failed"
-        return 1
-    fi
-    ok "all routing checks passed"
+    # The checks live in verify.sh so there is exactly one implementation of
+    # the Phase 0 exit condition — the same file a reviewer runs.
+    bash "${SCRIPT_DIR}/verify.sh"
 }
 
 print_status() {
@@ -430,7 +473,7 @@ BANNER
     fi
 
     if [ "$ONLY_UP" -eq 0 ]; then
-        need_cmd docker
+        preflight_docker
         install_openshell
         register_gateway
         import_profiles
