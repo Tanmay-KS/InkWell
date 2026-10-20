@@ -38,7 +38,14 @@ packages = [
     "privacy_router",
     "search",
     "jobs",
+    "eval",
+    "interface",
+    "interface.bot",
+    "interface.web",
 ]
+
+[tool.setuptools.package-data]
+"interface.web" = ["*.html", "*.js", "*.css"]
 
 [tool.ruff]
 line-length = 100

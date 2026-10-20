@@ -1,0 +1,207 @@
+{
+  "summary": {
+    "documents": 200,
+    "documents_with_no_surviving_personal_value": 0,
+    "bytes_before": 91248,
+    "bytes_after": 86482,
+    "reduction_percent": 5.223128178151848,
+    "surviving_per_document": {
+      "3": 133,
+      "4": 62,
+      "5": 5
+    }
+  },
+  "values": {
+    "holder": {
+      "total": 200,
+      "caught": 0,
+      "detection_rate": 0.0,
+      "surviving_examples": [
+        "Devin Sullivan",
+        "Alex Chen",
+        "Jordan Okafor",
+        "Robin Ashworth",
+        "Marta Kowalski",
+        "Casey Lindqvist",
+        "Jordan Okafor",
+        "Robin Ashworth",
+        "Robin Ashworth",
+        "Marta Kowalski",
+        "Sam Rivera",
+        "Priya Raman",
+        "Alex Chen",
+        "Marta Kowalski",
+        "Alex Chen",
+        "Jordan Okafor",
+        "Sam Rivera",
+        "Robin Ashworth",
+        "Robin Ashworth",
+        "Sam Rivera"
+      ],
+      "categories": {}
+    },
+    "email": {
+      "total": 200,
+      "caught": 200,
+      "detection_rate": 1.0,
+      "surviving_examples": [],
+      "categories": {
+        "email": 200
+      }
+    },
+    "phone": {
+      "total": 200,
+      "caught": 200,
+      "detection_rate": 1.0,
+      "surviving_examples": [],
+      "categories": {
+        "phone": 200
+      }
+    },
+    "account_number": {
+      "total": 200,
+      "caught": 153,
+      "detection_rate": 0.765,
+      "surviving_examples": [
+        "SUB-281674",
+        "ACC-427352",
+        "ACC-900545",
+        "ACC-579293",
+        "ACC-512267",
+        "SUB-913612",
+        "POL-150410",
+        "ACC-617436",
+        "ACC-998337",
+        "POL-663010",
+        "ACC-397800",
+        "ACC-270943",
+        "SUB-586877",
+        "ACC-822195",
+        "ACC-237325",
+        "SUB-588862",
+        "ACC-928774",
+        "POL-676134",
+        "MBR-084292",
+        "POL-370108"
+      ],
+      "categories": {
+        "account": 140,
+        "phone": 13
+      }
+    },
+    "city": {
+      "total": 200,
+      "caught": 0,
+      "detection_rate": 0.0,
+      "surviving_examples": [
+        "Marrow",
+        "Northgate",
+        "Cedar Crossing",
+        "Northgate",
+        "Alderbrook",
+        "Cedar Crossing",
+        "Alderbrook",
+        "Hollis Bay",
+        "Fairhaven",
+        "Fairhaven",
+        "Cedar Crossing",
+        "Marrow",
+        "Alderbrook",
+        "Hollis Bay",
+        "Alderbrook",
+        "Alderbrook",
+        "Northgate",
+        "Hollis Bay",
+        "Cedar Crossing",
+        "Marrow"
+      ],
+      "categories": {}
+    },
+    "postcode": {
+      "total": 200,
+      "caught": 0,
+      "detection_rate": 0.0,
+      "surviving_examples": [
+        "80211",
+        "97418",
+        "75204",
+        "97418",
+        "55407",
+        "75204",
+        "55407",
+        "12189",
+        "02143",
+        "02143",
+        "75204",
+        "80211",
+        "55407",
+        "12189",
+        "55407",
+        "55407",
+        "97418",
+        "12189",
+        "75204",
+        "80211"
+      ],
+      "categories": {}
+    },
+    "renewal_date": {
+      "total": 200,
+      "caught": 200,
+      "detection_rate": 1.0,
+      "surviving_examples": [],
+      "categories": {}
+    },
+    "amount": {
+      "total": 200,
+      "caught": 200,
+      "detection_rate": 1.0,
+      "surviving_examples": [],
+      "categories": {}
+    },
+    "provider": {
+      "total": 200,
+      "caught": 200,
+      "detection_rate": 1.0,
+      "surviving_examples": [],
+      "categories": {}
+    },
+    "street": {
+      "total": 200,
+      "caught": 200,
+      "detection_rate": 1.0,
+      "surviving_examples": [],
+      "categories": {
+        "address": 200
+      }
+    },
+    "policy_number": {
+      "total": 25,
+      "caught": 0,
+      "detection_rate": 0.0,
+      "surviving_examples": [
+        "POL-4625232-I",
+        "POL-9484519-G",
+        "POL-1999696-K",
+        "POL-7365589-W",
+        "POL-2341495-J",
+        "POL-2691238-H",
+        "POL-7938213-B",
+        "POL-7099049-W",
+        "POL-9535241-U",
+        "POL-6370381-Q",
+        "POL-6783882-R",
+        "POL-7515605-V",
+        "POL-2267527-E",
+        "POL-7334045-B",
+        "POL-4767720-C",
+        "POL-1810220-H",
+        "POL-9027435-Z",
+        "POL-9124195-V",
+        "POL-7045137-O",
+        "POL-5114678-R"
+      ],
+      "categories": {}
+    }
+  }
+}

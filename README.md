@@ -9,10 +9,26 @@ sandbox with a declarative egress policy, and a privacy router strips your
 personal details from anything that leaves, so the expensive models and
 third-party search engines never see them.
 
-> **Status: Phase 0 — infra verification.**
-> The stack is being de-risked before anything user-facing is built. See
-> [`docs/phase0-runbook.md`](docs/phase0-runbook.md) for where things stand
-> and [`IMPLEMENTATION.md`](IMPLEMENTATION.md) for the full plan.
+> **Status: Phase 0 complete — infra verification.**
+> The stack is de-risked and the decisions are recorded. See
+> [`docs/phase0-runbook.md`](docs/phase0-runbook.md) for the infra side,
+> [`docs/ocr-decision.md`](docs/ocr-decision.md) for the model decision
+> and the privacy architecture, and
+> [`IMPLEMENTATION.md`](IMPLEMENTATION.md) for the full plan.
+
+### Phase 0 decisions
+
+| Decision | Outcome | Record |
+|---|---|---|
+| Which model reads documents? | `nvidia/Nemotron-3.5-Super-VL` — 99% field recovery, $0.30/1M in | [`docs/ocr-decision.md`](docs/ocr-decision.md) |
+| How do personal details stay inside the sandbox? | Extract locally → redact locally → the model only ever reads redacted text | [`docs/ocr-decision.md`](docs/ocr-decision.md) |
+| What does the deterministic redactor miss? | Names, alphanumeric account numbers, policy numbers, city and postcode — **0% detected** | [`docs/redaction-audit.md`](docs/redaction-audit.md) |
+| Which model IDs do we use? | Pinned from the live catalog, never hand-typed | [`docs/model-catalog.md`](docs/model-catalog.md) |
+
+The last row matters more than it looks: Nebius's web catalog, its API
+catalog and its cookbook disagree about which models exist, and the same
+model is published under several casings. Every model ID in this repo
+comes from the live catalog.
 
 ---
 
@@ -123,6 +139,22 @@ make test      # pytest
 make help      # everything else
 ```
 
+### The corpus and the benchmarks
+
+```bash
+make synth            # 200 documents + rendered PNGs, deterministic
+make corpus-qa        # validate the corpus: coverage, ground truth, nothing clipped
+make pin-models       # re-pin the live catalog into .env + docs/model-catalog.md
+make ocr-bench        # which model reads documents best
+make redacted-extract # can the model read redacted text? (the privacy architecture)
+make redaction-audit  # what the deterministic redactor misses
+```
+
+`make synth` needs Pillow (`make venv` installs it). The corpus is
+generated, not committed — it is reproducible from a fixed seed *and a
+fixed reference date*, so the Phase 2 leak-test baseline stays
+comparable across runs.
+
 ---
 
 ## Notes and caveats
@@ -141,6 +173,6 @@ make help      # everything else
 
 ## Licence
 
-To be added in Phase 4.
+Apache-2.0 — see [`LICENSE`](LICENSE).
 
 <!-- The friction log, in full, is required in the final submission. -->

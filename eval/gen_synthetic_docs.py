@@ -34,9 +34,23 @@ import json
 import random
 import string
 import sys
+import textwrap
 from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
+
+# --- page geometry ----------------------------------------------------------
+#
+# The rendered "scan" has to contain the whole document, or the benchmark
+# measures the renderer instead of the models. These constants define the
+# page; `wrap_lines` fits the text to it and `render_image` grows the
+# page rather than dropping what does not fit.
+PAGE_WIDTH = 1000
+PAGE_HEIGHT = 1400
+MARGIN = 70
+LINE_HEIGHT = 24
+FONT_SIZE = 15
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 
 # --- fake people and places -------------------------------------------------
 #
@@ -338,6 +352,51 @@ def render(spec: DocSpec) -> str:
     )
 
 
+def _load_font():
+    from PIL import ImageFont
+
+    try:
+        return ImageFont.truetype(FONT_PATH, FONT_SIZE)
+    except OSError:
+        return ImageFont.load_default()
+
+
+def _max_chars(font, page_width: int = PAGE_WIDTH) -> int:
+    """How many characters fit across the usable width of the page.
+
+    Measured from the font rather than guessed: a monospace advance is
+    roughly 0.6 em, but the fallback font is not monospace at all, and
+    getting this wrong is how text ends up off the edge of the page.
+    """
+    advance = font.getlength("M") or FONT_SIZE * 0.6
+    usable = page_width - 2 * MARGIN
+    return max(20, int(usable // advance))
+
+
+def wrap_lines(text: str, font=None) -> list[str]:
+    """Wrap the document to the width the page can actually show.
+
+    A line that does not fit used to be truncated by the renderer, and
+    the overflow silently fell off the right edge of the page. That made
+    the rendered "scan" a *truncated document* — the amount on a long
+    line was simply not there — and every OCR candidate was then judged
+    on a page missing text. The benchmark was measuring the renderer's
+    bug, not the models.
+
+    Wrapping also makes the image agree with the ground truth, which is
+    the property the OCR benchmark's scoring depends on.
+    """
+    font = font or _load_font()
+    width = _max_chars(font)
+    wrapped: list[str] = []
+    for line in text.splitlines():
+        if not line:
+            wrapped.append("")
+            continue
+        wrapped.extend(textwrap.wrap(line, width) or [""])
+    return wrapped
+
+
 def render_image(text: str, path: Path) -> bool:
     """Render text to a PNG so the OCR benchmark has something to read.
 
@@ -345,34 +404,33 @@ def render_image(text: str, path: Path) -> bool:
     slight rotation and some noise, so that a vision model is doing
     something more than reading a text file.
 
+    The page grows to fit the wrapped text rather than dropping what does
+    not fit. A dropped line is a document the benchmark never sees.
+
     Returns False if Pillow is not installed.
     """
     try:
-        from PIL import Image, ImageDraw, ImageFont
+        from PIL import Image, ImageDraw
     except ImportError:
         return False
 
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 15)
-    except OSError:
-        font = ImageFont.load_default()
+    font = _load_font()
+    lines = wrap_lines(text, font)
 
-    width, height = 1000, 1400
-    image = Image.new("RGB", (width, height), "#f7f5f0")
+    # Grow the page rather than clip it.
+    height = max(PAGE_HEIGHT, MARGIN * 2 + len(lines) * LINE_HEIGHT)
+    image = Image.new("RGB", (PAGE_WIDTH, height), "#f7f5f0")
     draw = ImageDraw.Draw(image)
 
-    margin, line_height = 70, 24
-    y = margin
-    for line in text.splitlines():
-        if y > height - margin:
-            break
-        draw.text((margin, y), line, fill="#1a1a1a", font=font)
-        y += line_height
+    y = MARGIN
+    for line in lines:
+        draw.text((MARGIN, y), line, fill="#1a1a1a", font=font)
+        y += LINE_HEIGHT
 
     # A little skew and grain, so this is not trivially a text render.
     image = image.rotate(0.4, expand=False, fillcolor="#f7f5f0")
     pixels = image.load()
-    for x in range(0, width, 3):
+    for x in range(0, PAGE_WIDTH, 3):
         for yy in range(0, height, 3):
             r, g, b = pixels[x, yy]
             jitter = ((x * 7 + yy * 13) % 9) - 4
@@ -384,6 +442,70 @@ def render_image(text: str, path: Path) -> bool:
 
     image.save(path, "PNG")
     return True
+
+
+def generate_corpus(
+    out_dir: str | Path,
+    *,
+    count: int = 200,
+    seed: int = 20261019,
+    today: date | str = "",
+    render_images: bool = False,
+    clean: bool = False,
+) -> Path:
+    """Generate the corpus into `out_dir`.
+
+    Returns the output directory. Split out of `main` so the tests can
+    generate a corpus without going through the command line — the
+    reproducibility and clipping properties are worth asserting on every
+    run, not just when someone remembers to run the generator by hand.
+
+    The parameter is `render_images`, not `render`: the module already has
+    a `render(spec)` function that turns a record into text, and a
+    parameter named `render` shadows it inside this scope.
+    """
+    if isinstance(today, str):
+        reference_date = date.fromisoformat(today) if today else date.today()
+    else:
+        reference_date = today
+
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    if clean:
+        for pattern in ("*.txt", "*.json", "*.png"):
+            for old in out.glob(pattern):
+                old.unlink()
+
+    rng = random.Random(seed)
+    manifest_path = out / "manifest.jsonl"
+
+    rendered = 0
+    with manifest_path.open("w", encoding="utf-8") as manifest:
+        for index in range(count):
+            doc_id = f"doc-{index:04d}"
+            spec = make_spec(doc_id, rng, reference_date)
+            text = render(spec)
+
+            (out / f"{doc_id}.txt").write_text(text, encoding="utf-8")
+            (out / f"{doc_id}.json").write_text(
+                json.dumps(asdict(spec), indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            manifest.write(json.dumps(asdict(spec), sort_keys=True) + "\n")
+
+            if render_images:
+                if render_image(text, out / f"{doc_id}.png"):
+                    rendered += 1
+                else:
+                    print(
+                        "warning: Pillow is not installed — skipping image rendering.\n"
+                        "         pip install pillow, then re-run with --render.",
+                        file=sys.stderr,
+                    )
+                    break
+
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -408,51 +530,25 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    today = date.fromisoformat(args.today) if args.today else date.today()
+    out_dir = generate_corpus(
+        args.out,
+        count=args.count,
+        seed=args.seed,
+        today=args.today,
+        render_images=args.render,
+        clean=args.clean,
+    )
 
-    out_dir = Path(args.out)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    if args.clean:
-        for pattern in ("*.txt", "*.json", "*.png"):
-            for old in out_dir.glob(pattern):
-                old.unlink()
-
-    rng = random.Random(args.seed)
     manifest_path = out_dir / "manifest.jsonl"
-
-    rendered = 0
-    with manifest_path.open("w", encoding="utf-8") as manifest:
-        for index in range(args.count):
-            doc_id = f"doc-{index:04d}"
-            spec = make_spec(doc_id, rng, today)
-            text = render(spec)
-
-            (out_dir / f"{doc_id}.txt").write_text(text, encoding="utf-8")
-            (out_dir / f"{doc_id}.json").write_text(
-                json.dumps(asdict(spec), indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-            manifest.write(json.dumps(asdict(spec), sort_keys=True) + "\n")
-
-            if args.render:
-                if render_image(text, out_dir / f"{doc_id}.png"):
-                    rendered += 1
-                else:
-                    print(
-                        "warning: Pillow is not installed — skipping image rendering.\n"
-                        "         pip install pillow, then re-run with --render.",
-                        file=sys.stderr,
-                    )
-                    break
+    pngs = list(out_dir.glob("doc-*.png"))
 
     print(f"wrote {args.count} documents to {out_dir}")
     print(f"manifest: {manifest_path}")
     if args.render:
-        if rendered == args.count:
-            print(f"rendered {rendered} PNGs")
+        if len(pngs) == args.count:
+            print(f"rendered {len(pngs)} PNGs")
         else:
-            print(f"rendered {rendered}/{args.count} PNGs", file=sys.stderr)
+            print(f"rendered {len(pngs)}/{args.count} PNGs", file=sys.stderr)
     return 0
 
 

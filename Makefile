@@ -5,10 +5,18 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-PY := python3
+PY := $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 VENV := .venv
 SANDBOX := sandbox
 EVAL := eval
+
+# The corpus is reproducible only if the reference date is fixed: the
+# generator derives every renewal date from it, so a corpus generated on a
+# different day differs even with the same seed. This is part of the
+# reproducibility contract, not a convenience — the Phase 2 leak-test
+# baseline is only comparable across runs if the date does not move.
+CORPUS_TODAY ?= 2026-10-20
+CORPUS_COUNT ?= 200
 
 .PHONY: help
 help: ## Show this help
@@ -21,7 +29,7 @@ help: ## Show this help
 venv: ## Create the local virtualenv and install dev dependencies
 	$(PY) -m venv $(VENV)
 	$(VENV)/bin/pip install -q --upgrade pip
-	$(VENV)/bin/pip install -q -e ".[dev]"
+	$(VENV)/bin/pip install -q -e ".[dev,ocr]"
 	@echo "venv ready: $(VENV)/bin/python"
 
 .PHONY: install
@@ -67,21 +75,38 @@ sandbox-policy: ## Show the effective policy (base + provider rules)
 	openshell policy get ledger-hermes --full
 
 .PHONY: pin-models
-pin-models: ## Read the live Token Factory catalog and print exact model IDs
-	@test -n "$$NEBIUS_API_KEY" || { echo "NEBIUS_API_KEY is not set"; exit 1; }
-	curl -sS "https://api.tokenfactory.nebius.com/v1/models?verbose=true" \
-		-H "Authorization: Bearer $$NEBIUS_API_KEY" \
-		| $(PY) -c 'import json,sys; [print(m["id"]) for m in json.load(sys.stdin).get("data",[])]'
+pin-models: ## Pin the live model catalog into .env and write docs/model-catalog.md
+	$(PY) $(EVAL)/pin_models.py
+
+.PHONY: model-catalog
+model-catalog: ## Write a dated snapshot of the live Token Factory catalog only
+	$(PY) $(EVAL)/pin_models.py --snapshot-only
 
 # --- Phase 0: corpus + OCR -------------------------------------------------
 
 .PHONY: synth
-synth: ## Generate the synthetic document corpus (deterministic, seeded)
-	$(PY) $(EVAL)/gen_synthetic_docs.py --out $(EVAL)/synthetic_docs --count 200
+synth: ## Generate the synthetic document corpus (deterministic, seeded, rendered)
+	$(PY) $(EVAL)/gen_synthetic_docs.py --out $(EVAL)/synthetic_docs \
+		--count $(CORPUS_COUNT) --today $(CORPUS_TODAY) --render --clean
+
+.PHONY: corpus-qa
+corpus-qa: ## Validate the corpus: format coverage, ground truth, reproducibility
+	$(PY) $(EVAL)/qa_corpus.py --docs $(EVAL)/synthetic_docs --count $(CORPUS_COUNT)
+
+.PHONY: redaction-audit
+redaction-audit: ## Per-field detection rates of the deterministic redaction pass
+	$(PY) $(EVAL)/corpus_redaction_audit.py --docs $(EVAL)/synthetic_docs \
+		--markdown docs/redaction-audit.md --json $(EVAL)/results/redaction_audit.json
+
+.PHONY: redacted-extract
+redacted-extract: ## Can the model read redacted text? (Option C validation)
+	$(PY) $(EVAL)/redacted_extract_bench.py --docs $(EVAL)/synthetic_docs --count 20 \
+		--json $(EVAL)/results/redacted_extract.json
 
 .PHONY: ocr-bench
 ocr-bench: ## Compare OCR models on a sample of the corpus
-	$(PY) $(EVAL)/ocr_bench.py --docs $(EVAL)/synthetic_docs --count 10
+	$(PY) $(EVAL)/ocr_bench.py --docs $(EVAL)/synthetic_docs --count 10 \
+		--json $(EVAL)/results/ocr_bench.json
 
 # --- later phases ----------------------------------------------------------
 

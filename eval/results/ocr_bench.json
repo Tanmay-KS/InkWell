@@ -1,0 +1,327 @@
+[
+  {
+    "name": "nvidia/Nemotron-3.5-Super-VL",
+    "kind": "vision",
+    "status": "ok",
+    "skip_reason": "",
+    "docs": 20,
+    "fields_found": 99,
+    "fields_total": 100,
+    "accuracy": 0.99,
+    "per_field": {
+      "renewal_date": {
+        "found": 20,
+        "total": 20
+      },
+      "account_number": {
+        "found": 20,
+        "total": 20
+      },
+      "provider": {
+        "found": 20,
+        "total": 20
+      },
+      "holder": {
+        "found": 20,
+        "total": 20
+      },
+      "amount": {
+        "found": 19,
+        "total": 20
+      }
+    },
+    "mean_latency": 3.9817228071995485,
+    "p95_latency": 5.502112375001161,
+    "prompt_tokens": 29340,
+    "completion_tokens": 16590,
+    "cost_usd": 0.023732999999999997,
+    "errors": []
+  },
+  {
+    "name": "zai-org/GLM-5.3-Flash",
+    "kind": "vision",
+    "status": "ok",
+    "skip_reason": "",
+    "docs": 20,
+    "fields_found": 100,
+    "fields_total": 100,
+    "accuracy": 1.0,
+    "per_field": {
+      "renewal_date": {
+        "found": 20,
+        "total": 20
+      },
+      "account_number": {
+        "found": 20,
+        "total": 20
+      },
+      "provider": {
+        "found": 20,
+        "total": 20
+      },
+      "holder": {
+        "found": 20,
+        "total": 20
+      },
+      "amount": {
+        "found": 20,
+        "total": 20
+      }
+    },
+    "mean_latency": 3.5375110399505503,
+    "p95_latency": 4.224775657999999,
+    "prompt_tokens": 37100,
+    "completion_tokens": 5881,
+    "cost_usd": 0.0085055,
+    "errors": []
+  },
+  {
+    "name": "deepseek-ai/DeepSeek-V4.1-Flash",
+    "kind": "vision",
+    "status": "ok",
+    "skip_reason": "",
+    "docs": 20,
+    "fields_found": 100,
+    "fields_total": 100,
+    "accuracy": 1.0,
+    "per_field": {
+      "renewal_date": {
+        "found": 20,
+        "total": 20
+      },
+      "account_number": {
+        "found": 20,
+        "total": 20
+      },
+      "provider": {
+        "found": 20,
+        "total": 20
+      },
+      "holder": {
+        "found": 20,
+        "total": 20
+      },
+      "amount": {
+        "found": 20,
+        "total": 20
+      }
+    },
+    "mean_latency": 2.856776464550785,
+    "p95_latency": 3.674878934001754,
+    "prompt_tokens": 18460,
+    "completion_tokens": 4885,
+    "cost_usd": 0.0114,
+    "errors": []
+  },
+  {
+    "name": "Qwen/Qwen3.8-27B",
+    "kind": "vision",
+    "status": "ok",
+    "skip_reason": "",
+    "docs": 20,
+    "fields_found": 100,
+    "fields_total": 100,
+    "accuracy": 1.0,
+    "per_field": {
+      "renewal_date": {
+        "found": 20,
+        "total": 20
+      },
+      "account_number": {
+        "found": 20,
+        "total": 20
+      },
+      "provider": {
+        "found": 20,
+        "total": 20
+      },
+      "holder": {
+        "found": 20,
+        "total": 20
+      },
+      "amount": {
+        "found": 20,
+        "total": 20
+      }
+    },
+    "mean_latency": 2.501891627599252,
+    "p95_latency": 3.159932858998218,
+    "prompt_tokens": 29180,
+    "completion_tokens": 4110,
+    "cost_usd": 0.025460999999999998,
+    "errors": []
+  },
+  {
+    "name": "openbmb/MiniCPM-V-4_5",
+    "kind": "vision",
+    "status": "ok",
+    "skip_reason": "",
+    "docs": 20,
+    "fields_found": 100,
+    "fields_total": 100,
+    "accuracy": 1.0,
+    "per_field": {
+      "renewal_date": {
+        "found": 20,
+        "total": 20
+      },
+      "account_number": {
+        "found": 20,
+        "total": 20
+      },
+      "provider": {
+        "found": 20,
+        "total": 20
+      },
+      "holder": {
+        "found": 20,
+        "total": 20
+      },
+      "amount": {
+        "found": 20,
+        "total": 20
+      }
+    },
+    "mean_latency": 4.253507916799753,
+    "p95_latency": 5.342727784998715,
+    "prompt_tokens": 10340,
+    "completion_tokens": 7568,
+    "cost_usd": 0.015204200000000001,
+    "errors": []
+  },
+  {
+    "name": "local-tesseract",
+    "kind": "local",
+    "status": "skipped",
+    "skip_reason": "all calls failed \u2014 doc-0000: tesseract is not installed",
+    "docs": 0,
+    "fields_found": 0,
+    "fields_total": 0,
+    "accuracy": 0.0,
+    "per_field": {
+      "renewal_date": {
+        "found": 0,
+        "total": 0
+      },
+      "account_number": {
+        "found": 0,
+        "total": 0
+      },
+      "provider": {
+        "found": 0,
+        "total": 0
+      },
+      "holder": {
+        "found": 0,
+        "total": 0
+      },
+      "amount": {
+        "found": 0,
+        "total": 0
+      }
+    },
+    "mean_latency": 0.0,
+    "p95_latency": 0.0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "cost_usd": 0.0,
+    "errors": [
+      "doc-0000: tesseract is not installed",
+      "doc-0001: tesseract is not installed",
+      "doc-0002: tesseract is not installed",
+      "doc-0003: tesseract is not installed",
+      "doc-0004: tesseract is not installed",
+      "doc-0005: tesseract is not installed",
+      "doc-0006: tesseract is not installed",
+      "doc-0007: tesseract is not installed",
+      "doc-0008: tesseract is not installed",
+      "doc-0009: tesseract is not installed",
+      "doc-0010: tesseract is not installed",
+      "doc-0011: tesseract is not installed",
+      "doc-0012: tesseract is not installed",
+      "doc-0013: tesseract is not installed",
+      "doc-0014: tesseract is not installed",
+      "doc-0015: tesseract is not installed",
+      "doc-0016: tesseract is not installed",
+      "doc-0017: tesseract is not installed",
+      "doc-0018: tesseract is not installed",
+      "doc-0019: tesseract is not installed"
+    ]
+  },
+  {
+    "name": "local-rapidocr",
+    "kind": "local",
+    "status": "ok",
+    "skip_reason": "",
+    "docs": 20,
+    "fields_found": 93,
+    "fields_total": 100,
+    "accuracy": 0.93,
+    "per_field": {
+      "renewal_date": {
+        "found": 19,
+        "total": 20
+      },
+      "account_number": {
+        "found": 20,
+        "total": 20
+      },
+      "provider": {
+        "found": 18,
+        "total": 20
+      },
+      "holder": {
+        "found": 20,
+        "total": 20
+      },
+      "amount": {
+        "found": 16,
+        "total": 20
+      }
+    },
+    "mean_latency": 1.3339289841003847,
+    "p95_latency": 1.574595624999347,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "cost_usd": 0.0,
+    "errors": []
+  },
+  {
+    "name": "local-text (baseline)",
+    "kind": "text",
+    "status": "ok",
+    "skip_reason": "",
+    "docs": 20,
+    "fields_found": 100,
+    "fields_total": 100,
+    "accuracy": 1.0,
+    "per_field": {
+      "renewal_date": {
+        "found": 20,
+        "total": 20
+      },
+      "account_number": {
+        "found": 20,
+        "total": 20
+      },
+      "provider": {
+        "found": 20,
+        "total": 20
+      },
+      "holder": {
+        "found": 20,
+        "total": 20
+      },
+      "amount": {
+        "found": 20,
+        "total": 20
+      }
+    },
+    "mean_latency": 0.0,
+    "p95_latency": 0.0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "cost_usd": 0.0,
+    "errors": []
+  }
+]

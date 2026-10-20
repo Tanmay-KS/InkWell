@@ -265,33 +265,59 @@ make pin-models
 Write the results into `.env` as `LEDGER_MODEL_NANO`, `LEDGER_MODEL_SUPER`,
 `LEDGER_MODEL_ULTRA`, `LEDGER_MODEL_OCR`, `LEDGER_MODEL_REDACT`.
 
+The target reads the live catalog, resolves each role against it,
+**refuses to pin a model the catalog does not serve**, writes those IDs
+into `.env`, and writes a dated snapshot of the catalog to
+`docs/model-catalog.md`.
+
 The three tiers map to the plan's cost/latency table in Phase 3:
 
 | Plan tier | Model | Role |
 |---|---|---|
 | Nano | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | redaction, classification, cheap side-jobs |
-| Super | `nvidia/nemotron-3-super-120b-a12b` | main agent reasoning |
+| Super | `nvidia/Nemotron-3.5-Super-VL` | main agent reasoning **and** document understanding |
 | Ultra | `nvidia/Nemotron-3-Ultra-550b-a55b` | hardest reasoning, long-horizon agent work |
-| OCR | `nvidia/NVIDIA-Nemotron-3-Nano-Omni` | document understanding (Phase 1 ingestion) |
+| OCR | `nvidia/Nemotron-3.5-Super-VL` | document understanding (Phase 1 ingestion) |
 
-> The exact spelling of each ID must come from the catalog. Nebius's own
-> sources disagree: the cookbook writes `nvidia/nemotron-3-nano-omni`, its
-> README writes `nvidia/Nemotron-3-Nano-Omni`, and Hermes defaults to
-> `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`.
+> **The Super tier is multimodal.** `nvidia/Nemotron-3.5-Super-VL` is the
+> 120B variant that takes an image; `nvidia/nemotron-3-super-120b-a12b`
+> is a *different* model in the same catalog and is text-to-text only.
+> The `redact_models` list in `sandbox/policy.yaml` names the text-only
+> one and has to be updated.
+
+> **The exact spelling of each ID must come from the catalog.** This is
+> not a formality. Nebius's web catalog, its API catalog and its
+> cookbook disagree about which models exist at all — the model this
+> runbook used to name for OCR, `nvidia/NVIDIA-Nemotron-3-Nano-Omni`, is
+> **not served by the API at all**, under any casing — and the same model
+> is published under several casings. See F-017 and F-018 in the
+> friction log.
 
 ---
 
 ## 9. Corpus and OCR benchmark
 
 ```bash
-make synth        # ~200 synthetic documents, deterministic
-make ocr-bench    # compare OCR candidates on 10 of them
+make synth            # 200 synthetic documents + rendered PNGs, deterministic
+make corpus-qa        # validate the corpus before trusting any number
+make ocr-bench        # compare the vision models and the local extractors
+make redacted-extract # can the model read redacted text? (the privacy design)
+make redaction-audit  # what the deterministic redactor misses
 ```
 
-The benchmark compares the vision model on Token Factory against
-`Qwen/Qwen2.5-VL` (which Nebius's own document-intelligence page names for
-layout analysis, table extraction, and OCR) and against a local extractor.
-The winner becomes the Phase 1 ingestion path.
+The benchmark compares every vision model the catalog serves against the
+local extractors, and scores **field recovery** rather than string
+similarity — a model that transcribes prose beautifully but mangles the
+account number is not good enough for us, and edit distance would not
+notice.
+
+The winner becomes the Phase 1 ingestion path. The decision and its
+numbers are in [`docs/ocr-decision.md`](ocr-decision.md).
+
+> **Run `make corpus-qa` before you believe a benchmark.** The corpus
+> renders a page per document, and the renderer used to truncate long
+> lines off the right edge — so the "scan" was a partial document and
+> every model was judged on a page missing text. That is F-011.
 
 ---
 
@@ -314,6 +340,8 @@ The winner becomes the Phase 1 ingestion path.
 
 ## Phase 0 exit checklist
 
+**Person A — infra (not yet run):**
+
 - [ ] `openshell status` reaches the gateway
 - [ ] all three provider profiles lint and import cleanly
 - [ ] the `nebius` provider instance is created
@@ -322,11 +350,19 @@ The winner becomes the Phase 1 ingestion path.
 - [ ] 7.2 the log shows a connection to Token Factory
 - [ ] 7.3 a real model call returns `LEDGER-OK`
 - [ ] 7.4 the credential is refused on a foreign host
-- [ ] model IDs pinned into `.env`
-- [ ] `make synth` produced the corpus
-- [ ] `make ocr-bench` produced a comparison table
-- [ ] this runbook updated with what actually differed
-- [ ] friction log updated
+- [ ] `tesseract` measured **inside the sandbox image**, so the local path's accuracy is known in the environment it will actually run in (F-020)
+
+**Person B — agent and benchmarks (done):**
+
+- [x] model IDs pinned into `.env`, validated against the live catalog, snapshot in `docs/model-catalog.md`
+- [x] `make synth` produced the corpus — 200 documents + 200 rendered PNGs, byte-identical across runs
+- [x] `make corpus-qa` passes — 12 checks, including that nothing is clipped off the page (F-011)
+- [x] `make ocr-bench` produced a comparison table — 5 vision models, 2 local extractors, per-field breakdown
+- [x] `make redacted-extract` validated the privacy architecture — the model reproduces every placeholder, zero hallucinations
+- [x] `make redaction-audit` measured what the deterministic redactor misses — the hand-off list for Phase 2
+- [x] the model decision recorded in `docs/ocr-decision.md`
+- [x] this runbook updated with what actually differed
+- [x] friction log updated — F-009 … F-020
 
 If any of 7.1–7.4 fails at EOD Oct 20, that is the go/no-go signal for the
 fallback stack. The cleanest fallback keeps OpenShell and swaps the

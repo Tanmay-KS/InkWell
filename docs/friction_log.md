@@ -95,7 +95,113 @@ and chowned to UID 10000 before first boot.
 
 ## Observed frictions
 
-_(nothing yet — this is where we log what actually breaks)_
+_(recorded during Phase 0, 2026-10-20 → 2026-10-21 — the first time anything in this repo was actually run)_
+
+### F-009 · The benchmark could never have tested a vision model
+**Owner:** Person B · **Phase:** 0 · **Status:** fixed
+`make synth` did not pass `--render`, so no PNGs existed. The benchmark fell back to the `.txt` files, base64-encoded them, and posted them as `data:image/png;base64,…`. Every vision candidate would have failed with an opaque HTTP 400, and the table would have said "0% accuracy" for all of them — which reads like "these models are terrible" rather than "the harness was broken".
+**Cost if unresolved:** the entire OCR decision would have been made on a table that measured nothing, and it would have looked like real data.
+**Detection:** the fallback printed a reassuring message — "no PNGs found — evaluating against the text files" — and the candidate list looked populated.
+**Fix:** `make synth` renders; the benchmark refuses to send anything that is not an image (magic-byte check, not the file extension) and marks the candidate SKIPPED with the reason.
+
+### F-010 · The amount field was counted as recovered no matter what
+**Owner:** Person B · **Phase:** 0 · **Status:** fixed
+The scorer computed the truth's digits and then checked whether those digits appeared in the *truth value* — always true. The extracted text was never consulted. Every candidate scored a free 20% on every document.
+**Cost if unresolved:** every accuracy number in the project would have been inflated by a fifth, and the margin between candidates would have been distorted.
+**Detection:** the baseline candidate — which reads the exact source text — also scored below 100%. The baseline cannot fail, so if it does, the scorer is broken. That is now an explicit test (`tests/test_scoring.py`).
+**Fix:** compare against the extracted text. The baseline is now 100% on every field, and that is asserted on every generated document.
+
+### F-011 · The rendered "scan" was a truncated document
+**Owner:** Person B · **Phase:** 0 · **Status:** fixed
+The renderer drew each source line as one unbroken run of text on a 1000px page and drew nothing else. Lines longer than the page ran off the right edge, and lines past the bottom were dropped. The amount on a long line — `A renewal fee of $266.64 per month applies.` — was simply not in the image.
+**Cost if unresolved:** every OCR candidate was being judged on a page missing text. Super-VL scored 92% when the document was actually complete; it scores 99% once the page contains everything.
+**Detection:** the amount field failed on exactly the two documents with the longest lines, for every candidate equally. A model-independent failure is a harness failure.
+**Fix:** the text is wrapped to the page width and the page grows to fit. `make corpus-qa` now asserts that nothing is clipped, and a test asserts the wrap is lossless.
+
+### F-012 · "The same seed" did not mean "the same corpus"
+**Owner:** Person B · **Phase:** 0 · **Status:** fixed
+The generator defaults its reference date to `date.today()` and derives every renewal date from it, so the same seed on a different day produced a different corpus. The README and the module docstring both claimed the corpus was byte-identical.
+**Cost if unresolved:** the Phase 2 leak-test baseline would not have been comparable across runs, and every "we re-ran it and got a different number" would have been unanswerable.
+**Detection:** reading the generator's default rather than trusting the documentation.
+**Fix:** the reference date is pinned (`CORPUS_TODAY` in the Makefile) and is part of the reproducibility contract. A test asserts that changing the date changes the corpus and that pinning it restores byte-identity.
+
+### F-013 · A candidate that could not run disappeared from the table
+**Owner:** Person B · **Phase:** 0 · **Status:** fixed
+The benchmark skipped the local OCR candidate when the tesseract binary was not installed, and printed a note to stderr. The table simply had no row for it. A missing row reads as "untested", not "unavailable", and the decision between the local and the vision path turns on exactly that row.
+**Cost if unresolved:** Option C — extract locally, redact locally, then call the model — would have been decided without the number that justifies it.
+**Detection:** the row was absent from the table and nothing marked it as a failure.
+**Fix:** a candidate that cannot run is now a row, marked SKIPPED with the reason. The same shape as F-004: the tempting fix is to make the missing thing go away quietly, and that is exactly what hides the cause.
+
+### F-014 · Normalisation made a name indistinguishable from an email address
+**Owner:** Person B · **Phase:** 0 · **Status:** fixed
+The redacted-text bench looked up which placeholder stood for a ground-truth value by comparing normalised strings. `devin.sullivan@example.com` normalises to `devinsullivaneexamplecom`, and the holder's name `Devin Sullivan` normalises to `devinsullivan` — which is a prefix of the other. The bench therefore concluded that the *name* had been redacted as the *email*, and reported the model as hallucinating names it had never been shown.
+**Cost if unresolved:** the Option C validation reported 30% accuracy and 14 hallucinations for a model that was in fact perfect, and the recommendation would have been made on that.
+**Detection:** the expected value in the failure message was an `[EMAIL_1]` placeholder for a field that is a person's name.
+**Fix:** the lookup matches raw text, not normalised text. The real finding underneath it is unchanged and is more serious: the name is *not* redacted at all — see F-015.
+
+### F-015 · The deterministic redactor misses almost everything that identifies a person
+**Owner:** Person B (found) → Person A (to fix) · **Phase:** 0/2 · **Status:** open
+Measured over the 200-document corpus (`make redaction-audit`):
+
+| Value | Caught |
+|---|---|
+| email | 200/200 (100%) |
+| phone | 200/200 (100%) |
+| street address | 200/200 (100%) |
+| account number | 153/200 (76.5%) |
+| **holder name** | **0/200 (0%)** |
+| **policy number** | **0/25 (0%)** |
+| **city** | **0/200 (0%)** |
+| **postcode** | **0/200 (0%)** |
+
+**Not one of the 200 documents comes out of the deterministic pass with no surviving personal value.** The text is reduced by 5.2%. `Category.NAME` exists in `privacy_router/redact.py` but has no pattern in `_PATTERNS`, so names are only ever caught by the model-assisted escalation — and the escalation is itself an outbound call carrying the source text. The alphanumeric account numbers (`POL-4825232-I`, `SUB-281674`) match neither `_ACCOUNT` nor `_ACCOUNT_GROUPED`.
+**Cost if unresolved:** the Phase 2 leak-rate number will be bad, and worse, the project will not have known it was bad until the night before the submission.
+**Detection:** the audit script, which was written for exactly this.
+**Fix:** Person A's Phase 2. The priority order is set by this table: names first (0%), then alphanumeric identifiers (0%), then city/postcode (0%).
+
+### F-016 · A parameter shadowed a function of the same name
+**Owner:** Person B · **Phase:** 0 · **Status:** fixed
+`generate_corpus(..., render: bool = False)` shadowed the module-level `render(spec)` function that turns a record into text, so the generator raised `TypeError: 'bool' object is not callable` the moment it was called as a library rather than from the command line.
+**Cost if unresolved:** the function could not be tested, and the tests are the only thing that would have caught F-011 and F-012.
+**Detection:** the test suite, on the first run.
+**Fix:** the parameter is `render_images`. The generator's entry point is now a function the tests can call.
+
+### F-017 · Nebius's catalog, Nebius's documentation and Nebius's cookbook all disagree
+**Owner:** Person B · **Phase:** 0 · **Status:** worked around
+Three sources disagreed about which models exist. The API catalog (28 models) has `nvidia/Nemotron-3.5-Super-VL`; the documentation's own example uses `Qwen/Qwen2-VL-72B-Instruct`, which the catalog does not serve; the cookbook's quickstart points at `nvidia/nemotron-3-nano-omni` and at a regional endpoint (`api.tokenfactory.us-central1.nebius.com`) rather than the global one the OpenShell profile binds. The same model is published under several casings.
+**Cost if unresolved:** a hand-typed model ID is a coin flip, and a 404 that reads like a credential problem will burn a debugging cycle every time.
+**Detection:** the catalog was fetched and compared with the runbook's model table.
+**Fix:** `make pin-models` reads the live catalog, resolves each role against it, refuses to pin a model the catalog does not serve, and writes a dated snapshot to `docs/model-catalog.md`. No model ID in this repo is hand-written. F-002 was right.
+
+### F-018 · The model the runbook names for OCR does not exist
+**Owner:** Person B · **Phase:** 0 · **Status:** fixed
+`docs/phase0-runbook.md:275` pinned `nvidia/NVIDIA-Nemotron-3-Nano-Omni` as the OCR tier. The catalog has no model by that name at all — not under any casing. The runbook also listed `Qwen/Qwen2.5-VL-72B-Instruct` as a comparison, and the catalog does not serve that either.
+**Cost if unresolved:** Phase 1 would have been built against a model that 404s on the first call, inside a sandbox where a 404 is hard to distinguish from a credential problem.
+**Detection:** the same catalog fetch.
+**Fix:** the runbook's model table is updated to the decided ID, and the benchmark's candidate list is derived from the catalog rather than hardcoded.
+
+### F-019 · A Super-tier model cannot be both the document reader and the redact target
+**Owner:** Person B (found) → Person A (to implement) · **Phase:** 0/2 · **Status:** open
+The headline claim is that personal details never reach a Super/Ultra tier. The document-reading model is Super-VL, which *is* a Super-tier model. The Phase 2 policy redacts traffic to Super and Ultra by model ID — so the OCR call and the redact target are the same knob.
+**Cost if unresolved:** either the OCR call breaks (the router mangles a base64 PNG it cannot meaningfully redact) or the claim is false. Discovering this in Phase 2, with a submission deadline two days out, would have been expensive.
+**Detection:** reading `sandbox/policy.yaml` against the model decision.
+**Fix:** Option C — extract locally, redact locally, then send only redacted text to the model. Validated with `make redacted-extract`: the model reproduced every placeholder exactly (13/13, zero hallucinations) and extracted every clear field perfectly. The Super-tier call then carries no personal detail at all. See `docs/ocr-decision.md`.
+
+### F-020 · No passwordless sudo, so the local OCR baseline could not be installed
+**Owner:** Person B · **Phase:** 0 · **Status:** worked around
+`tesseract` is not on the development host and `pacman -S` prompts for a password. The benchmark's local candidate was therefore SKIPPED — which is the F-013 scenario, one layer down.
+**Cost if unresolved:** the local path's accuracy would be unknown, and Option C's fallback (a low-confidence page sent to Super-VL as an image) could not be sized.
+**Detection:** `which tesseract` → nothing.
+**Fix:** `rapidocr-onnxruntime` was installed as a pip-only, no-sudo, zero-egress alternative and measures 93% field recovery at 1.33s and no cost. The real tesseract build still has to be measured **inside the sandbox image**, because that is where it will actually run. Person A to run that measurement.
+
+---
+
+### Pre-registered risks, now closed
+
+| Ref | Was | Now |
+|---|---|---|
+| F-002 | Model ID casing is inconsistent across Nebius's own docs | **Confirmed and worse than expected** — see F-017 and F-018. Every ID is now read from the live catalog. |
+| F-007 | Rate limits will bite during the leak test | **Not yet hit.** A 20-document, 5-model benchmark (100 calls) ran without a throttle. The 200-document, two-condition leak test is 10× that — still to be proven. |
 
 ---
 

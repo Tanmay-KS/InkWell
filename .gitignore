@@ -28,7 +28,13 @@ eval/synthetic_docs/*.jsonl
 eval/synthetic_docs/*.png
 
 # Phase 3/4 artifacts
-eval/results/
+# The Phase 0 results are small and are the evidence behind the model
+# decision and the privacy architecture, so they are kept. The Phase 2/3
+# results are large, regenerable, and produced late.
+eval/results/*
+!eval/results/ocr_bench.json
+!eval/results/redacted_extract.json
+!eval/results/redaction_audit.json
 video/recordings/
 *.mp4
 

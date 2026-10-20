@@ -1,0 +1,56 @@
+{
+  "model": "nvidia/Nemotron-3.5-Super-VL",
+  "docs": 19,
+  "prompt_tokens": 5293,
+  "completion_tokens": 9936,
+  "fields": {
+    "provider": {
+      "total": 19,
+      "correct": 19,
+      "redacted": 0,
+      "leaked_in_the_clear": 19,
+      "hallucinated": 0,
+      "missing": 0,
+      "examples": []
+    },
+    "renewal_date": {
+      "total": 19,
+      "correct": 19,
+      "redacted": 0,
+      "leaked_in_the_clear": 19,
+      "hallucinated": 0,
+      "missing": 0,
+      "examples": []
+    },
+    "amount": {
+      "total": 19,
+      "correct": 19,
+      "redacted": 0,
+      "leaked_in_the_clear": 19,
+      "hallucinated": 0,
+      "missing": 0,
+      "examples": []
+    },
+    "account_number": {
+      "total": 19,
+      "correct": 19,
+      "redacted": 13,
+      "leaked_in_the_clear": 6,
+      "hallucinated": 0,
+      "missing": 0,
+      "examples": []
+    },
+    "holder": {
+      "total": 19,
+      "correct": 19,
+      "redacted": 0,
+      "leaked_in_the_clear": 19,
+      "hallucinated": 0,
+      "missing": 0,
+      "examples": []
+    }
+  },
+  "errors": [
+    "doc-0014: could not parse a JSON object from: ''"
+  ]
+}
