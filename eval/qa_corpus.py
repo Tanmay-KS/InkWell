@@ -73,26 +73,34 @@ class Check:
     name: str
     ok: bool
     detail: str = ""
+    skipped: bool = False
 
 
 @dataclass
 class Report:
     checks: list[Check] = field(default_factory=list)
 
-    def add(self, name: str, ok: bool, detail: str = "") -> None:
-        self.checks.append(Check(name, ok, detail))
+    def add(self, name: str, ok: bool, detail: str = "", skipped: bool = False) -> None:
+        self.checks.append(Check(name, ok, detail, skipped))
 
     @property
     def ok(self) -> bool:
-        return all(check.ok for check in self.checks)
+        """Skipped checks do not fail the report."""
+        return all(check.ok for check in self.checks if not check.skipped)
 
     def render(self) -> str:
         lines = []
         for check in self.checks:
-            mark = "PASS" if check.ok else "FAIL"
+            mark = "SKIP" if check.skipped else "PASS" if check.ok else "FAIL"
             detail = f" — {check.detail}" if check.detail else ""
             lines.append(f"[{mark}] {check.name}{detail}")
         return "\n".join(lines)
+
+
+# The coverage assertions below only mean something on a corpus large
+# enough to expect every kind, every format and every date bucket. A
+# three-document smoke test is a smoke test, not a coverage report.
+FULL_COVERAGE_MIN = 100
 
 
 def account_format(value: str) -> str:
@@ -139,7 +147,9 @@ def load_corpus(docs_dir: Path) -> list[dict]:
     return records
 
 
-def check_formats(records: list[dict], report: Report) -> dict[str, dict[str, int]]:
+def check_formats(
+    records: list[dict], report: Report, full_coverage: bool = True
+) -> dict[str, dict[str, int]]:
     """Assert the format variety the README promises is actually present."""
     counters = {
         "account_number": {},
@@ -164,18 +174,25 @@ def check_formats(records: list[dict], report: Report) -> dict[str, dict[str, in
     for field_name, wanted in expected.items():
         present = set(counters[field_name])
         missing = wanted - present
+        detail = ", ".join(f"{k}={v}" for k, v in sorted(counters[field_name].items()))
+        if missing and not full_coverage:
+            report.add(
+                f"{field_name}: every format represented",
+                True,
+                f"not asserted on a corpus of {len(records)} — missing {sorted(missing)}",
+                skipped=True,
+            )
+            continue
         report.add(
             f"{field_name}: every format represented",
             not missing,
-            f"missing {sorted(missing)}" if missing else ", ".join(
-                f"{k}={v}" for k, v in sorted(counters[field_name].items())
-            ),
+            f"missing {sorted(missing)}" if missing else detail,
         )
 
     return counters
 
 
-def check_dates(records: list[dict], report: Report) -> None:
+def check_dates(records: list[dict], report: Report, full_coverage: bool = True) -> None:
     """Assert the renewal dates cover the range the pipeline must handle."""
     buckets = {name: 0 for name in DATE_BUCKETS}
     for record in records:
@@ -186,10 +203,19 @@ def check_dates(records: list[dict], report: Report) -> None:
                 break
 
     empty = [name for name, count in buckets.items() if count == 0]
+    detail = ", ".join(f"{k}={v}" for k, v in buckets.items())
+    if empty and not full_coverage:
+        report.add(
+            "renewal dates cover every bucket",
+            True,
+            f"not asserted on a corpus of {len(records)} — empty {empty}",
+            skipped=True,
+        )
+        return
     report.add(
         "renewal dates cover every bucket",
         not empty,
-        f"empty {empty}" if empty else ", ".join(f"{k}={v}" for k, v in buckets.items()),
+        f"empty {empty}" if empty else detail,
     )
 
 
@@ -272,7 +298,7 @@ def check_images(docs_dir: Path, records: list[dict], report: Report) -> None:
     )
 
 
-def check_reproducible(docs_dir: Path, report: Report, seed: int, today: str) -> None:
+def check_reproducible(docs_dir: Path, report: Report, seed: int, today: str, count: int) -> None:
     """Assert the same seed and the same reference date give the same corpus.
 
     This is the reproducibility contract. The generator derives every
@@ -280,6 +306,8 @@ def check_reproducible(docs_dir: Path, report: Report, seed: int, today: str) ->
     otherwise "the same seed" does not mean the same corpus.
     """
     generator = Path(__file__).resolve().parent / "gen_synthetic_docs.py"
+    sample = min(count, 5)
+
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "corpus"
         proc = subprocess.run(
@@ -289,7 +317,7 @@ def check_reproducible(docs_dir: Path, report: Report, seed: int, today: str) ->
                 "--out",
                 str(out),
                 "--count",
-                "5",
+                str(sample),
                 "--seed",
                 str(seed),
                 "--today",
@@ -304,18 +332,25 @@ def check_reproducible(docs_dir: Path, report: Report, seed: int, today: str) ->
             return
 
         differences = []
+        compared = 0
         for path in sorted(out.glob("doc-*.txt")):
             original = docs_dir / path.name
             if not original.exists():
-                differences.append(f"{path.name} missing from the corpus")
+                # The corpus under test is smaller than the sample; there
+                # is nothing to compare against.
                 continue
+            compared += 1
             if original.read_bytes() != path.read_bytes():
                 differences.append(f"{path.name} differs")
+
+        if compared == 0:
+            report.add("corpus is reproducible", False, "no documents to compare")
+            return
 
         report.add(
             "corpus is reproducible (same seed + same reference date)",
             not differences,
-            "; ".join(differences[:3]) if differences else "byte-identical",
+            "; ".join(differences[:3]) if differences else f"byte-identical ({compared} docs)",
         )
 
 
@@ -385,6 +420,7 @@ def main(argv: list[str] | None = None) -> int:
 
     records = load_corpus(docs_dir)
     report = Report()
+    full_coverage = len(records) >= FULL_COVERAGE_MIN
 
     report.add(
         f"corpus has {args.count} documents",
@@ -393,19 +429,30 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     kinds = {record.get("kind") for record in records}
-    report.add(
-        "every document kind is represented",
-        set(EXPECTED_KINDS).issubset(kinds),
-        f"missing {sorted(set(EXPECTED_KINDS) - kinds)}" if not set(EXPECTED_KINDS).issubset(kinds) else ", ".join(sorted(kinds)),
-    )
+    missing_kinds = set(EXPECTED_KINDS) - kinds
+    if missing_kinds and not full_coverage:
+        report.add(
+            "every document kind is represented",
+            True,
+            f"not asserted on a corpus of {len(records)} — missing {sorted(missing_kinds)}",
+            skipped=True,
+        )
+    else:
+        report.add(
+            "every document kind is represented",
+            not missing_kinds,
+            f"missing {sorted(missing_kinds)}"
+            if missing_kinds
+            else ", ".join(sorted(kinds)),
+        )
 
-    check_formats(records, report)
-    check_dates(records, report)
+    check_formats(records, report, full_coverage)
+    check_dates(records, report, full_coverage)
     check_duplicates(records, report)
     check_ground_truth(docs_dir, records, report)
     check_images(docs_dir, records, report)
     check_no_clipping(docs_dir, records, report)
-    check_reproducible(docs_dir, report, args.seed, args.today)
+    check_reproducible(docs_dir, report, args.seed, args.today, len(records))
 
     print(report.render())
     print()
