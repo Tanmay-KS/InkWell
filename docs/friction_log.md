@@ -201,6 +201,28 @@ After roughly 250 API calls across three benchmark runs in a single session, `ap
 **Detection:** the redacted-text bench reported "timed out" on every document. A single `curl -v` showed `Trying 213.239.161.19:443...` and then nothing.
 **Fix:** none yet, and none is needed for the work in flight — the redaction layer is entirely local and deterministic, and the Option C validation had already been run and committed (`eval/results/redacted_extract.json`) before the outage. What it does mean: **batch the benchmarks rather than running them back to back**, and keep the raw results committed so a decision never depends on being able to re-run it. If it persists, it is worth asking Nebius whether the project IP was rate-limited, because a 20-minute benchmark must not be able to take the whole project offline.
 
+### F-022 · The field-recovery metric was too forgiving, and it hid a dropped line
+**Owner:** Person B · **Phase:** 1 · **Status:** fixed
+The OCR benchmark scored the local extractor at 93% field recovery, and the pipeline then discovered that the extractor was **dropping whole lines** from the documents — a line carrying the renewal date and the amount simply came back absent, and the field score did not say so. The metric compares normalised text, so `Registeredaddress:1003BraddockBoulevard` still scored as a perfect address. It was measuring the right fields and hiding the wrong failure.
+**Cost if unresolved:** the local path looked fit for the pipeline when it was not, and the failure would have shown up as "the agent sometimes misses the amount" rather than "the OCR is losing lines".
+**Detection:** building the pipeline on top of the extractor. A document whose amount was missing turned out to be a document whose *line* was missing.
+**Fix:** a **line-coverage** metric alongside field recovery — the fraction of the source document's lines that survive the extraction. The local extractor scores 96% of fields and 85.5% of lines, and that gap is now visible instead of hidden.
+
+### F-023 · OCR damage has shapes, and two of them are repairable
+**Owner:** Person B · **Phase:** 1 · **Status:** worked around
+The extractor returns the text it guessed, and the guesses have shapes: the space after a colon or a comma is dropped (`Accountnumber:`), two words run together (`1003BraddockBoulevard`), a lowercase word loses its space (`Dateof expiry:`), and a character is misread (`Office` comes back as `0ffice`).
+The first three break every label-based parser, so a redactor and a deadline detector that need `Account number:` simply do not work on a scanned document.
+**Cost if unresolved:** the pipeline works on clean text and silently fails on real scans, which is the only kind that matters.
+**Detection:** the extracted text, read next to the source.
+**Fix:** `agent/ingestion/ocr_text.py` repairs the damage that has a shape — inserting the missing spaces, splitting run-together words, and rejoining the known document labels. The repair runs *before* the redaction, because a redactor that could not find the label has already failed. The misread character is not repairable and is not pretended to be: that is what the model-assisted extraction is for.
+
+### F-024 · A notice can carry more than one identifier
+**Owner:** Person B · **Phase:** 1 · **Status:** fixed
+An insurance renewal carries **both** a policy number (`POL-482913-Z`) and an account number (`1234-5678`). The first redaction of the account category was the policy number, and the first of the two was whichever the redactor reached first — so the draft quoted the account number to an insurer who wanted the policy number. A letter quoting the wrong identifier is worse than no letter.
+**Cost if unresolved:** the agent sends a real letter to a real company with the wrong reference in it.
+**Detection:** the test asserted the reference was the account number and the pipeline produced the policy number.
+**Fix:** the label in front of the identifier decides which one to quote, and the label is still in the redacted text next to the placeholder. The policy number wins over the account number, a membership number over both.
+
 ---
 
 ### Pre-registered risks, now closed

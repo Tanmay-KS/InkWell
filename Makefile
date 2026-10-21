@@ -103,6 +103,16 @@ redacted-extract: ## Can the model read redacted text? (Option C validation)
 	$(PY) $(EVAL)/redacted_extract_bench.py --docs $(EVAL)/synthetic_docs --count 20 \
 		--json $(EVAL)/results/redacted_extract.json
 
+# --- Phase 1: the pipeline --------------------------------------------------
+
+.PHONY: demo
+demo: ## Run the pipeline end to end over the corpus
+	$(PY) agent/demo.py --count 3
+
+.PHONY: pipeline
+pipeline: ## Process one document and show the deadline and the draft
+	$(PY) agent/demo.py $(DOC)
+
 .PHONY: ocr-bench
 ocr-bench: ## Compare OCR models on a sample of the corpus
 	$(PY) $(EVAL)/ocr_bench.py --docs $(EVAL)/synthetic_docs --count 10 \

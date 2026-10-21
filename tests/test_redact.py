@@ -152,6 +152,34 @@ def test_redact_with_a_model_is_not_implemented_yet():
         redact("Email sam@example.com", model="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B")
 
 
+def test_a_name_does_not_run_past_the_end_of_its_line():
+    """The separator between the words of a name is a space, not any
+    whitespace. With `\\s+` a name swallowed the first word of the next
+    line — "Policy holder: Devin Sullivan" ate the "Member" of
+    "Member number:"."""
+    result = local_redact("Policy holder: Devin Sullivan\nMember number: SUB-281674")
+    assert result.text == "Policy holder: [NAME_1]\nMember number: [ACCOUNT_1]"
+    assert "Member" in result.text
+
+
+def test_the_redaction_map_resolves_placeholders_back():
+    """The map is how the agent writes a useful draft without the value
+    ever travelling to the model."""
+    from privacy_router.redact import redacted_text
+
+    text, mapping = redacted_text("Member number: SUB-281674")
+    assert "SUB-281674" not in text
+    assert mapping.resolve(text) == "Member number: SUB-281674"
+
+
+def test_the_redaction_map_does_not_leak_in_its_repr():
+    """The map is a trapdoor, and a trapdoor should not print itself."""
+    from privacy_router.redact import redacted_text
+
+    _text, mapping = redacted_text("Member number: SUB-281674")
+    assert "SUB-281674" not in repr(mapping)
+
+
 # --- names ------------------------------------------------------------------
 #
 # The audit found holder names at 0% detected: `Category.NAME` existed but

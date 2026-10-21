@@ -9,7 +9,7 @@ sandbox with a declarative egress policy, and a privacy router strips your
 personal details from anything that leaves, so the expensive models and
 third-party search engines never see them.
 
-> **Status: Phase 0 complete — infra verification.**
+> **Status: Phase 0 complete, Phase 1 in progress.**
 > The stack is de-risked and the decisions are recorded. See
 > [`docs/phase0-runbook.md`](docs/phase0-runbook.md) for the infra side,
 > [`docs/ocr-decision.md`](docs/ocr-decision.md) for the model decision
@@ -22,13 +22,32 @@ third-party search engines never see them.
 |---|---|---|
 | Which model reads documents? | `nvidia/Nemotron-3.5-Super-VL` — 99% field recovery, $0.30/1M in | [`docs/ocr-decision.md`](docs/ocr-decision.md) |
 | How do personal details stay inside the sandbox? | Extract locally → redact locally → the model only ever reads redacted text | [`docs/ocr-decision.md`](docs/ocr-decision.md) |
-| What does the deterministic redactor miss? | Names, alphanumeric account numbers, policy numbers, city and postcode — **0% detected** | [`docs/redaction-audit.md`](docs/redaction-audit.md) |
+| What does the deterministic redactor miss? | Names, alphanumeric identifiers, city and postcode — now closed: **200/200 documents clean** with the household's names | [`docs/redaction-audit.md`](docs/redaction-audit.md) |
 | Which model IDs do we use? | Pinned from the live catalog, never hand-typed | [`docs/model-catalog.md`](docs/model-catalog.md) |
 
 The last row matters more than it looks: Nebius's web catalog, its API
 catalog and its cookbook disagree about which models exist, and the same
 model is published under several casings. Every model ID in this repo
 comes from the live catalog.
+
+### Phase 1 — the pipeline
+
+```
+document ──► ingestion ──► memory ──► deadlines ──► action
+             (local OCR,    (SQLite     (evidence      (a draft
+              then local     sidecar)    for every      the user
+              redaction)                 date)         sends)
+```
+
+```bash
+make demo      # run it over the corpus and print what it produced
+```
+
+**The whole pipeline runs without a model call.** That is the design, not
+a fallback: a renewal notice that says "your policy renews on 2027-03-07"
+does not need a language model, and a pipeline that does not need one
+cannot leak anything to one. The model is used where the text is prose
+rather than a form, and even then it only ever sees redacted text.
 
 ---
 

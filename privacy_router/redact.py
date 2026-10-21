@@ -41,6 +41,7 @@ from enum import StrEnum
 __all__ = [
     "Category",
     "Redaction",
+    "RedactionMap",
     "RedactionResult",
     "contains_personal_detail",
     "find_spans",
@@ -153,13 +154,17 @@ _NAME_LABEL = re.compile(
     r"(?i:\b(?:policy holder|member name|account holder|registered holder|"
     r"policy owner|plan holder|insured|applicant|payee|beneficiary|"
     r"subscriber|contact name|name)\s*:\s*)"
-    r"([A-Z][A-Za-z'’\-]*(?:\s+[A-Z][A-Za-z'’\-]*){0,3})"
+    # The separator between the words of a name is a space, never a
+    # newline. With `\s+` a name ran past the end of its line and
+    # swallowed the first word of the next one — "Policy holder: Devin
+    # Sullivan" ate the "Member" of "Member number:".
+    r"([A-Z][A-Za-z'’\-]*(?:[^\S\n]+[A-Z][A-Za-z'’\-]*){0,3})"
 )
 
 _NAME_SALUTATION = re.compile(
-    r"\b(?:Dear|Hello|Hi)\s+"
-    r"([A-Z][A-Za-z'’\-]*(?:\s+[A-Z][A-Za-z'’\-]*){0,2})"
-    r"(?=\s*[,.]|\s*\n)"
+    r"\b(?:Dear|Hello|Hi)[^\S\n]+"
+    r"([A-Z][A-Za-z'’\-]*(?:[^\S\n]+[A-Z][A-Za-z'’\-]*){0,2})"
+    r"(?=[^\S\n]*[,.]|\n)"
 )
 
 # Dates of birth only count when the surrounding text says so — a bare
@@ -259,6 +264,80 @@ class RedactionResult:
 
     def placeholders(self) -> list[str]:
         return [r.placeholder for r in self.redactions]
+
+
+@dataclass(slots=True)
+class RedactionMap:
+    """The placeholder → original value mapping for one document.
+
+    This is the piece that makes the whole design work.
+
+    The model never sees a personal detail: it reads text where the
+    account number is `[ACCOUNT_1]`. The agent still has to write a
+    useful draft, and a draft without the account number is useless. So
+    the mapping is kept **in the sandbox**, and the placeholders are
+    resolved back to the real values at the last moment — when the draft
+    is shown to the user, in the user's own channel, which is inside the
+    boundary.
+
+    The map is a trapdoor, so it is treated like one: it is not part of
+    the document's serialisable form, it does not appear in a repr, and
+    `resolve` is the only way out of it.
+    """
+
+    values: dict[str, str] = field(default_factory=dict)
+    _ordered: list[str] = field(default_factory=list, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        # Longest placeholder first, so `[ACCOUNT_1]` is not half-replaced
+        # by a shorter placeholder that happens to be a prefix of it.
+        self._ordered = sorted(self.values, key=len, reverse=True)
+
+    def resolve(self, text: str) -> str:
+        """Substitute the real values back into `text`.
+
+        This is the only way a personal detail leaves the redaction
+        layer, and it is deliberately explicit rather than implicit.
+        """
+        if not text:
+            return text
+        for placeholder in self._ordered:
+            original = self.values.get(placeholder)
+            if original:
+                text = text.replace(placeholder, original)
+        return text
+
+    def names(self) -> list[str]:
+        """The original values that were names.
+
+        The household's names, for feeding back into the next redaction
+        pass — the memory layer knows who the household is, and the
+        redactor should be told rather than having to guess.
+        """
+        return [original for placeholder, original in self.values.items() if "[NAME_" in placeholder]
+
+    def by_category(self, category: Category) -> list[str]:
+        """The original values that were redacted as `category`.
+
+        The account number, for instance. The agent needs the real one
+        to write a useful draft, and it is right here, in the sandbox.
+        """
+        prefix = f"[{category.value.upper()}_"
+        return [original for placeholder, original in self.values.items() if placeholder.startswith(prefix)]
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"RedactionMap({len(self.values)} placeholders, values withheld)"
+
+
+def redacted_text(text: str, *, names: Iterable[str] = ()) -> tuple[str, RedactionMap]:
+    """Redact `text` and return the redacted text with its map.
+
+    The pair has to travel together: the text is safe to send to a
+    model, and the map is what makes the result useful again. Keeping
+    them in one function makes it hard to send one without the other.
+    """
+    result = local_redact(text, names=names)
+    return result.text, RedactionMap({r.placeholder: r.original for r in result.redactions})
 
 
 def find_spans(

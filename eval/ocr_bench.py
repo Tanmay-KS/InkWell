@@ -62,6 +62,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from eval.scoring import (
     SCORED_FIELDS,
     AggregateScore,
+    line_coverage,
     render_field_table,
     score_document,
 )
@@ -112,10 +113,21 @@ class CandidateResult:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     errors: list[str] = field(default_factory=list)
+    coverage: list[float] = field(default_factory=list)
 
     @property
     def accuracy(self) -> float:
         return self.aggregate.accuracy
+
+    @property
+    def mean_coverage(self) -> float:
+        """How much of each source document survived the extraction.
+
+        Field recovery is forgiving about spacing; this is not. A line
+        that came back not at all leaves a hole in the document, and no
+        field score would say so.
+        """
+        return statistics.mean(self.coverage) if self.coverage else 0.0
 
     @property
     def mean_latency(self) -> float:
@@ -327,6 +339,7 @@ def evaluate(
 
                 truth = json.loads(truth_path.read_text(encoding="utf-8"))
                 result.aggregate.add(score_document(truth, extracted))
+                result.coverage.append(_coverage_of(docs_dir, doc_id, extracted))
                 result.docs += 1
 
             if result.errors and result.docs == 0:
@@ -377,6 +390,7 @@ def evaluate(
                 continue
             truth = json.loads(truth_path.read_text(encoding="utf-8"))
             result.aggregate.add(score_document(truth, extracted))
+            result.coverage.append(_coverage_of(docs_dir, truth_path.stem, extracted))
             result.docs += 1
 
         if result.errors and result.docs == 0:
@@ -394,10 +408,19 @@ def evaluate(
         extracted = text_path.read_text(encoding="utf-8")
         truth = json.loads(truth_path.read_text(encoding="utf-8"))
         result.aggregate.add(score_document(truth, extracted))
+        result.coverage.append(1.0)
         result.docs += 1
     results.append(result)
 
     return results
+
+
+def _coverage_of(docs_dir: Path, doc_id: str, extracted: str) -> float:
+    """How much of the source document survived this extraction."""
+    source_path = docs_dir / f"{doc_id}.txt"
+    if not source_path.exists():
+        return 0.0
+    return line_coverage(source_path.read_text(encoding="utf-8"), extracted)
 
 
 def render_table(results: list[CandidateResult]) -> str:
@@ -406,8 +429,8 @@ def render_table(results: list[CandidateResult]) -> str:
         return "_no candidates were evaluated_"
 
     lines = [
-        "| Candidate | Kind | Status | Docs | Field recovery | Mean | p95 | Tokens (in/out) | Cost |",
-        "|---|---|---|---:|---:|---:|---:|---|---:|",
+        "| Candidate | Kind | Status | Docs | Field recovery | Line coverage | Mean | p95 | Tokens (in/out) | Cost |",
+        "|---|---|---|---:|---:|---:|---:|---:|---|---:|",
     ]
     for r in results:
         status = "ok" if r.status == "ok" else f"SKIPPED — {r.skip_reason}"
@@ -415,7 +438,8 @@ def render_table(results: list[CandidateResult]) -> str:
         cost = f"${r.cost_usd:.4f}" if r.kind == "vision" else "—"
         lines.append(
             f"| `{r.name}` | {r.kind} | {status} | {r.docs} | "
-            f"{r.accuracy * 100:.1f}% | {r.mean_latency:.2f}s | "
+            f"{r.accuracy * 100:.1f}% | {r.mean_coverage * 100:.1f}% | "
+            f"{r.mean_latency:.2f}s | "
             f"{r.p95_latency:.2f}s | {tokens} | {cost} |"
         )
     return "\n".join(lines)
@@ -527,6 +551,7 @@ def main(argv: list[str] | None = None) -> int:
                 "fields_found": r.aggregate.fields_found,
                 "fields_total": r.aggregate.fields_total,
                 "accuracy": r.accuracy,
+                "line_coverage": r.mean_coverage,
                 "per_field": {
                     field_name: {
                         "found": r.aggregate.per_field_found.get(field_name, 0),
