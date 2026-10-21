@@ -12,18 +12,45 @@
 **Goal:** De-risk the stack before building anything user-facing.
 
 ### Person A
-- [ ] Deploy/run Hermes Agent inside an NVIDIA OpenShell sandbox
-- [ ] Confirm model calls from inside the sandbox actually route to Nebius Token Factory (not a local or default endpoint)
-- [ ] Document exact auth/config steps needed (API keys, sandbox policy file, network rules) — this becomes the setup section of the README later
-- [ ] Flag any blocking issue immediately to Person B
+- [x] Deploy/run Hermes Agent inside an NVIDIA OpenShell sandbox
+- [x] Confirm model calls from inside the sandbox actually route to Nebius Token Factory (not a local or default endpoint)
+- [x] Document exact auth/config steps needed (API keys, sandbox policy file, network rules) — this becomes the setup section of the README later
+- [x] Flag any blocking issue immediately to Person B
 
 ### Person B
-- [ ] Identify available OCR/vision models on Token Factory (or confirm fallback, e.g. an open OCR library) for document ingestion
-- [ ] Set up repo skeleton: folder structure, `.env.example`, basic CI/lint if time allows
-- [ ] Draft ~200 synthetic documents containing fake personal details (names, account numbers, addresses, renewal dates) — needed later for the Phase 2 leak test, start early since it's tedious
-- [ ] Start a shared friction log doc (both people append to it all week)
+- [x] Identify available OCR/vision models on Token Factory (or confirm fallback, e.g. an open OCR library) for document ingestion
+- [x] Set up repo skeleton: folder structure, `.env.example`, basic CI/lint if time allows
+- [x] Draft ~200 synthetic documents containing fake personal details (names, account numbers, addresses, renewal dates) — needed later for the Phase 2 leak test, start early since it's tedious
+- [x] Start a shared friction log doc (both people append to it all week)
 
 **Exit condition (joint):** Hermes+OpenShell+Token Factory confirmed working by EOD Oct 20. If not, jointly decide to pivot to the simpler/fallback stack before Phase 1 starts.
+
+**Status (closed 2026-10-21, one day past the EOD Oct 20 target).** The exit
+condition is met: Hermes v0.22.2 ran inside the `ledger-hermes` sandbox, a
+real inference call on `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` returned
+`LEDGER-OK`, the effective policy carries the provider rule naming the
+actual Python interpreter, and an outbound request to `https://example.com/`
+was refused. Evidence and the per-item breakdown are in
+`docs/phase0-runbook.md`; the full record of what broke is in
+`docs/friction_log.md`.
+
+**Carried into Phase 1 — not blocking, but open:**
+
+- `sandbox/verify.sh` is the automated form of the exit condition and must
+  be run **on the gateway host**, where the CLI holds the matching mTLS
+  client bundle. From another machine it reports the checks it cannot
+  evaluate as SKIP rather than as failures.
+- The verifier's two *negative* tests — the credential placeholder being
+  refused on a policy-allowed host it is not bound to, and the agent being
+  refused when pointed at another base URL — are stronger than the plan
+  requires and were **not** confirmed by an automated run. They are the
+  difference between "routing is configured" and "routing is enforced by
+  the runtime", so they become the first thing to confirm in Phase 2.
+- GitHub Actions CI is still missing (B2 said "if time allows"; the lint
+  and test configuration exists, the workflow does not).
+- Two models named in planning do not exist on Token Factory
+  (`nvidia/NVIDIA-Nemotron-3-Nano-Omni`, `Qwen/Qwen2.5-VL-72B-Instruct`).
+  The OCR model was re-chosen from the live catalog — see the runbook.
 
 ---
 

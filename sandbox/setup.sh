@@ -137,7 +137,7 @@ install_openshell_from_rpm() {
         die "bsdtar is required to extract the RPMs on a non-deb/rpm host (pacman -S libarchive)"
     fi
 
-    local arch pkg tmpdir file
+    local arch pkg tmpdir file stage_dir
     case "$(uname -m)" in
         x86_64|amd64) arch="x86_64" ;;
         aarch64|arm64) arch="aarch64" ;;
@@ -145,6 +145,8 @@ install_openshell_from_rpm() {
     esac
 
     tmpdir="$(mktemp -d)"
+    stage_dir="${tmpdir}/stage"
+    mkdir -p "$stage_dir"
 
     if [ "$DRY_RUN" -eq 1 ]; then
         info "would download and extract the openshell, openshell-gateway and openshell-prover ${OPENSHELL_VERSION} rpms"
@@ -159,8 +161,23 @@ install_openshell_from_rpm() {
         curl -LsSf --retry 3 -o "${tmpdir}/${file}" \
             "https://github.com/NVIDIA/OpenShell/releases/download/${OPENSHELL_VERSION}/${file}" \
             || { rm -rf "$tmpdir"; die "failed to download ${file}"; }
-        bsdtar xf "${tmpdir}/${file}" -C / || { rm -rf "$tmpdir"; die "failed to extract ${file}"; }
+        bsdtar xf "${tmpdir}/${file}" -C "$stage_dir" || {
+            rm -rf "$tmpdir"
+            die "failed to stage ${file}"
+        }
     done
+
+    if [ ! -d "${stage_dir}/usr" ]; then
+        rm -rf "$tmpdir"
+        die "staged RPMs did not contain the expected /usr directory"
+    fi
+
+    info "installing staged OpenShell files into /usr (sudo required)"
+    sudo cp -a "${stage_dir}/usr/." /usr/ || {
+        rm -rf "$tmpdir"
+        die "failed to install staged OpenShell files into /usr"
+    }
+
     rm -rf "$tmpdir"
     ok "OpenShell binaries installed"
 
@@ -209,6 +226,126 @@ preflight_docker() {
     die "Docker is required before the rest of the setup can run"
 }
 
+# Read a scalar value out of a TOML table. Prints the value, or nothing when
+# the table or the key is absent. Good enough for the flat keys this script
+# has to assert on.
+toml_table_get() {
+    local file="$1" table="$2" key="$3"
+    awk -v want_table="$table" -v want_key="$key" '
+        /^[[:space:]]*\[/ {
+            current = $0
+            sub(/^[[:space:]]*\[/, "", current)
+            sub(/\][[:space:]]*$/, "", current)
+            gsub(/[[:space:]]/, "", current)
+            next
+        }
+        {
+            line = $0
+            sub(/[[:space:]]*#.*$/, "", line)
+            if (current == want_table && line ~ ("^[[:space:]]*" want_key "[[:space:]]*=")) {
+                sub(/^[^=]*=[[:space:]]*/, "", line)
+                gsub(/^"|"$/, "", line)
+                print line
+                exit
+            }
+        }
+    ' "$file"
+}
+
+# OpenShell 0.1.4 refuses caller-supplied driver config unless the selected
+# driver opts in. The opt-in lives in the DRIVER table
+# ([openshell.drivers.docker]), not in [openshell.gateway], and it is what
+# lets `sandbox create --driver-config-json` attach the persistent volume.
+driver_config_enabled() {
+    [ "$(toml_table_get "$1" "openshell.drivers.docker" "allow_driver_config")" = "true" ]
+}
+
+# Restart the gateway so a changed configuration is actually loaded. The
+# gateway reads its TOML at startup; there is no runtime reload.
+restart_gateway() {
+    if command -v systemctl >/dev/null 2>&1 \
+       && systemctl --user is-active openshell-gateway >/dev/null 2>&1; then
+        systemctl --user restart openshell-gateway
+        ok "gateway service restarted"
+        return 0
+    fi
+
+    local pid
+    pid="$(pgrep -u "$(id -u)" -x openshell-gateway 2>/dev/null | head -1 || true)"
+    if [ -n "$pid" ]; then
+        warn "the gateway (pid ${pid}) is not a systemd --user service and was NOT restarted."
+        warn "  it still runs the OLD configuration — restart it before creating a sandbox:"
+        warn "    systemctl --user restart openshell-gateway"
+        return 1
+    fi
+
+    warn "no running gateway found. Start it with:"
+    warn "  systemctl --user enable --now openshell-gateway"
+    return 1
+}
+
+# Install the repository gateway template as the active configuration.
+#
+# The template in sandbox/gateway.toml is the source of truth. It used to be
+# copied over the active file on every run, which is exactly why a manual
+# `allow_driver_config = true` edit kept disappearing: the next setup run
+# replaced the file with the template, and the template did not have the key.
+# The key now lives in the template (in the driver table, where OpenShell
+# 0.1.4 expects it), so it survives every future run.
+#
+# Idempotent: an unchanged configuration is neither copied nor restarted.
+sync_gateway_config() {
+    local gw_dir="${HOME}/.config/openshell"
+    local active="${gw_dir}/gateway.toml"
+    mkdir -p "$gw_dir"
+
+    local backup=""
+    local changed=1
+    if [ -f "$active" ] && cmp -s "$GATEWAY_TOML" "$active"; then
+        changed=0
+    else
+        if [ -f "$active" ]; then
+            backup="${active}.bak.$(date +%Y%m%d%H%M%S)"
+            cp "$active" "$backup"
+            warn "active gateway.toml differs from the template — backed it up to ${backup}"
+        fi
+        cp "$GATEWAY_TOML" "$active"
+        info "installed ${GATEWAY_TOML} -> ${active}"
+    fi
+
+    # Preflight the ACTIVE file: that is the one the gateway will read.
+    if command -v openshell-gateway >/dev/null 2>&1; then
+        if ! openshell-gateway config preflight --path "$active"; then
+            if [ -n "$backup" ] && [ -f "$backup" ]; then
+                cp "$backup" "$active"
+                warn "restored the previous gateway.toml after the preflight failure"
+            fi
+            die "gateway.toml failed preflight — fix ${GATEWAY_TOML}"
+        fi
+        ok "active gateway.toml passed preflight"
+    else
+        warn "openshell-gateway not found — skipping preflight"
+    fi
+
+    # Guard the exact failure this project hit. A template without the opt-in
+    # makes every sandbox create fail with
+    # "caller driver config is disabled", so fail here with a clear message
+    # instead of much later.
+    if ! driver_config_enabled "$active"; then
+        die "allow_driver_config = true is missing from [openshell.drivers.docker] in ${active}
+     Without it OpenShell rejects --driver-config-json:
+       caller driver config is disabled; a gateway administrator must enable allow_driver_config
+     Add it to sandbox/gateway.toml (the source of truth) and re-run."
+    fi
+    ok "caller driver config is enabled for the docker driver"
+
+    if [ "$changed" -eq 1 ]; then
+        restart_gateway || warn "the gateway may still be running the previous configuration"
+    else
+        info "gateway configuration unchanged — no restart needed"
+    fi
+}
+
 register_gateway() {
     step "Gateway"
 
@@ -219,28 +356,7 @@ register_gateway() {
         return
     fi
 
-    local gw_dir="${HOME}/.config/openshell"
-    mkdir -p "$gw_dir"
-    if [ -f "${gw_dir}/gateway.toml" ] && ! cmp -s "$GATEWAY_TOML" "${gw_dir}/gateway.toml"; then
-        cp "${gw_dir}/gateway.toml" "${gw_dir}/gateway.toml.bak.$(date +%Y%m%d%H%M%S)"
-        warn "existing gateway.toml differs — backed it up and overwriting"
-    fi
-    cp "$GATEWAY_TOML" "${gw_dir}/gateway.toml"
-
-    if command -v openshell-gateway >/dev/null 2>&1; then
-        openshell-gateway config preflight --path "${gw_dir}/gateway.toml" \
-            || die "gateway.toml failed preflight — fix ${GATEWAY_TOML}"
-        ok "gateway.toml passed preflight"
-    else
-        warn "openshell-gateway not found — skipping preflight"
-    fi
-
-    # Restart the user service if it is managed by systemd; otherwise the
-    # gateway may already be running from the installer.
-    if command -v systemctl >/dev/null 2>&1 && systemctl --user is-active openshell-gateway >/dev/null 2>&1; then
-        systemctl --user restart openshell-gateway
-        ok "gateway service restarted"
-    fi
+    sync_gateway_config
 
     if ! openshell gateway list 2>/dev/null | grep -q "${GATEWAY_NAME}"; then
         openshell gateway add "${GATEWAY_URL}" --local --name "${GATEWAY_NAME}" || warn "gateway add failed"
@@ -364,24 +480,64 @@ create_volume() {
     # Do NOT swap this for a bind mount.
     if [ "$DRY_RUN" -eq 1 ]; then
         info "would run: docker volume create --label openshell.ai/sandbox-attachable=true ..."
+        info "would verify the resource-admission labels on ${VOLUME_NAME}"
         info "would chown the volume to UID 10000"
         return
     fi
 
-    docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1 \
-        || docker volume create \
+    # The volume is NEVER deleted or recreated: it holds the persistent
+    # Hermes state. `docker volume create` on an existing name is a no-op, so
+    # this is safe to run repeatedly.
+    if ! docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
+        docker volume create \
             --label openshell.ai/sandbox-attachable=true \
             --label openshell.ai/sandbox-attachable-workspace=default \
             "$VOLUME_NAME" >/dev/null
+    fi
     ok "volume ${VOLUME_NAME} exists"
 
+    # OpenShell 0.1.4 admits external resources (this volume) by OPERATOR
+    # LABEL, not by name. With resource admission enabled — the default, and
+    # the setting in sandbox/gateway.toml — a volume without both labels is
+    # rejected with "external resource not admitted by required labels".
+    #
+    # Docker cannot add a label to an existing volume, so a volume that is
+    # missing one cannot be repaired in place. Fail loudly instead of
+    # silently recreating it: recreating would DESTROY the persistent data.
+    local label_ok=1
+    local want_key want_value
+    for pair in "openshell.ai/sandbox-attachable=true" \
+                "openshell.ai/sandbox-attachable-workspace=default"; do
+        want_key="${pair%%=*}"
+        want_value="${pair#*=}"
+        local actual
+        actual="$(docker volume inspect -f '{{ index .Labels "'"${want_key}"'" }}' "$VOLUME_NAME" 2>/dev/null || true)"
+        if [ "$actual" != "$want_value" ]; then
+            label_ok=0
+            fail "volume ${VOLUME_NAME} is missing the resource-admission label ${want_key}=${want_value} (found: '${actual:-<none>}')"
+        fi
+    done
+    if [ "$label_ok" -ne 1 ]; then
+        die "OpenShell will refuse to attach ${VOLUME_NAME} without these labels.
+     The volume is NOT recreated automatically — that would delete the persistent
+     Hermes state. Either add the labels by hand, or (if the data is disposable)
+     recreate it yourself:
+       docker volume rm ${VOLUME_NAME}
+       docker volume create --label openshell.ai/sandbox-attachable=true \\
+         --label openshell.ai/sandbox-attachable-workspace=default ${VOLUME_NAME}"
+    fi
+    ok "volume carries the resource-admission labels"
+
     # The container runs as UID 10000 (the image's `hermes` account). A fresh
-    # volume is owned by root, so hand it over before the first boot.
+    # volume is owned by root, so hand it over before the first boot. Use the
+    # image this script just built rather than pulling the upstream image
+    # again; -R because a volume that a root-run image used earlier can hold
+    # root-owned subdirectories that UID 10000 could not write to.
     docker run --rm --user 0 \
         -v "${VOLUME_NAME}:/data" \
         --entrypoint sh \
-        nousresearch/hermes-agent:latest \
-        -c 'chown 10000:10000 /data' >/dev/null 2>&1 \
+        "$IMAGE_NAME" \
+        -c 'chown -R 10000:10000 /data' >/dev/null 2>&1 \
         || warn "could not chown the volume — the agent may fail to write state"
     ok "volume ownership set to 10000:10000"
 }
@@ -400,13 +556,23 @@ create_sandbox() {
 
     if openshell sandbox list 2>/dev/null | grep -q "${SANDBOX_NAME}"; then
         ok "sandbox ${SANDBOX_NAME} already exists — recreating so it picks up policy changes"
+        # Deleting the sandbox does NOT touch the persistent volume: the
+        # volume is a separate Docker object and is only attached here.
         openshell sandbox delete "$SANDBOX_NAME" >/dev/null 2>&1 || true
     fi
 
     # The policy sets run_as_user 10000, so OpenShell will not accept the
     # image's root USER without it. The volume is attached via driver config,
-    # which requires allow_driver_config and the attachable label.
-    openshell sandbox create \
+    # which requires allow_driver_config = true in [openshell.drivers.docker]
+    # (see sandbox/gateway.toml) plus the attachable label on the volume.
+    #
+    # The command after `--` is the CANONICAL MAIN PROCESS: OpenShell runs it
+    # verbatim as program+argv (MainProcessConfig.command). The image's
+    # ENTRYPOINT/CMD are NOT used — the Docker driver overrides the
+    # container entrypoint with the OpenShell sandbox runtime — so the
+    # command must name the program explicitly. A bare `-- chat` would try
+    # to exec a program called "chat" and fail.
+    if ! openshell sandbox create \
         --name "$SANDBOX_NAME" \
         --from "$IMAGE_NAME" \
         --policy "$POLICY_YAML" \
@@ -414,8 +580,16 @@ create_sandbox() {
         --driver-config-json "{\"docker\":{\"mounts\":[{\"type\":\"volume\",\"source\":\"${VOLUME_NAME}\",\"target\":\"/opt/data\",\"read_only\":false}]}}" \
         --restart-policy on-failure \
         --detach \
-        -- chat \
-        || die "sandbox creation failed"
+        -- /usr/local/bin/hermes-direct chat; then
+        die "sandbox creation failed.
+     If the error was 'caller driver config is disabled', the running gateway
+     does not have the opt-in yet:
+       - check:   grep -A3 '\\[openshell.drivers.docker\\]' ~/.config/openshell/gateway.toml
+       - fix:     add 'allow_driver_config = true' to that table
+       - reload:  systemctl --user restart openshell-gateway
+     The gateway reads its configuration at startup; editing the file alone
+     does not change the running gateway."
+    fi
 
     ok "sandbox ${SANDBOX_NAME} created"
 }
@@ -481,6 +655,12 @@ BANNER
         create_providers
         build_image
         create_volume
+    else
+        # --up refreshes the sandbox only, but the sandbox cannot be created
+        # unless the running gateway allows caller driver config. Keep the
+        # active gateway configuration in sync here too, otherwise --up fails
+        # with "caller driver config is disabled" and no hint about the cause.
+        sync_gateway_config
     fi
 
     create_sandbox

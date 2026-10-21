@@ -5,7 +5,13 @@
 #
 # Run it as an OpenShell sandbox:
 #   openshell sandbox create --name ledger-hermes \
-#     --from ledger-hermes:local --policy sandbox/policy.yaml -- chat
+#     --from ledger-hermes:local --policy sandbox/policy.yaml \
+#     -- /usr/local/bin/hermes-direct chat
+#
+# The command after "--" is the canonical main process and is run verbatim
+# (program + argv). The image ENTRYPOINT is not used: the OpenShell Docker
+# driver overrides the container entrypoint with the OpenShell sandbox
+# runtime, so the program has to be named explicitly.
 #
 # The upstream image is nousresearch/hermes-agent (Nous Research, MIT).
 # We inherit it whole rather than rebuilding Hermes from source: the image
@@ -19,9 +25,9 @@ USER root
 
 # Document ingestion needs an OCR fallback and a PDF text extractor. The
 # primary extraction path is the vision model on Token Factory
-# (nvidia/NVIDIA-Nemotron-3-Nano-Omni), but a local extractor keeps a
-# document readable when the model call is unavailable or when a page must
-# never leave the sandbox at all.
+# (nvidia/Nemotron-3.5-Super-VL — see docs/ocr-decision.md), but a local
+# extractor keeps a document readable when the model call is unavailable or
+# when a page must never leave the sandbox at all.
 RUN apt-get -o Acquire::Retries=3 update && \
     apt-get install -y --no-install-recommends \
         tesseract-ocr \
@@ -46,6 +52,7 @@ RUN mkdir -p /sandbox && chown 10000:10000 /sandbox
 # provides process supervision at the sandbox level via --restart-policy.
 #
 # See sandbox/docker-entrypoint.sh for the rationale.
+COPY --chmod=755 sandbox/docker-entrypoint.sh /usr/local/bin/hermes-direct
 USER 10000
 ENTRYPOINT ["/usr/local/bin/hermes-direct"]
 CMD ["chat"]

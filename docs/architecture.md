@@ -66,7 +66,7 @@ household memory, a messaging gateway, and a skills system.
                     ┌─────────────────▼──────────────────┐
                     │  Nebius Token Factory               │
                     │  Nano (redaction) / Super / Ultra    │
-                    │  Nano-Omni (OCR)                     │
+                    │  Super-VL (OCR)                       │
                     └─────────────────────────────────────┘
 ```
 
@@ -77,7 +77,8 @@ household memory, a messaging gateway, and a skills system.
 1. A document (PDF, image, email) arrives — in the demo, from a file drop or
    a forwarded email.
 2. `agent/ingestion/parse_documents.py` extracts text. The primary path is a
-   vision model on Token Factory (`nvidia/NVIDIA-Nemotron-3-Nano-Omni`);
+   vision model on Token Factory (`nvidia/Nemotron-3.5-Super-VL`, pinned via
+   `LEDGER_MODEL_OCR`);
    a local extractor is the fallback and the zero-egress path.
 3. `agent/memory/hermes_memory.py` records what the household already knows
    and what has already been handled.

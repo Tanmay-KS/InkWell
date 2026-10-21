@@ -46,6 +46,10 @@ sandbox/local/
 openshell.db
 tls/
 
+# The host bootstrap copies the gateway's mTLS client bundle here so a CLI
+# running elsewhere can authenticate. These are credentials — never commit.
+.openshell/
+
 # --- Editors / OS ----------------------------------------------------------
 .DS_Store
 .idea/

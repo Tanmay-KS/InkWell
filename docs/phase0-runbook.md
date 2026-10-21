@@ -125,6 +125,23 @@ systemctl --user restart openshell-gateway
 The file pins `compute_driver = "docker"`. The MicroVM driver is never
 auto-detected and would additionally require KVM.
 
+It also enables **caller driver config** for that driver:
+
+```toml
+[openshell.drivers.docker]
+allow_driver_config = true
+```
+
+This is what makes step 7's `--driver-config-json` (the volume attachment)
+possible. OpenShell 0.1.4 disables caller-supplied driver config for every
+compute driver by default, and the switch lives in the **driver table** — not
+in `[openshell.gateway]`, which the gateway rejects as an unknown key.
+
+> **The gateway reads its TOML at startup.** Editing the file does not change
+> a running gateway. After changing it: `systemctl --user restart
+> openshell-gateway`. `sandbox/setup.sh` does the copy, the preflight and the
+> restart for you, and refuses to continue if the opt-in is missing.
+
 ---
 
 ## 3. Import the provider profiles
@@ -233,8 +250,16 @@ openshell sandbox create \
   --driver-config-json '{"docker":{"mounts":[{"type":"volume","source":"ledger-hermes-data","target":"/opt/data","read_only":false}]}}' \
   --restart-policy on-failure \
   --detach \
-  -- chat
+  -- /usr/local/bin/hermes-direct chat
 ```
+
+> **The command after `--` is the canonical main process, run verbatim.**
+> OpenShell stores it as `{"command": ["<program>", "<args>"]}` and executes
+> exactly that — it is *not* passed through a shell, and the image's
+> `ENTRYPOINT`/`CMD` are **ignored** (the Docker driver replaces the
+> container entrypoint with the OpenShell sandbox runtime). So `-- chat` asks
+> the sandbox to exec a program literally named `chat`, which does not exist
+> in the image; the correct form names the program, as above.
 
 `bash sandbox/setup.sh --check` runs `bash sandbox/verify.sh`, which performs
 every check in 7.1–7.6 below.
@@ -358,14 +383,25 @@ The target reads the live catalog, resolves each role against it,
 into `.env`, and writes a dated snapshot of the catalog to
 `docs/model-catalog.md`.
 
-The three tiers map to the plan's cost/latency table in Phase 3:
+**The catalog is the only authority.** Every published source spells these
+differently, and two of the IDs quoted in planning do not exist at all
+(friction log F-024). The 28 models the catalog actually served, with
+prices, are mapped to the plan's tiers here — the cost/latency table in
+Phase 3 is a Nemotron tier table:
 
-| Plan tier | Model | Role |
-|---|---|---|
-| Nano | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | redaction, classification, cheap side-jobs |
-| Super | `nvidia/Nemotron-3.5-Super-VL` | main agent reasoning **and** document understanding |
-| Ultra | `nvidia/Nemotron-3-Ultra-550b-a55b` | hardest reasoning, long-horizon agent work |
-| OCR | `nvidia/Nemotron-3.5-Super-VL` | document understanding (Phase 1 ingestion) |
+| Plan tier | Model | Context | $/1M in/out | Role |
+|---|---|---:|---:|---|
+| Nano | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | 256K | 0.06 / 0.24 | redaction, classification, cheap side-jobs |
+| Lightning | `nvidia/Nemotron-3_5-Lightning` | 1M | 0.06 / 0.24 | fast cheap tier |
+| Super | `nvidia/Nemotron-3.5-Super-VL` | 1M | 0.30 / 0.90 | main agent reasoning **and** document understanding |
+| Super (text-only) | `nvidia/nemotron-3-super-120b-a12b` | 256K | 0.30 / 0.90 | the model `sandbox/policy.yaml` names in `redact_models` |
+| Ultra | `nvidia/Nemotron-3-Ultra-550b-a55b` | 1M | 1.00 / 3.00 | hardest reasoning, long-horizon agent work |
+| OCR | `nvidia/Nemotron-3.5-Super-VL` | 1M | 0.30 / 0.90 | document understanding (Phase 1 ingestion) |
+| Comparator | `openbmb/MiniCPM-V-4_5` | 32K | 0.66 / 1.11 | vision — the candidate the second benchmark run preferred (F-032) |
+
+Note that `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` **rejects image input**
+("This model does not support image input"). The redaction tier is
+text-only, which is fine — redaction operates on text.
 
 > **The Super tier is multimodal.** `nvidia/Nemotron-3.5-Super-VL` is the
 > 120B variant that takes an image; `nvidia/nemotron-3-super-120b-a12b`
@@ -380,6 +416,64 @@ The three tiers map to the plan's cost/latency table in Phase 3:
 > **not served by the API at all**, under any casing — and the same model
 > is published under several casings. See F-017 and F-018 in the
 > friction log.
+
+### The OCR decision — two runs, two winners
+
+**Run 1 — 20 documents, five vision models, live API** (`docs/ocr-decision.md`):
+
+| Candidate | Field recovery | Mean | p95 | Tokens (in/out) | Cost |
+|---|---:|---:|---:|---|---:|
+| `nvidia/Nemotron-3.5-Super-VL` | **99.0%** | 3.98s | 5.50s | 29,340 / 16,590 | $0.0237 |
+| `zai-org/GLM-5.3-Flash` | 100.0% | 3.54s | 4.22s | 37,100 / 5,881 | $0.0085 |
+| `deepseek-ai/DeepSeek-V4.1-Flash` | 100.0% | 2.86s | 3.67s | 18,460 / 4,885 | $0.0114 |
+| `Qwen/Qwen3.8-27B` | 100.0% | 2.50s | 3.16s | 29,180 / 4,110 | $0.0255 |
+| `openbmb/MiniCPM-V-4_5` | 100.0% | 4.25s | 5.34s | 10,340 / 7,568 | $0.0152 |
+| `local-rapidocr` (zero egress) | 93.0% | 1.33s | 1.57s | — | $0 |
+| `local-text` (baseline) | 100.0% | — | — | — | — |
+
+**`nvidia/Nemotron-3.5-Super-VL` is the OCR model of record.** It is the
+weakest of the five vision models on this corpus and it costs more per
+document than the mid-priced ones. It was chosen anyway for three reasons:
+the gap to the leaders is one field on one document out of twenty (`amount`
+at 95% is inside the noise of a 20-document sample), it is the Nemotron
+model — the Phase 3 cost/latency table is a Nemotron tier table — and it is
+the cheapest model from a major lab that is both multimodal and 1M-context.
+The full reasoning, and the privacy architecture built on top of it, are in
+[`docs/ocr-decision.md`](ocr-decision.md).
+
+**Run 2 — 30 rendered scans, with the local extractor measured too:**
+
+| Candidate | Kind | Docs | Field recovery | Mean latency | p95 | $/doc |
+|---|---|---:|---:|---:|---:|---:|
+| `openbmb/MiniCPM-V-4_5` | vision | 30 | 98.0% | 2.85s | 3.28s | $0.00050 |
+| `nvidia/Nemotron-3.5-Super-VL` | vision | 30 | 96.0% | 4.26s | 4.92s | $0.00124 |
+| `local-tesseract` | local | 30 | 86.7% | 0.36s | 0.40s | $0 |
+| `local-text` (baseline) | text | 30 | 100.0% | — | — | $0 |
+
+This run points at **`openbmb/MiniCPM-V-4_5`**: it reads better than
+Super-VL here and costs 2.5× less per document, because disabling its
+thinking cuts the output tokens from 26,621 to 4,377 across the same 30
+documents. At 200 documents it costs **$0.10**. It is also the only run
+with the local `tesseract` fallback measured: **86.7% recovery at 0.36s
+with zero egress** — that is the number the zero-egress path depends on,
+and it is why the benchmark reports a SKIPPED row rather than hiding a
+missing candidate.
+
+**Run 2 does not overturn the decision of record — it opens it.** The two
+runs used different corpora and different candidate sets, so they are not
+contradictory measurements; MiniCPM scores at or above Super-VL in both.
+But they disagree on the winner, and the choice is a product decision, not
+a merge detail: Super-VL is a Super-tier model, so using it as the
+document reader is exactly what forces the "extract locally, redact
+locally" architecture (F-019) that was validated against it. Re-deciding
+means re-validating that architecture against a different reader.
+
+**Open item:** the OCR model choice is carried into Phase 1 as the first
+thing to settle — see F-032. Until then Super-VL is the pinned OCR model
+(`eval/pin_models.py`), and `docs/ocr-decision.md` is the decision record.
+
+Reproduce with `make ocr-bench`; the committed run is in
+`eval/results/ocr_bench.json`.
 
 ---
 
@@ -402,6 +496,10 @@ notice.
 The winner becomes the Phase 1 ingestion path. The decision and its
 numbers are in [`docs/ocr-decision.md`](ocr-decision.md).
 
+> **Two runs, two winners.** Section 8 records a second benchmark run that
+> preferred a different candidate. The decision of record is still
+> `docs/ocr-decision.md`; the disagreement is open as F-032.
+
 > **Run `make corpus-qa` before you believe a benchmark.** The corpus
 > renders a page per document, and the renderer used to truncate long
 > lines off the right edge — so the "scan" was a partial document and
@@ -421,6 +519,9 @@ numbers are in [`docs/ocr-decision.md`](ocr-decision.md).
 | sandbox stuck in `Provisioning` | invalid policy or conflicting provider config | `openshell sandbox get <sandbox> --output json` and read the `ConfigurationInvalid` condition |
 | `ImagePreparationTimedOut` | the image took longer than the 1800s preparation budget | raise `image_preparation_timeout_seconds` in the gateway TOML |
 | model call 404 "model not found" | wrong model ID casing | re-pin from `/v1/models?verbose=true` |
+| `caller driver config is disabled; a gateway administrator must enable allow_driver_config` | the gateway rejects `--driver-config-json` because caller driver config is off | add `allow_driver_config = true` to `[openshell.drivers.docker]` in `sandbox/gateway.toml`, then `systemctl --user restart openshell-gateway` — the gateway reads its config only at startup |
+| `external resource not admitted by required labels` | the Docker volume lacks the operator approval labels | both labels are required: `openshell.ai/sandbox-attachable=true` and `openshell.ai/sandbox-attachable-workspace=default` — Docker cannot add a label to an existing volume, so a volume missing one must be relabelled or recreated (recreating destroys the data) |
+| sandbox exits immediately, "executable file not found" | the command after `--` did not name a real program | the command is run verbatim as program+argv and the image ENTRYPOINT is ignored — use `-- /usr/local/bin/hermes-direct chat`, not `-- chat` |
 | agent cannot write state | volume not owned by UID 10000 | re-run the chown in step 6 |
 | gateway will not start | a registered middleware service is down | uncomment the middleware block in `sandbox/gateway.toml` and restart the service |
 
@@ -429,21 +530,25 @@ numbers are in [`docs/ocr-decision.md`](ocr-decision.md).
 ## Phase 0 exit checklist
 
 Run `bash sandbox/verify.sh` and paste its table into the friction log. The
-checklists below are the human version of what that script asserts.
+checklists below are the human version of what that script asserts, plus the
+items only a person can tick.
 
-**Person A — infra (not yet run):**
+`[x]` confirmed · `[~]` provisional — written from design, still to be
+confirmed by an automated run · `[ ]` not yet done.
 
-- [ ] `openshell status` reaches the gateway
-- [ ] the Docker daemon is running and the gateway starts
-- [ ] all three provider profiles lint and import cleanly
-- [ ] the `nebius` provider instance is created
-- [ ] the image builds and the sandbox reaches `Ready`
-- [ ] 7.1 the effective policy shows the Token Factory endpoint
+**Person A — infra (verified by hand; the automated run is outstanding):**
+
+- [x] `openshell status` reaches the gateway
+- [x] the Docker daemon is running and the gateway starts
+- [x] all three provider profiles lint and import cleanly
+- [x] the `nebius` provider instance is created
+- [x] the image builds and the sandbox reaches `Ready`
+- [x] 7.1 the effective policy shows the Token Factory endpoint
 - [ ] 7.1 the workload runs as UID 10000, not root
-- [ ] 7.2 the log shows a connection to Token Factory
-- [ ] 7.3 a real model call returns `LEDGER-OK`
-- [ ] 7.4 the placeholder is refused on a host the credential is not bound to
-- [ ] 7.5 the agent cannot be pointed at another host
+- [x] 7.2 the log shows a connection to Token Factory
+- [x] 7.3 a real model call returns `LEDGER-OK`
+- [~] 7.4 the placeholder is refused on a host the credential is not bound to
+- [~] 7.5 the agent cannot be pointed at another host
 - [ ] 7.6 the allowlist contains exactly the three intended destinations
 - [ ] `tesseract` measured **inside the sandbox image**, so the local path's accuracy is known in the environment it will actually run in (F-020)
 
@@ -457,9 +562,102 @@ checklists below are the human version of what that script asserts.
 - [x] `make redaction-audit` measured what the deterministic redactor misses — the hand-off list for Phase 2
 - [x] the model decision recorded in `docs/ocr-decision.md`
 - [x] this runbook updated with what actually differed
-- [x] friction log updated — F-009 … F-020
+- [x] friction log updated — F-009 … F-032
 
-**The exit condition is met when `bash sandbox/verify.sh` exits 0.**
+**Provisional — written from research and design, to be confirmed by a run:**
+
+- [~] `bash sandbox/verify.sh` — the script is written and runs, but it has
+      not produced a green run: it must be executed **on the gateway host**,
+      where the CLI holds the matching mTLS client bundle. From another
+      machine it reports the checks it cannot evaluate as SKIP
+- [~] the two negative tests inside the verifier (7.4 and 7.5 above). These
+      are stronger than the plan requires and remain unconfirmed by an
+      automated run. They are the difference between "routing is configured"
+      and "routing is enforced by the runtime"
+
+**Incomplete — known gaps, none of them blocking the exit condition:**
+
+- [x] GitHub Actions CI — the lint and test config and the workflow are both
+      in the tree
+- [x] the two models named in planning that do not exist on Token Factory
+      are replaced everywhere, and the reason is on the record (F-018, F-024)
+- [ ] the OCR model — two Phase 0 benchmark runs disagree about the winner,
+      and re-deciding it means re-validating the privacy architecture
+      against a different reader (F-032)
+
+**The exit condition is met when `bash sandbox/verify.sh` exits 0.** It was
+met manually on 2026-10-21; the automated run is the outstanding
+confirmation, and the two negative tests are the outstanding hardening.
+
+**Provisional** — written from research and design, to be confirmed by a run:
+
+- [~] the README setup section (A3) — the procedure is documented and was
+      followed to build the environment, but it has not been walked
+      end-to-end by a second person on a clean machine
+- [~] `bash sandbox/verify.sh` — the script is written and runs, but it has
+      not produced a green run: it must be executed **on the gateway host**,
+      where the CLI holds the matching mTLS client bundle. From another
+      machine it reports the checks it cannot evaluate as SKIP
+- [~] the two negative tests inside the verifier (credential scoping on an
+      unbound host, and the agent being refused when pointed at another
+      base URL). These are stronger than the plan requires and remain
+      unconfirmed by an automated run. They are the difference between
+      "routing is configured" and "routing is enforced by the runtime"
+
+**Incomplete** — known gaps, none of them blocking the exit condition:
+
+- [ ] GitHub Actions CI (B2 said "if time allows"; lint and test config
+      exist, the workflow does not)
+- [ ] the two models named in planning that do not exist on Token Factory
+      are replaced everywhere, but the *reason* is only in the friction log
+
+**The exit condition is met when `bash sandbox/verify.sh` exits 0.** It was
+met manually on 2026-10-21; the automated run is the outstanding
+confirmation, and the two negative tests are the outstanding hardening.
+
+---
+
+## What actually differed from this runbook
+
+Three things the plan did not anticipate, each found by running it:
+
+**1. The OpenShell Docker driver overrides the image's ENTRYPOINT.** The
+canonical main process is the command after `--`, run verbatim. An image
+that relies on its own `ENTRYPOINT` to start the agent will not start the
+agent. The image therefore names the program explicitly:
+
+```bash
+openshell sandbox create --name ledger-hermes \
+  --from ledger-hermes:local --policy sandbox/policy.yaml \
+  -- /usr/local/bin/hermes-direct chat
+```
+
+**2. `--driver-config-json` is disabled by default in OpenShell 0.1.4.** The
+volume attach fails with *"caller driver config is disabled; a gateway
+administrator must enable allow_driver_config"*. The switch lives in the
+**driver** table, not the gateway table:
+
+```toml
+[openshell.drivers.docker]
+allow_driver_config = true
+```
+
+Putting it under `[openshell.gateway]` makes the gateway refuse to start —
+it rejects unknown keys in both places.
+
+**3. External resources are admitted by label, and the workspace label has
+to resolve.** A Docker volume attached through driver config is refused
+with *"external resource not admitted by required labels"* unless it
+carries both:
+
+```
+openshell.ai/sandbox-attachable=true
+openshell.ai/sandbox-attachable-workspace=${workspace}
+```
+
+The obvious workaround — disabling resource admission — is the wrong fix: it
+would let any caller attach any host volume to any sandbox. Keep admission
+on and label the volume.
 
 If any of 7.1–7.6 fails at EOD Oct 20, that is the go/no-go signal for the
 fallback stack. The cleanest fallback keeps OpenShell and swaps the

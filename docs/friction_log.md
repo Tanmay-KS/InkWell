@@ -91,52 +91,6 @@ This would surface much later as phantom memory corruption in Phase 3.
 **Fix:** a named Docker volume, created with the `sandbox-attachable` label
 and chowned to UID 10000 before first boot.
 
-### F-009 · The gateway needs Docker at startup, not just for sandboxes
-**Owner:** Person A · **Phase:** 0
-The OpenShell gateway creates its compute-driver client during startup and
-**exits** if it cannot: `failed to create Docker client: Socket not found:
-/var/run/docker.sock`. A stopped Docker daemon therefore takes down the
-gateway, not just sandbox creation — and the error names the socket, not
-the missing daemon, which reads like a path problem.
-**Cost if unresolved:** confusing failure, and a gateway that appears to
-install fine and then silently dies.
-**Detection:** `sudo systemctl start docker` then `openshell status`.
-**Fix:** `sandbox/setup.sh` now runs a Docker preflight before anything
-else, and `sandbox/verify.sh` checks it as a required precondition.
-
-### F-010 · The upstream installer does not support Arch-family distributions
-**Owner:** Person A · **Phase:** 0
-`install.sh` supports exactly three Linux paths — `deb`, `rpm` and `snap` —
-and on a host with neither `dpkg` nor `rpm` it exits with *"Linux installs
-require either dpkg or rpm"*. There is no `pacman` path and no generic
-tarball install documented.
-**Cost if unresolved:** a dead end that looks like "OpenShell does not run
-on this distro".
-**Detection:** read `linux_package_method()` in `install.sh`.
-**Fix:** the RPMs are plain archives and `bsdtar` (libarchive) reads them.
-`sandbox/setup.sh` now detects the no-dpkg/no-rpm case and extracts the
-RPMs itself. The packages carry the CLI, gateway, prover, systemd user
-unit and config-migration helper; the container images come from ghcr.io
-(`ghcr.io/nvidia/openshell/{sandbox,supervisor}:0.1.4` — note the tag has
-no `v`).
-
-### F-011 · A negative routing test can pass for the wrong reason
-**Owner:** Person A · **Phase:** 0
-The first version of the credential-scoping test sent the host's **real**
-`NEBIUS_API_KEY` to `example.com`. Three separate problems: it put a live
-secret on a command line; the sandbox holds an opaque *placeholder*, not
-the real key, so the test never exercised the binding it was meant to
-test; and `example.com` is not in `network_policies`, so the request died
-at the policy layer and never reached the credential check.
-**Cost if unresolved:** a Phase 0 exit condition that looks satisfied and
-proves nothing — the worst possible failure mode for a privacy project.
-**Detection:** the test asserted on a 403, and a policy denial also
-produces a 403.
-**Fix:** the test now expands `$NEBIUS_API_KEY` *inside* the sandbox and
-sends the placeholder to `api.tavily.com` — allowed by policy, not bound to
-the credential — and distinguishes `credential_endpoint_mismatch` from
-`policy_denied`. See `sandbox/verify.sh` check 4.
-
 ---
 
 ## Observed frictions
@@ -240,6 +194,191 @@ The headline claim is that personal details never reach a Super/Ultra tier. The 
 **Detection:** `which tesseract` → nothing.
 **Fix:** `rapidocr-onnxruntime` was installed as a pip-only, no-sudo, zero-egress alternative and measures 93% field recovery at 1.33s and no cost. The real tesseract build still has to be measured **inside the sandbox image**, because that is where it will actually run. Person A to run that measurement.
 
+### F-021 · The gateway needs Docker at startup, not just for sandboxes
+**Owner:** Person A · **Phase:** 0
+The OpenShell gateway creates its compute-driver client during startup and
+**exits** if it cannot: `failed to create Docker client: Socket not found:
+/var/run/docker.sock`. A stopped Docker daemon therefore takes down the
+gateway, not just sandbox creation — and the error names the socket, not
+the missing daemon, which reads like a path problem.
+**Cost if unresolved:** confusing failure, and a gateway that appears to
+install fine and then silently dies.
+**Detection:** `sudo systemctl start docker` then `openshell status`.
+**Fix:** `sandbox/setup.sh` now runs a Docker preflight before anything
+else, and `sandbox/verify.sh` checks it as a required precondition.
+
+### F-022 · The upstream installer does not support Arch-family distributions
+**Owner:** Person A · **Phase:** 0
+`install.sh` supports exactly three Linux paths — `deb`, `rpm` and `snap` —
+and on a host with neither `dpkg` nor `rpm` it exits with *"Linux installs
+require either dpkg or rpm"*. There is no `pacman` path and no generic
+tarball install documented.
+**Cost if unresolved:** a dead end that looks like "OpenShell does not run
+on this distro".
+**Detection:** read `linux_package_method()` in `install.sh`.
+**Fix:** the RPMs are plain archives and `bsdtar` (libarchive) reads them.
+`sandbox/setup.sh` now detects the no-dpkg/no-rpm case and extracts the
+RPMs itself. The packages carry the CLI, gateway, prover, systemd user
+unit and config-migration helper; the container images come from ghcr.io
+(`ghcr.io/nvidia/openshell/{sandbox,supervisor}:0.1.4` — note the tag has
+no `v`).
+
+### F-023 · A negative routing test can pass for the wrong reason
+**Owner:** Person A · **Phase:** 0
+The first version of the credential-scoping test sent the host's **real**
+`NEBIUS_API_KEY` to `example.com`. Three separate problems: it put a live
+secret on a command line; the sandbox holds an opaque *placeholder*, not
+the real key, so the test never exercised the binding it was meant to
+test; and `example.com` is not in `network_policies`, so the request died
+at the policy layer and never reached the credential check.
+**Cost if unresolved:** a Phase 0 exit condition that looks satisfied and
+proves nothing — the worst possible failure mode for a privacy project.
+**Detection:** the test asserted on a 403, and a policy denial also
+produces a 403.
+**Fix:** the test now expands `$NEBIUS_API_KEY` *inside* the sandbox and
+sends the placeholder to `api.tavily.com` — allowed by policy, not bound to
+the credential — and distinguishes `credential_endpoint_mismatch` from
+`policy_denied`. See `sandbox/verify.sh` check 4.
+
+### F-024 · Two of the models we planned do not exist on Token Factory
+**Owner:** Person B · **Phase:** 0
+The OCR model chosen in the planning conversation was
+`nvidia/NVIDIA-Nemotron-3-Nano-Omni`, and Nebius's own document-
+intelligence page names `Qwen2.5-VL` for OCR. **Neither is in the live
+catalog.** The catalog has 28 models and only two of them accept images:
+`nvidia/Nemotron-3.5-Super-VL` and `openbmb/MiniCPM-V-4_5`.
+Every source we had quoted a model ID that is either absent or spelled
+differently — the Nemotron cookbook writes `nvidia/nemotron-3-nano-omni`
+while Hermes's own provider defaults to `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`.
+**Cost if unresolved:** the Phase 1 ingestion pipeline is written against a
+model that does not exist, and the failure surfaces as a 404 on the first
+real document.
+**Detection:** `GET /v1/models?verbose=true` is the only authority. Never
+hand-type a model ID.
+**Fix:** `make pin-models` reads the catalog; `eval/ocr_bench.py` compares
+the two vision models that actually exist; the OCR model is pinned in
+`.env` as `LEDGER_MODEL_OCR`.
+
+### F-025 · A reasoning model will spend the whole OCR budget thinking
+**Owner:** Person B · **Phase:** 0
+`openbmb/MiniCPM-V-4_5` reasons before it answers. On a transcription
+task it can burn the entire completion budget inside a `<think>` block and
+return an empty string — 16,363 characters of trace and no answer, with
+the block left **unclosed**. The first version of the benchmark scored
+that as "zero fields recovered" and hid a real failure behind a number.
+**Cost if unresolved:** an unusable OCR path, and a benchmark that
+reports a failure as a score.
+**Detection:** the benchmark now treats an unclosed reasoning block as an
+error, not a zero.
+**Fix:** `chat_template_kwargs: {"enable_thinking": false}` in the request
+body. A literal `/no_think` appended to the prompt does **not** work on
+this endpoint — it makes the model think more, not less, and every
+document failed. With the real control the same model went from 25/25
+errors to 0/25 and dropped from 4.3s to 2.9s per document.
+
+### F-026 · A wrong API key is indistinguishable from a missing one
+**Owner:** Person A · **Phase:** 0
+Token Factory answers `401 {"detail":"Couldn't authenticate. Reason:
+Unable authenticate"}` for a missing key, an invalid key, a revoked key,
+and a key belonging to a different Nebius product. The responses are
+byte-identical, so the error tells you nothing about which of those it is.
+**Cost if unresolved:** a wrong key reads as "the API is down", and the
+team debugs the service instead of the credential.
+**Detection:** send the key and compare against a no-auth baseline — if
+they are identical, the key is being rejected, not ignored.
+**Fix:** regenerate the key from the Token Factory console
+(`tokenfactory.nebius.com` → project → API keys). Note that Token Factory
+keys and Nebius AI Cloud keys are not interchangeable, and the AI Cloud
+hostnames do not resolve from every environment.
+
+### F-027 · The Docker driver overrides the image's ENTRYPOINT
+**Owner:** Person A · **Phase:** 0
+The sandbox's canonical main process is the command after `--`, run
+verbatim. The image's own `ENTRYPOINT` is not used. An image that relies on
+its entrypoint to start the agent will not start the agent.
+**Cost if unresolved:** the sandbox starts and immediately exits, which
+looks like a crash in the agent rather than a contract mismatch.
+**Detection:** compare the command in `sandbox create` with the image's
+`ENTRYPOINT`.
+**Fix:** name the program explicitly —
+`-- /usr/local/bin/hermes-direct chat`. The helper script is unchanged;
+only the invocation was wrong.
+**Status:** fixed.
+
+### F-028 · `--driver-config-json` is disabled by default in 0.1.4
+**Owner:** Person A · **Phase:** 0
+Attaching the persistent Hermes volume through driver config fails with
+*"caller driver config is disabled; a gateway administrator must enable
+allow_driver_config"*. The switch lives in the **driver** table
+(`[openshell.drivers.docker]`), not in `[openshell.gateway]` — and the
+gateway rejects unknown keys in both places, so putting it in the wrong
+table makes the gateway refuse to start outright.
+**Cost if unresolved:** the volume cannot be attached, so the agent loses
+its state on every sandbox recreation, and the failure message points at
+an administrator setting rather than at the command.
+**Detection:** the error text names the setting.
+**Fix:** `allow_driver_config = true` under `[openshell.drivers.docker]`.
+**Status:** fixed.
+
+### F-029 · External resources are admitted by label, and the workspace label must resolve
+**Owner:** Person A · **Phase:** 0
+A Docker volume attached through driver config is refused with *"external
+resource not admitted by required labels"* unless it carries both
+`openshell.ai/sandbox-attachable=true` and
+`openshell.ai/sandbox-attachable-workspace=${workspace}`.
+**Cost if unresolved:** the obvious workaround — turning resource admission
+off — would let any caller attach any host volume to any sandbox. That
+converts a labelling mistake into a sandbox-escape primitive.
+**Detection:** the error names the admission rule.
+**Fix:** keep admission enabled and label the volume. The gateway side
+declares the required labels explicitly in `sandbox/gateway.toml` so the
+approval contract is visible next to the volume definition.
+**Status:** fixed.
+
+### F-030 · A remote OpenShell CLI cannot authenticate without the gateway's client bundle
+**Owner:** Person A · **Phase:** 0
+The gateway requires mTLS. `openshell gateway add --local` does **not**
+fetch a client certificate from a reachable gateway — it reuses local
+material, so a client whose bundle was issued by a different CA fails with
+`invalid peer certificate: BadSignature` even though the gateway is
+reachable and healthy.
+**Cost if unresolved:** a verifier run from another machine reports a dozen
+of failures that look like broken infrastructure and are actually a
+client-side credential problem. On a shared network namespace the gateway
+is reachable at `127.0.0.1` and still unusable.
+**Detection:** compare the error against a no-auth baseline; the gateway
+answers identically for a missing and an invalid client certificate.
+**Fix:** run the verifier on the gateway host, or copy the bundle
+(`~/.config/openshell/gateways/<name>/mtls/`) to the client and register
+with `--gateway <name>`.
+**Status:** worked around — the verifier now reports unevaluable checks as
+SKIP with the remedy, instead of as failures.
+
+### F-031 · A verifier that cannot tell "not configured" from "cannot see"
+**Owner:** Person A · **Phase:** 0
+The first version of `sandbox/verify.sh` ran every check unconditionally.
+With an unreachable gateway it reported "endpoint MISSING from the
+effective policy", "no Token Factory connection in the last 15m" and
+"model call failed" — twelve failures describing infrastructure that was
+working. It also checked for a **local** Docker daemon, which is a
+different question from "the gateway's compute driver is alive", and which
+is false for any client that is not the gateway host.
+**Cost if unresolved:** the artifact whose entire job is to certify a phase
+would report a healthy environment as broken. Nobody trusts a verifier
+that cries wolf.
+**Detection:** run it from a machine that cannot reach the gateway.
+**Fix:** fail fast on a transport failure, report the dependent checks as
+SKIP, check the compute driver from the gateway's side, and print the
+remedy. Three states now: PASS, FAIL, SKIP.
+**Status:** fixed.
+
+### F-032 · Two Phase 0 benchmark runs disagree about which model reads documents
+**Owner:** Person A + Person B · **Phase:** 0/1 · **Status:** open
+Two independent runs of `make ocr-bench`, over different corpora and with different candidate sets, name different winners. The 20-document run over five vision models scored `nvidia/Nemotron-3.5-Super-VL` at 99.0% field recovery and made it the OCR model of record (`docs/ocr-decision.md`). The 30-rendered-scan run scored `openbmb/MiniCPM-V-4_5` at 98.0% against Super-VL's 96.0%, at 2.5× less per document, and named MiniCPM instead. The two runs are not contradictory measurements — MiniCPM scores at or above Super-VL in both — but they disagree on the winner, and the choice is a product decision, not a merge detail: Super-VL is a Super-tier model, so using it as the document reader is exactly what forces the "extract locally, redact locally" architecture that was validated against it.
+**Cost if unresolved:** Phase 1 builds the ingestion path on one model while the pinned `.env`, the decision record and the architecture document disagree about which one it is — and the Phase 2 router's redact target was chosen to match the reader.
+**Detection:** reading the OCR decision in `docs/phase0-runbook.md` §8 — it records two runs with two winners.
+**Fix:** Super-VL is the decision of record: it is what `eval/pin_models.py` pins, what `docs/ocr-decision.md` records, and what the Phase 2 router architecture was validated against. MiniCPM stays in the benchmark's candidate list, so the comparison stays reproducible, and its measurement is kept. Revisiting the choice is the first item carried into Phase 1; re-deciding it means re-validating the privacy architecture against a different reader.
+
 ---
 
 ### Pre-registered risks, now closed
@@ -248,6 +387,8 @@ The headline claim is that personal details never reach a Super/Ultra tier. The 
 |---|---|---|
 | F-002 | Model ID casing is inconsistent across Nebius's own docs | **Confirmed and worse than expected** — see F-017 and F-018. Every ID is now read from the live catalog. |
 | F-007 | Rate limits will bite during the leak test | **Not yet hit.** A 20-document, 5-model benchmark (100 calls) ran without a throttle. The 200-document, two-condition leak test is 10× that — still to be proven. |
+
+_(F-001…F-031 above are the Phase 0 record. Later phases append here.)_
 
 ---
 

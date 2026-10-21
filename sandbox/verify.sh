@@ -37,7 +37,35 @@ UNBOUND_HOST="api.tavily.com"
 UNBOUND_PATH="/search"
 
 QUIET=0
-[ "${1:-}" = "--quiet" ] && QUIET=1
+GATEWAY_NAME="${LEDGER_GATEWAY_NAME:-}"
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --quiet) QUIET=1; shift ;;
+        --gateway)
+            GATEWAY_NAME="${2:-}"
+            [ -n "$GATEWAY_NAME" ] || { echo "--gateway needs a name" >&2; exit 2; }
+            shift 2
+            ;;
+        --gateway=*)
+            GATEWAY_NAME="${1#*=}"
+            shift
+            ;;
+        -h|--help)
+            sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        *)
+            echo "unknown argument: $1" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# A remote client may hold a bundle for a gateway under a different
+# registration name than the local default.
+if [ -n "$GATEWAY_NAME" ]; then
+    export OPENSHELL_GATEWAY="$GATEWAY_NAME"
+fi
 
 # A manual install lands in ~/.local/bin, which is not always on PATH for
 # non-login shells.
@@ -65,16 +93,26 @@ YELLOW=$'\033[33m'; BLUE=$'\033[36m'; RESET=$'\033[0m'
 PASSED=0
 FAILED=0
 INFORMATIONAL_FAILED=0
+SKIPPED=0
 RESULTS=()
+
+# Set when the gateway cannot be reached or authenticated from this client.
+# Every later check depends on that connection, so they are SKIPPED rather
+# than reported as failures: a verifier that cannot tell "not configured"
+# from "cannot see" is not a verifier.
+TRANSPORT_FAILURE=""
+TRANSPORT_REMEDY=""
 
 say() { [ "$QUIET" -eq 1 ] || printf '%s\n' "$*"; }
 
-# record <required|info> <name> <PASS|FAIL> <detail>
+# record <required|info|skip> <name> <PASS|FAIL|SKIP> <detail>
 record() {
     local kind="$1" name="$2" status="$3" detail="${4:-}"
     local colour
     if [ "$status" = "PASS" ]; then
         colour="$GREEN"; PASSED=$((PASSED + 1))
+    elif [ "$status" = "SKIP" ]; then
+        colour="$DIM"; SKIPPED=$((SKIPPED + 1))
     else
         if [ "$kind" = "required" ]; then
             colour="$RED"; FAILED=$((FAILED + 1))
@@ -100,32 +138,57 @@ check_prerequisites() {
         return
     fi
 
-    if command -v docker >/dev/null 2>&1; then
-        if docker info >/dev/null 2>&1; then
-            record required "docker daemon reachable" PASS \
-                "server $(docker version --format '{{.ServerVersion}}' 2>/dev/null)"
-        else
-            record required "docker daemon reachable" FAIL \
-                "the OpenShell gateway creates its Docker client at startup and will not start without one — try: sudo systemctl start docker"
-        fi
+    # The gateway's compute driver is what actually matters, and it is
+    # checked from the gateway's side, not from this machine. A local
+    # `docker info` answers a different question: "does THIS machine have
+    # Docker", which is false for a remote client and for a host whose
+    # Docker socket needs sudo — even when the gateway is perfectly able
+    # to create sandboxes.
+    if openshell gateway info >/dev/null 2>&1; then
+        record required "gateway compute driver is alive" PASS "gateway runtime info reachable"
+    elif openshell sandbox list >/dev/null 2>&1; then
+        record required "gateway compute driver is alive" PASS "gateway control plane reachable"
     else
-        record required "docker CLI on PATH" FAIL "not found"
+        record required "gateway compute driver is alive" FAIL \
+            "the gateway did not answer a runtime query — try: systemctl --user restart openshell-gateway"
     fi
 
     local gw_status
     gw_status="$(openshell status 2>&1)"
-    if echo "$gw_status" | grep -qi 'No gateway configured\|not configured\|error'; then
+
+    if echo "$gw_status" | grep -qiE 'No gateway configured|not configured'; then
         record required "gateway reachable" FAIL \
-            "$(echo "$gw_status" | head -2 | tr '\n' ' ' | cut -c1-120) — try: systemctl --user restart openshell-gateway"
+            "no gateway is registered with this CLI"
+        TRANSPORT_FAILURE="no gateway is registered with this CLI"
+        TRANSPORT_REMEDY="register it with: openshell gateway add https://<gateway-host>:17670 --local --name local"
+    elif echo "$gw_status" | grep -qiE 'invalid peer certificate|BadSignature|certificate'; then
+        # The CLI's client bundle is not signed by the gateway's CA. This is
+        # a client-side credential problem, not an infrastructure problem.
+        record required "gateway reachable" FAIL \
+            "the gateway's CA did not verify this CLI's client certificate"
+        TRANSPORT_FAILURE="this CLI cannot authenticate to the gateway (client certificate not trusted)"
+        TRANSPORT_REMEDY="run this script on the gateway host, or copy the gateway's client bundle here:
+        cp -a ~/.config/openshell/gateways/openshell/mtls <repo>/.openshell/
+      then install it as ~/.config/openshell/gateways/<name>/mtls/ and re-run with --gateway <name>"
+    elif echo "$gw_status" | grep -qiE 'not reachable|refused|timeout|unavailable'; then
+        record required "gateway reachable" FAIL \
+            "the gateway did not answer — try: systemctl --user restart openshell-gateway"
+        TRANSPORT_FAILURE="the gateway did not answer"
+        TRANSPORT_REMEDY="try: systemctl --user restart openshell-gateway"
     elif openshell status >/dev/null 2>&1; then
-        record required "gateway reachable" PASS "$(echo "$gw_status" | head -3 | tr '\n' ' ' | cut -c1-120)"
+        record required "gateway reachable" PASS \
+            "$(echo "$gw_status" | grep -iE 'Server:|Status:' | head -2 | tr '\n' ' ' | cut -c1-110)"
     else
         record required "gateway reachable" FAIL \
-            "openshell status failed — try: systemctl --user restart openshell-gateway"
+            "openshell status failed: $(echo "$gw_status" | head -2 | tr '\n' ' ' | cut -c1-110)"
+        TRANSPORT_FAILURE="openshell status failed"
+        TRANSPORT_REMEDY="try: openshell status"
     fi
 
     if openshell sandbox list 2>/dev/null | grep -q "$SANDBOX_NAME"; then
         record required "sandbox ${SANDBOX_NAME} exists" PASS ""
+    elif [ -n "$TRANSPORT_FAILURE" ]; then
+        record required "sandbox ${SANDBOX_NAME} exists" SKIP "no gateway connection"
     else
         record required "sandbox ${SANDBOX_NAME} exists" FAIL \
             "run: bash sandbox/setup.sh"
@@ -152,7 +215,7 @@ check_policy() {
             "the provider may not be attached — openshell sandbox provider list ${SANDBOX_NAME}"
     fi
 
-    if echo "$policy" | grep -q "run_as_user: *\"10000\""; then
+    if echo "$policy" | grep -qE 'run_as_user: *"?10000"?'; then
         record required "workload runs as UID 10000 (not root)" PASS ""
     else
         record required "workload runs as UID 10000 (not root)" FAIL \
@@ -316,29 +379,79 @@ summarise() {
         name="${row%%|*}"; row="${row#*|}"
         status="${row%%|*}"; detail="${row#*|}"
         local colour
-        if [ "$status" = "PASS" ]; then colour="$GREEN"; else colour="$RED"; fi
+        if [ "$status" = "PASS" ]; then colour="$GREEN"; elif [ "$status" = "SKIP" ]; then colour="$DIM"; else colour="$RED"; fi
         printf '  %-6s %s%-8s%s %s\n' "$kind" "$colour" "$status" "$RESET" "$name"
         [ -n "$detail" ] && printf '  %-6s %-8s %s%s%s\n' "" "" "$DIM" "$detail" "$RESET"
     done
     echo
-    if [ "$FAILED" -eq 0 ]; then
+    if [ "$FAILED" -eq 0 ] && [ "$SKIPPED" -eq 0 ]; then
         printf '  %s%sPASS%s  %d required check(s) passed' "$GREEN" "$BOLD" "$RESET" "$PASSED"
         [ "$INFORMATIONAL_FAILED" -gt 0 ] && \
             printf ', %d informational check(s) failed' "$INFORMATIONAL_FAILED"
         printf '.\n\n  %sHermes + OpenShell + Token Factory confirmed working.%s\n' "$GREEN" "$RESET"
         return 0
     fi
+    if [ "$FAILED" -eq 0 ] && [ "$SKIPPED" -gt 0 ]; then
+        printf '  %s%sINCOMPLETE%s  %d required check(s) passed, %d could not be evaluated' \
+            "$YELLOW" "$BOLD" "$RESET" "$PASSED" "$SKIPPED"
+        printf '.\n'
+        [ -n "$TRANSPORT_FAILURE" ] && printf '  %s%s%s\n' "$DIM" "$TRANSPORT_FAILURE" "$RESET"
+        return 1
+    fi
     printf '  %s%sFAIL%s  %d required check(s) failed, %d passed' "$RED" "$BOLD" "$RESET" "$FAILED" "$PASSED"
     [ "$INFORMATIONAL_FAILED" -gt 0 ] && \
         printf ', %d informational check(s) failed' "$INFORMATIONAL_FAILED"
+    [ "$SKIPPED" -gt 0 ] && printf ', %d skipped' "$SKIPPED"
     printf '.\n'
+    [ -n "$TRANSPORT_FAILURE" ] && printf '  %s%s%s\n' "$DIM" "$TRANSPORT_FAILURE" "$RESET"
     return 1
 }
 
 # --- main -------------------------------------------------------------------
 
+# Every check below the prerequisites needs a working gateway connection.
+# When the client cannot reach or authenticate to the gateway, they are
+# recorded as SKIP rather than as failures: the infrastructure is not
+# proven broken, it is simply not observable from here.
+skip_all_dependent() {
+    local name
+    for name in \
+        "endpoint present in effective policy" \
+        "policy shows a credential binding" \
+        "workload runs as UID 10000 (not root)" \
+        "connection observed in the sandbox log" \
+        "model call returns LEDGER-OK" \
+        "placeholder refused on an unbound host" \
+        "off-host base URL refused" \
+        "no unexpected hosts in the allowlist" ; do
+        record skip "$name" SKIP "no gateway connection"
+    done
+}
+
 main() {
+    say "${BOLD}Ledger — Phase 0 exit verification${RESET}"
+    local active
+    active="$(openshell gateway list 2>/dev/null | awk '$1=="*" {print $2}')"
+    if [ -n "$active" ]; then
+        say "${DIM}active gateway: ${active}${RESET}"
+    fi
+    say ""
+
     check_prerequisites
+
+    if [ -n "$TRANSPORT_FAILURE" ]; then
+        say ""
+        say "${YELLOW}The gateway could not be reached from this client, so the remaining"
+        say "checks could not be evaluated. They are reported as SKIP, not as failures."
+        say ""
+        say "${BOLD}How to proceed${RESET}"
+        say "  ${TRANSPORT_REMEDY}"
+        say ""
+        skip_all_dependent
+        summarise
+        return $?
+    fi
+
     check_policy
     check_connection_log
     check_model_call

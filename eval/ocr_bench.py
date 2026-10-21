@@ -49,6 +49,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import shutil
 import statistics
 import subprocess
@@ -97,6 +98,46 @@ PROMPT = (
     "Do not summarise, do not comment, do not add a preamble."
 )
 
+# Reasoning models spend completion tokens before they answer. Nemotron 3.5
+# Super VL emits a reasoning trace first, so a small max_tokens budget gets
+# consumed entirely by the trace and the transcription comes back empty.
+# MiniCPM-V 4.5 does the same thing inside a <think> block.
+MAX_COMPLETION_TOKENS = 4096
+
+_THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_OPEN_THINK = re.compile(r"<think>", re.IGNORECASE)
+
+# Per-model request controls. MiniCPM-V reasons before it answers, and on a
+# transcription task that reasoning is pure cost: the model can spend its
+# entire completion budget inside a <think> block and return nothing.
+#
+# The control is `chat_template_kwargs: {"enable_thinking": false}` in the
+# request body. A literal "/no_think" appended to the prompt does NOT work
+# on this endpoint — it makes the model think *more*, and the block comes
+# back unclosed with the whole budget consumed.
+MODEL_REQUEST_EXTRA = {
+    "openbmb/MiniCPM-V-4_5": {"chat_template_kwargs": {"enable_thinking": False}},
+}
+
+
+def strip_reasoning(text: str) -> str:
+    """Remove reasoning traces from a model's output.
+
+    The trace is not the answer, and leaving it in would let the scorer
+    credit a field that appeared in the model's thinking rather than in
+    its transcription.
+
+    A *closed* <think> block is removed. An unclosed one is left in place
+    and reported, because it means the model ran out of budget mid-thought
+    and never produced an answer at all — silently returning an empty
+    string there would score the document as zero instead of flagging a
+    real failure.
+    """
+    if not text:
+        return text
+    text = _THINK_BLOCK.sub("", text)
+    return text.strip()
+
 
 @dataclass
 class CandidateResult:
@@ -132,6 +173,18 @@ class CandidateResult:
     @property
     def cost_usd(self) -> float:
         return self.prompt_tokens * self._prompt_rate + self.completion_tokens * self._completion_rate
+
+    @property
+    def cost_per_doc_usd(self) -> float:
+        """What one document cost.
+
+        The per-token price is the same for every document in a run, so
+        this is the number that decides between a cheap model called once
+        and an expensive one called ten times.
+        """
+        if not self.docs:
+            return 0.0
+        return self.cost_usd / self.docs
 
     _prompt_rate: float = 0.0
     _completion_rate: float = 0.0
@@ -190,9 +243,10 @@ def run_vision_model(
                 ],
             }
         ],
-        "max_tokens": 2048,
+        "max_tokens": MAX_COMPLETION_TOKENS,
         "temperature": 0.0,
     }
+    payload.update(MODEL_REQUEST_EXTRA.get(model, {}))
 
     with httpx.Client(timeout=timeout) as client:
         response = client.post(
@@ -204,8 +258,26 @@ def run_vision_model(
         raise RuntimeError(f"HTTP {response.status_code}: {response.text[:200]}")
 
     data = response.json()
-    text = data["choices"][0]["message"].get("content") or ""
+    message = data["choices"][0]["message"]
+    text = message.get("content") or ""
+    if not text:
+        # Some models put the trace in a separate field.
+        text = message.get("reasoning") or message.get("reasoning_content") or ""
+
     usage = data.get("usage", {})
+    reasoning = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens") or 0
+
+    if _OPEN_THINK.search(text):
+        raise RuntimeError(
+            "the model spent its whole completion budget inside a reasoning "
+            f"block and never answered ({reasoning} reasoning tokens)"
+        )
+
+    text = strip_reasoning(text)
+    if not text:
+        raise RuntimeError(
+            f"empty completion ({reasoning} reasoning tokens consumed the budget)"
+        )
     return text, int(usage.get("prompt_tokens", 0)), int(usage.get("completion_tokens", 0))
 
 
@@ -406,17 +478,18 @@ def render_table(results: list[CandidateResult]) -> str:
         return "_no candidates were evaluated_"
 
     lines = [
-        "| Candidate | Kind | Status | Docs | Field recovery | Mean | p95 | Tokens (in/out) | Cost |",
-        "|---|---|---|---:|---:|---:|---:|---|---:|",
+        "| Candidate | Kind | Status | Docs | Field recovery | Mean | p95 | Tokens (in/out) | Cost | $/doc |",
+        "|---|---|---|---:|---:|---:|---:|---|---:|---:|",
     ]
     for r in results:
         status = "ok" if r.status == "ok" else f"SKIPPED — {r.skip_reason}"
         tokens = f"{r.prompt_tokens:,} / {r.completion_tokens:,}" if r.kind == "vision" else "—"
         cost = f"${r.cost_usd:.4f}" if r.kind == "vision" else "—"
+        per_doc = f"${r.cost_per_doc_usd:.5f}" if r.kind == "vision" else "—"
         lines.append(
             f"| `{r.name}` | {r.kind} | {status} | {r.docs} | "
             f"{r.accuracy * 100:.1f}% | {r.mean_latency:.2f}s | "
-            f"{r.p95_latency:.2f}s | {tokens} | {cost} |"
+            f"{r.p95_latency:.2f}s | {tokens} | {cost} | {per_doc} |"
         )
     return "\n".join(lines)
 
@@ -539,6 +612,7 @@ def main(argv: list[str] | None = None) -> int:
                 "prompt_tokens": r.prompt_tokens,
                 "completion_tokens": r.completion_tokens,
                 "cost_usd": r.cost_usd,
+                "cost_per_doc_usd": r.cost_per_doc_usd,
                 "errors": r.errors,
             }
             for r in results

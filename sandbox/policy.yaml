@@ -2,7 +2,8 @@
 #
 # Apply with:
 #   openshell sandbox create --name ledger-hermes \
-#     --from ledger-hermes:local --policy sandbox/policy.yaml -- hermes chat
+#     --from ledger-hermes:local --policy sandbox/policy.yaml \
+#     -- /usr/local/bin/hermes-direct chat
 #
 # Replace on a running sandbox with:
 #   openshell policy set ledger-hermes --policy sandbox/policy.yaml --wait

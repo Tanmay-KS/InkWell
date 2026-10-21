@@ -61,6 +61,57 @@ socket_path = "/var/run/docker.sock"
 # grpc_endpoint = "127.0.0.1:50051"
 
 # ---------------------------------------------------------------------------
+# Caller driver config (required by --driver-config-json)
+# ---------------------------------------------------------------------------
+# OpenShell 0.1.4 disables caller-supplied `template.driver_config` for every
+# compute driver by default. `openshell sandbox create --driver-config-json`
+# therefore fails with:
+#
+#   caller driver config is disabled; a gateway administrator must enable
+#   allow_driver_config
+#
+# The switch lives in the DRIVER table — `[openshell.drivers.docker]` — not in
+# `[openshell.gateway]`. The gateway rejects unknown keys in both places, so
+# putting it under [openshell.gateway] or at the top of [openshell] makes the
+# gateway refuse to start (preflight: "category=malformed").
+#
+# Enable it here because the Ledger sandbox attaches its persistent Hermes
+# data volume through driver config:
+#
+#   --driver-config-json '{"docker":{"mounts":[{"type":"volume", ...}]}}'
+#
+# Enabling caller driver config does NOT disable resource admission below.
+allow_driver_config = true
+
+# ---------------------------------------------------------------------------
+# External resource admission
+# ---------------------------------------------------------------------------
+# Label admission stays ENABLED: a caller may not attach arbitrary host
+# resources, only resources an operator has approved by label. These are the
+# OpenShell defaults, written out explicitly so the approval contract for
+# `ledger-hermes-data` is visible next to the volume definition in
+# sandbox/setup.sh.
+#
+# `openshell sandbox create` fails with
+# "external resource not admitted by required labels" if the Docker volume
+# does not carry BOTH of these labels:
+#
+#   openshell.ai/sandbox-attachable=true
+#   openshell.ai/sandbox-attachable-workspace=default
+#
+# ("default" is the OpenShell workspace name — ${workspace} below resolves to
+# the workspace the caller is authorized for, not a Kubernetes namespace.)
+#
+# Do NOT set `enabled = false` to work around an admission error: that would
+# let any caller attach any host volume to any sandbox.
+[openshell.drivers.docker.resource_admission]
+enabled = true
+
+[openshell.drivers.docker.resource_admission.required_labels]
+"openshell.ai/sandbox-attachable" = "true"
+"openshell.ai/sandbox-attachable-workspace" = "${workspace}"
+
+# ---------------------------------------------------------------------------
 # Supervisor middleware (Phase 2 — the privacy router)
 # ---------------------------------------------------------------------------
 # The gateway calls every registered service at startup to read its

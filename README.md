@@ -9,8 +9,11 @@ sandbox with a declarative egress policy, and a privacy router strips your
 personal details from anything that leaves, so the expensive models and
 third-party search engines never see them.
 
-> **Status: Phase 0 complete — infra verification.**
-> The stack is de-risked and the decisions are recorded. See
+> **Status: Phase 0 — infra verification.**
+> The stack is de-risked and the decisions are recorded. The exit condition
+> was met by hand on 2026-10-21; the automated verifier has not yet produced
+> a green run, and two Phase 0 benchmark runs disagree about which model
+> reads documents (F-032). See
 > [`docs/phase0-runbook.md`](docs/phase0-runbook.md) for the infra side,
 > [`docs/ocr-decision.md`](docs/ocr-decision.md) for the model decision
 > and the privacy architecture, and
@@ -83,11 +86,61 @@ openshell term                   # live view: gateways, providers, sandboxes, bl
 that need a real key. `bash sandbox/verify.sh` is the artifact that proves
 the Phase 0 exit condition — it is the file a reviewer runs.
 
+> **Run `verify.sh` on the machine that hosts the OpenShell gateway.**
+> The gateway requires mTLS, and the CLI reuses the local client bundle
+> rather than fetching one from the gateway, so a client on another machine
+> gets `invalid peer certificate: BadSignature` and cannot evaluate any
+> of the checks. The script detects this and reports the dependent checks
+> as SKIP rather than as failures, so a green-looking run from the wrong
+> machine is impossible. To run it remotely, copy the gateway's bundle and
+> register it under a name of your own:
+>
+> ```bash
+> cp -a ~/.config/openshell/gateways/openshell/mtls <repo>/.openshell/
+> # install it as ~/.config/openshell/gateways/<name>/mtls/, then:
+> bash sandbox/verify.sh --gateway <name>
+> ```
+
 ### Requirements
 
 - Linux with Docker Engine 28.0+ (OpenShell's Docker compute driver)
 - A Nebius Token Factory API key — <https://tokenfactory.nebius.com/>
 - ~10 GB of disk (the Hermes image bakes in Chromium)
+
+### On distributions without a `.deb` or `.rpm`
+
+The upstream OpenShell installer supports Debian/Ubuntu packages, RPM
+packages and the snap — and exits with *"Linux installs require either
+dpkg or rpm"* on anything else, which includes Arch and CachyOS. The RPMs
+are plain archives and `bsdtar` (libarchive) reads them, so
+`sandbox/setup.sh` detects the case and installs from them itself. The
+packages carry the CLI, the gateway, the prover, the systemd user unit and
+the config-migration helper; the sandbox and supervisor container images are
+pulled from `ghcr.io/nvidia/openshell/` on first sandbox creation.
+
+### The models
+
+| Purpose | Model | $/1M in/out |
+|---|---|---|
+| redaction, classification | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | 0.06 / 0.24 |
+| main agent reasoning | `nvidia/nemotron-3-super-120b-a12b` | 0.30 / 0.90 |
+| hardest reasoning | `nvidia/Nemotron-3-Ultra-550b-a55b` | 1.00 / 3.00 |
+| **document OCR** | **`nvidia/Nemotron-3.5-Super-VL`** | 0.30 / 0.90 |
+
+The OCR model is the Super tier: it is multimodal, and it is the model the
+decision record ([`docs/ocr-decision.md`](docs/ocr-decision.md)) names and
+the Phase 2 privacy architecture was validated against. The choice was
+measured, not preferred — 20 documents, five vision models, 99.0% field
+recovery.
+
+A second, independent run (30 rendered scans) preferred
+`openbmb/MiniCPM-V-4_5` — 98.0% field recovery at $0.00050 per document
+against Super-VL's 96.0% / $0.00124, with the local `tesseract` fallback
+measured at 86.7% and zero egress. That comparison is **open** (F-032):
+re-deciding it means re-validating the privacy architecture against a
+different reader, so it is the first item carried into Phase 1. Two models
+named in the original plan do not exist on Token Factory at all; see the
+friction log. Reproduce with `make ocr-bench`.
 
 ---
 
@@ -107,8 +160,9 @@ ledger/
 │   ├── providers/                provider profiles (credentials + endpoints)
 │   ├── middleware/               Phase 2 — the privacy router service
 │   ├── Dockerfile.hermes         the sandbox workload image
-│   ├── docker-entrypoint.sh      why we replace the upstream entrypoint
-│   └── setup.sh                  idempotent setup; this is the README section
+│   ├── docker-entrypoint.sh      the program the sandbox runs as its main process
+│   ├── setup.sh                  idempotent setup; this is the README section
+│   └── verify.sh                 the Phase 0 exit-condition verifier
 │
 ├── agent/                        the pipeline
 │   ├── ingestion/                parse_documents.py, parse_email.py

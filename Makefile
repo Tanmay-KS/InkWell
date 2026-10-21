@@ -117,6 +117,7 @@ redacted-extract: ## Can the model read redacted text? (Option C validation)
 .PHONY: ocr-bench
 ocr-bench: ## Compare OCR models on a sample of the corpus
 	$(PY) $(EVAL)/ocr_bench.py --docs $(EVAL)/synthetic_docs --count 10 \
+		--comparators \
 		--json $(EVAL)/results/ocr_bench.json
 
 # --- later phases ----------------------------------------------------------

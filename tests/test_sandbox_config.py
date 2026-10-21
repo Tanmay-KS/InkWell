@@ -292,3 +292,65 @@ def test_negative_check_does_not_send_the_real_key():
         "the real key must never be interpolated into the sandbox command"
     )
 
+
+def test_verifier_does_not_check_a_host_local_docker_daemon():
+    """The gateway's compute driver is what matters, not this machine's Docker.
+
+    A local `docker info` answers a different question: it is false for any
+    client that is not the gateway host, and for a host whose Docker socket
+    needs sudo — even when the gateway is perfectly able to create
+    sandboxes.
+    """
+    # Only executable lines count; the script explains in a comment why it
+    # does not do this.
+    code = "\n".join(
+        line
+        for line in _verify_script_text().splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    assert "docker info" not in code, (
+        "verify.sh must not gate on a host-local Docker daemon"
+    )
+
+
+def test_verifier_reports_unevaluable_checks_as_skip():
+    """A check that could not be evaluated must not be reported as a failure.
+
+    The verifier's whole job is to certify a phase. If it cannot reach the
+    gateway it must say so once and skip the rest, not report a wall of
+    failures that describe healthy infrastructure.
+    """
+    text = _verify_script_text()
+    assert "SKIP" in text, "the verifier needs a third outcome besides PASS and FAIL"
+    assert "skip_all_dependent" in text, (
+        "dependent checks must be skipped when the gateway is unreachable"
+    )
+    assert "TRANSPORT_FAILURE" in text, (
+        "the verifier must detect a transport failure separately from a check failure"
+    )
+
+
+def test_verifier_explains_a_client_certificate_failure():
+    """A remote CLI cannot authenticate without the gateway's client bundle.
+
+    The error it hits is `invalid peer certificate: BadSignature`, which
+    looks like a broken TLS stack rather than a client-side credential
+    problem. The verifier must name the remedy.
+    """
+    text = _verify_script_text()
+    assert "BadSignature" in text or "peer certificate" in text, (
+        "the verifier must recognise a client-certificate failure"
+    )
+    assert "gateways/" in text, (
+        "the remedy must point at the gateway's client bundle"
+    )
+
+
+def test_verifier_can_target_a_named_gateway():
+    """A remote client may hold a bundle under its own registration name."""
+    text = _verify_script_text()
+    assert "--gateway" in text, "the verifier must accept a gateway name"
+    assert "OPENSHELL_GATEWAY" in text, (
+        "the selected gateway must be passed through to the CLI"
+    )
+
