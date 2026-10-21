@@ -84,7 +84,8 @@ host with neither `dpkg` nor `rpm`.
 
 The packaged unit does three things at startup: seeds `gateway.toml`,
 runs `openshell-gateway config preflight`, and generates the mTLS PKI. If
-`systemctl --user` is unavailable, do it by hand:
+`systemctl --user` is unavailable, do it by hand — the first two commands
+are the ones from step 2, without the `systemctl` restart:
 
 ```bash
 mkdir -p ~/.config/openshell
@@ -566,6 +567,9 @@ confirmed by an automated run · `[ ]` not yet done.
 
 **Provisional — written from research and design, to be confirmed by a run:**
 
+- [~] the README setup section (A3) — the procedure is documented and was
+      followed to build the environment, but it has not been walked
+      end-to-end by a second person on a clean machine
 - [~] `bash sandbox/verify.sh` — the script is written and runs, but it has
       not produced a green run: it must be executed **on the gateway host**,
       where the CLI holds the matching mTLS client bundle. From another
@@ -584,32 +588,6 @@ confirmed by an automated run · `[ ]` not yet done.
 - [ ] the OCR model — two Phase 0 benchmark runs disagree about the winner,
       and re-deciding it means re-validating the privacy architecture
       against a different reader (F-032)
-
-**The exit condition is met when `bash sandbox/verify.sh` exits 0.** It was
-met manually on 2026-10-21; the automated run is the outstanding
-confirmation, and the two negative tests are the outstanding hardening.
-
-**Provisional** — written from research and design, to be confirmed by a run:
-
-- [~] the README setup section (A3) — the procedure is documented and was
-      followed to build the environment, but it has not been walked
-      end-to-end by a second person on a clean machine
-- [~] `bash sandbox/verify.sh` — the script is written and runs, but it has
-      not produced a green run: it must be executed **on the gateway host**,
-      where the CLI holds the matching mTLS client bundle. From another
-      machine it reports the checks it cannot evaluate as SKIP
-- [~] the two negative tests inside the verifier (credential scoping on an
-      unbound host, and the agent being refused when pointed at another
-      base URL). These are stronger than the plan requires and remain
-      unconfirmed by an automated run. They are the difference between
-      "routing is configured" and "routing is enforced by the runtime"
-
-**Incomplete** — known gaps, none of them blocking the exit condition:
-
-- [ ] GitHub Actions CI (B2 said "if time allows"; lint and test config
-      exist, the workflow does not)
-- [ ] the two models named in planning that do not exist on Token Factory
-      are replaced everywhere, but the *reason* is only in the friction log
 
 **The exit condition is met when `bash sandbox/verify.sh` exits 0.** It was
 met manually on 2026-10-21; the automated run is the outstanding
