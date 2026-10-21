@@ -16,6 +16,15 @@ that the model-assisted escalation would have to catch — and the
 escalation is itself an outbound call carrying the source text, so every
 value the local pass misses is a value that goes out to a third party.
 
+**Two passes**, because they answer different questions:
+
+* **deterministic** — what a generic document yields with no knowledge of
+  who the reader is. This is the floor.
+* **deterministic + household names** — what the product actually does.
+  The agent's memory layer already holds the household picture, so the
+  redactor is *told* the names instead of having to recognise them in
+  prose. This is the number that bounds the leak rate.
+
 Two kinds of value are tracked separately:
 
 * **personal** — name, email, phone, account number, policy number,
@@ -36,7 +45,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -70,7 +78,7 @@ class ValueTracker:
     total: int = 0
     caught: int = 0
     surviving: list[str] = field(default_factory=list)
-    categories: Counter = field(default_factory=Counter)
+    categories: dict[str, int] = field(default_factory=dict)
 
     @property
     def detection_rate(self) -> float:
@@ -83,7 +91,7 @@ class ValueTracker:
         if caught:
             self.caught += 1
             if category:
-                self.categories[category] += 1
+                self.categories[category] = self.categories.get(category, 0) + 1
         elif value:
             self.surviving.append(value)
 
@@ -111,14 +119,38 @@ def tracked_values(record: dict) -> dict[str, str]:
     return values
 
 
-def audit(docs_dir: Path) -> tuple[dict[str, ValueTracker], dict]:
-    """Run the audit over the corpus."""
-    trackers: dict[str, ValueTracker] = {}
+def household_names(docs_dir: Path) -> list[str]:
+    """The distinct holder names in the corpus — the household picture.
+
+    In the product these come from the memory layer, which already knows
+    who the household is. Deriving them from the corpus here is the
+    equivalent, and it is what makes the second pass realistic rather
+    than a hypothetical.
+    """
+    names: set[str] = set()
+    for truth_path in sorted(docs_dir.glob("doc-*.json")):
+        record = json.loads(truth_path.read_text(encoding="utf-8"))
+        holder = record.get("holder")
+        if holder:
+            names.add(str(holder))
+    return sorted(names)
+
+
+def audit(
+    docs_dir: Path, known_names: tuple[str, ...] = ()
+) -> tuple[dict[str, ValueTracker], dict, dict[str, ValueTracker], dict]:
+    """Run both passes over the corpus.
+
+    Returns:
+        (bare trackers, bare summary, known-names trackers, known summary)
+    """
+    bare: dict[str, ValueTracker] = {}
+    known: dict[str, ValueTracker] = {}
     documents = 0
     bytes_before = 0
     bytes_after = 0
-    docs_clean = 0
-    leaks_by_document = Counter()
+    clean_bare = 0
+    clean_known = 0
 
     for truth_path in sorted(docs_dir.glob("doc-*.json")):
         record = json.loads(truth_path.read_text(encoding="utf-8"))
@@ -127,51 +159,63 @@ def audit(docs_dir: Path) -> tuple[dict[str, ValueTracker], dict]:
             continue
 
         text = text_path.read_text(encoding="utf-8")
-        result = local_redact(text)
-        redacted_normalised = normalise_alnum(result.text)
-        bytes_before += len(text)
-        bytes_after += len(result.text)
-
         values = tracked_values(record)
-        surviving_here = 0
-
-        for name, value in values.items():
-            tracker = trackers.setdefault(name, ValueTracker(name))
-            if name in RETAINED_VALUES:
-                # Kept on purpose. Measured so the report shows the
-                # trade-off, not because it is a leak.
-                tracker.record(value, caught=True)
-                continue
-
-            caught = normalise_alnum(value) not in redacted_normalised
-            category = ""
-            if caught:
-                for redaction in result.redactions:
-                    if value.lower() in redaction.original.lower():
-                        category = redaction.category.value
-                        break
-            tracker.record(value, caught, category)
-            if not caught:
-                surviving_here += 1
 
         documents += 1
-        if surviving_here == 0:
-            docs_clean += 1
-        else:
-            leaks_by_document[surviving_here] += 1
+        bytes_before += len(text)
+
+        for tracker_set, names in ((bare, ()), (known, known_names)):
+            result = local_redact(text, names=names)
+            redacted_normalised = normalise_alnum(result.text)
+            if not names:
+                bytes_after += len(result.text)
+
+            surviving_here = 0
+            for name, value in values.items():
+                tracker = tracker_set.setdefault(name, ValueTracker(name))
+                if name in RETAINED_VALUES:
+                    # Kept on purpose. Measured so the report shows the
+                    # trade-off, not because it is a leak.
+                    tracker.record(value, caught=True)
+                    continue
+
+                caught = normalise_alnum(value) not in redacted_normalised
+                category = ""
+                if caught:
+                    for redaction in result.redactions:
+                        if value.lower() in redaction.original.lower():
+                            category = redaction.category.value
+                            break
+                tracker.record(value, caught, category)
+                if not caught:
+                    surviving_here += 1
+
+            if surviving_here == 0:
+                if names:
+                    clean_known += 1
+                else:
+                    clean_bare += 1
 
     summary = {
         "documents": documents,
-        "documents_with_no_surviving_personal_value": docs_clean,
+        "documents_with_no_surviving_personal_value": clean_bare,
         "bytes_before": bytes_before,
         "bytes_after": bytes_after,
         "reduction_percent": (1 - bytes_after / bytes_before) * 100 if bytes_before else 0.0,
-        "surviving_per_document": dict(sorted(leaks_by_document.items())),
     }
-    return trackers, summary
+    known_summary = {
+        "documents": documents,
+        "documents_with_no_surviving_personal_value": clean_known,
+    }
+    return bare, summary, known, known_summary
 
 
-def render(trackers: dict[str, ValueTracker], summary: dict) -> str:
+def render(
+    trackers: dict[str, ValueTracker],
+    summary: dict,
+    known: dict[str, ValueTracker],
+    known_summary: dict,
+) -> str:
     lines = [
         "# Deterministic redaction audit",
         "",
@@ -182,24 +226,40 @@ def render(trackers: dict[str, ValueTracker], summary: dict) -> str:
         "by what the deterministic pass can catch. This measures that bound",
         "before Phase 2 exists.",
         "",
+        "## Two passes, because they answer different questions",
+        "",
+        "| Pass | What it means |",
+        "|---|---|",
+        "| **deterministic** | What a generic document yields with no knowledge of who the reader is. The floor. |",
+        "| **deterministic + household names** | What the product actually does. The agent's memory layer already holds the household picture, so the redactor is *told* the names instead of having to recognise them in prose. **This is the number that bounds the leak rate.** |",
+        "",
         f"**Documents:** {summary['documents']} · "
         f"**documents with no surviving personal value:** "
-        f"{summary['documents_with_no_surviving_personal_value']}/{summary['documents']} · "
+        f"deterministic {summary['documents_with_no_surviving_personal_value']}/{summary['documents']} · "
+        f"with household names "
+        f"{known_summary['documents_with_no_surviving_personal_value']}/{known_summary['documents']} · "
         f"**text reduced by:** {summary['reduction_percent']:.1f}%",
         "",
         "## Personal values — these must not leave the sandbox",
         "",
-        "| Value | Caught | Rate | Detected as |",
+        "| Value | Deterministic | With household names | Detected as |",
         "|---|---:|---:|---|",
     ]
     for name in PERSONAL_VALUES:
         tracker = trackers.get(name)
         if tracker is None or tracker.total == 0:
             continue
-        categories = ", ".join(f"{k} ({v})" for k, v in tracker.categories.most_common())
+        known_tracker = known.get(name)
+        known_cell = (
+            f"{known_tracker.caught}/{known_tracker.total} "
+            f"({known_tracker.detection_rate * 100:.1f}%)"
+            if known_tracker
+            else "—"
+        )
+        categories = ", ".join(f"{k} ({v})" for k, v in sorted(tracker.categories.items()))
         lines.append(
-            f"| `{name}` | {tracker.caught}/{tracker.total} | "
-            f"{tracker.detection_rate * 100:.1f}% | {categories or '—'} |"
+            f"| `{name}` | {tracker.caught}/{tracker.total} "
+            f"({tracker.detection_rate * 100:.1f}%) | {known_cell} | {categories or '—'} |"
         )
 
     lines += [
@@ -233,25 +293,26 @@ def render(trackers: dict[str, ValueTracker], summary: dict) -> str:
             "",
             "Every value in this list is one the model-assisted escalation has to catch,",
             "and the escalation is itself an outbound call carrying the source text.",
-            "",
-            "## What this means for Phase 2",
-            "",
-            "1. **Names are the priority.** `Category.NAME` exists in",
-            "   `privacy_router/redact.py` but has no pattern in `_PATTERNS`, so",
-            "   names are only ever caught by the escalation — which means every",
-            "   holder name in the corpus currently leaves the sandbox.",
-            "2. **Alphanumeric identifiers need their own pattern.** `POL-4825232-I`",
-            "   and `SUB-281674` match neither `_ACCOUNT` (`\\b\\d{8,17}\\b`) nor",
-            "   `_ACCOUNT_GROUPED`.",
-            "3. **An address is more than a street.** `_ADDRESS` captures the street",
-            "   line; the city and the postcode are left behind, and together with",
-            "   a name they are enough to identify someone.",
-            "4. **A category misclassification is not free.** 13 account numbers",
-            "   were claimed by the `phone` pattern rather than `account`. The",
-            "   value was still removed, so this is a reporting problem rather than",
-            "   a leak — but the leak test scores by category, so it has to be",
-            "   right.",
         ]
+
+    lines += [
+        "",
+        "## What this means for Phase 2",
+        "",
+        "1. **Names are the priority.** `Category.NAME` has no single pattern —",
+        "   a name is found after a label that says it is a name, in a",
+        "   salutation, or because the household's memory layer says so. A name",
+        "   in the middle of a sentence is still only caught by the escalation.",
+        "2. **Alphanumeric identifiers need their own pattern.** `POL-4825232-I`",
+        "   and `SUB-281674` match neither `_ACCOUNT` (`\\b\\d{8,17}\\b`) nor",
+        "   `_ACCOUNT_GROUPED`.",
+        "3. **An address is more than a street.** The address span now continues",
+        "   through the city, the state and the postcode; masking only the",
+        "   street left enough to identify someone.",
+        "4. **A category misclassification is not free.** Ten digits are a phone",
+        "   number or an account number and only the label can say which, so the",
+        "   label immediately before the value decides.",
+    ]
 
     return "\n".join(lines)
 
@@ -273,8 +334,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{docs_dir} does not exist — run: make synth", file=sys.stderr)
         return 1
 
-    trackers, summary = audit(docs_dir)
-    report = render(trackers, summary)
+    names = tuple(household_names(docs_dir))
+    trackers, summary, known, known_summary = audit(docs_dir, names)
+    report = render(trackers, summary, known, known_summary)
     print(report)
 
     if args.markdown_out:
@@ -286,20 +348,27 @@ def main(argv: list[str] | None = None) -> int:
     if args.json_out:
         out = Path(args.json_out)
         out.parent.mkdir(parents=True, exist_ok=True)
+
+        def dump(tracker_set: dict[str, ValueTracker]) -> dict:
+            return {
+                name: {
+                    "total": tracker.total,
+                    "caught": tracker.caught,
+                    "detection_rate": tracker.detection_rate,
+                    "surviving_examples": tracker.surviving[:20],
+                    "categories": tracker.categories,
+                }
+                for name, tracker in tracker_set.items()
+            }
+
         out.write_text(
             json.dumps(
                 {
                     "summary": summary,
-                    "values": {
-                        name: {
-                            "total": tracker.total,
-                            "caught": tracker.caught,
-                            "detection_rate": tracker.detection_rate,
-                            "surviving_examples": tracker.surviving[:20],
-                            "categories": dict(tracker.categories),
-                        }
-                        for name, tracker in trackers.items()
-                    },
+                    "summary_with_household_names": known_summary,
+                    "household_names": list(names),
+                    "deterministic": dump(trackers),
+                    "with_household_names": dump(known),
                 },
                 indent=2,
             )

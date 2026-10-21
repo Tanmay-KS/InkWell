@@ -194,6 +194,13 @@ The headline claim is that personal details never reach a Super/Ultra tier. The 
 **Detection:** `which tesseract` → nothing.
 **Fix:** `rapidocr-onnxruntime` was installed as a pip-only, no-sudo, zero-egress alternative and measures 93% field recovery at 1.33s and no cost. The real tesseract build still has to be measured **inside the sandbox image**, because that is where it will actually run. Person A to run that measurement.
 
+### F-021 · The whole Token Factory domain stopped accepting connections
+**Owner:** Person B · **Phase:** 0 · **Status:** open — environment, not code
+After roughly 250 API calls across three benchmark runs in a single session, `api.tokenfactory.nebius.com:443` stopped accepting TCP connections. DNS still resolved; the connect itself hung until it timed out. The whole `tokenfactory.nebius.com` domain was affected, not just the API path, and `github.com` and `pypi.org` were reachable at the same moment, so it was not the host's general connectivity.
+**Cost if unresolved:** the live benchmarks cannot be re-run. This is F-007 arriving early and in a different shape: F-007 predicted a *rate limit* (a 429 with headers telling you to slow down); what happened was a *connection refusal* with nothing to read, which is much harder to diagnose from the error alone.
+**Detection:** the redacted-text bench reported "timed out" on every document. A single `curl -v` showed `Trying 213.239.161.19:443...` and then nothing.
+**Fix:** none yet, and none is needed for the work in flight — the redaction layer is entirely local and deterministic, and the Option C validation had already been run and committed (`eval/results/redacted_extract.json`) before the outage. What it does mean: **batch the benchmarks rather than running them back to back**, and keep the raw results committed so a decision never depends on being able to re-run it. If it persists, it is worth asking Nebius whether the project IP was rate-limited, because a 20-minute benchmark must not be able to take the whole project offline.
+
 ---
 
 ### Pre-registered risks, now closed

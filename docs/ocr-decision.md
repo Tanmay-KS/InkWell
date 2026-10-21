@@ -137,9 +137,12 @@ wrong account number. It does not.
 So under Option C the Super-tier call carries **no personal detail at
 all**, and the claim holds literally with no exception to disclose.
 
-The remaining problem is not the architecture. It is the redactor.
-`holder` is **0/19 redacted** — the model received every holder name in
-the clear. See [`docs/redaction-audit.md`](redaction-audit.md).
+The remaining problem is not the architecture. It is the redactor — and
+it has since been fixed. See [`docs/redaction-audit.md`](redaction-audit.md)
+for the current numbers: with the household's names supplied from the
+memory layer, **all 200 documents come out of the redactor with no
+surviving personal value**, and the deterministic pass alone gets 167/200
+with names at 83.5%.
 
 ### When Option C falls back to Option A
 

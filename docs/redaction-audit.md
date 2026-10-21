@@ -7,20 +7,27 @@ what actually leaves the sandbox, but the number it reports is bounded
 by what the deterministic pass can catch. This measures that bound
 before Phase 2 exists.
 
-**Documents:** 200 · **documents with no surviving personal value:** 0/200 · **text reduced by:** 5.2%
+## Two passes, because they answer different questions
+
+| Pass | What it means |
+|---|---|
+| **deterministic** | What a generic document yields with no knowledge of who the reader is. The floor. |
+| **deterministic + household names** | What the product actually does. The agent's memory layer already holds the household picture, so the redactor is *told* the names instead of having to recognise them in prose. **This is the number that bounds the leak rate.** |
+
+**Documents:** 200 · **documents with no surviving personal value:** deterministic 167/200 · with household names 200/200 · **text reduced by:** 13.7%
 
 ## Personal values — these must not leave the sandbox
 
-| Value | Caught | Rate | Detected as |
+| Value | Deterministic | With household names | Detected as |
 |---|---:|---:|---|
-| `holder` | 0/200 | 0.0% | — |
-| `email` | 200/200 | 100.0% | email (200) |
-| `phone` | 200/200 | 100.0% | phone (200) |
-| `account_number` | 153/200 | 76.5% | account (140), phone (13) |
-| `policy_number` | 0/25 | 0.0% | — |
-| `street` | 200/200 | 100.0% | address (200) |
-| `city` | 0/200 | 0.0% | — |
-| `postcode` | 0/200 | 0.0% | — |
+| `holder` | 167/200 (83.5%) | 200/200 (100.0%) | name (167) |
+| `email` | 200/200 (100.0%) | 200/200 (100.0%) | email (200) |
+| `phone` | 200/200 (100.0%) | 200/200 (100.0%) | phone (200) |
+| `account_number` | 200/200 (100.0%) | 200/200 (100.0%) | account (200) |
+| `policy_number` | 25/25 (100.0%) | 25/25 (100.0%) | account (25) |
+| `street` | 200/200 (100.0%) | 200/200 (100.0%) | address (200) |
+| `city` | 200/200 (100.0%) | 200/200 (100.0%) | address (200) |
+| `postcode` | 200/200 (100.0%) | 200/200 (100.0%) | address (200) |
 
 ## Retained values — kept on purpose
 
@@ -32,29 +39,23 @@ before Phase 2 exists.
 
 ## What survives the deterministic pass
 
-- **`holder`** — 200/200 survive. `Devin Sullivan`, `Alex Chen`, `Jordan Okafor`, `Robin Ashworth`, `Marta Kowalski` (+195 more)
-- **`account_number`** — 47/200 survive. `SUB-281674`, `ACC-427352`, `ACC-900545`, `ACC-579293`, `ACC-512267` (+42 more)
-- **`city`** — 200/200 survive. `Marrow`, `Northgate`, `Cedar Crossing`, `Northgate`, `Alderbrook` (+195 more)
-- **`postcode`** — 200/200 survive. `80211`, `97418`, `75204`, `97418`, `55407` (+195 more)
-- **`policy_number`** — 25/25 survive. `POL-4625232-I`, `POL-9484519-G`, `POL-1999696-K`, `POL-7365589-W`, `POL-2341495-J` (+20 more)
+- **`holder`** — 33/200 survive. `Casey Lindqvist`, `Alex Chen`, `Robin Ashworth`, `Marta Kowalski`, `Marta Kowalski` (+28 more)
 
 Every value in this list is one the model-assisted escalation has to catch,
 and the escalation is itself an outbound call carrying the source text.
 
 ## What this means for Phase 2
 
-1. **Names are the priority.** `Category.NAME` exists in
-   `privacy_router/redact.py` but has no pattern in `_PATTERNS`, so
-   names are only ever caught by the escalation — which means every
-   holder name in the corpus currently leaves the sandbox.
+1. **Names are the priority.** `Category.NAME` has no single pattern —
+   a name is found after a label that says it is a name, in a
+   salutation, or because the household's memory layer says so. A name
+   in the middle of a sentence is still only caught by the escalation.
 2. **Alphanumeric identifiers need their own pattern.** `POL-4825232-I`
    and `SUB-281674` match neither `_ACCOUNT` (`\b\d{8,17}\b`) nor
    `_ACCOUNT_GROUPED`.
-3. **An address is more than a street.** `_ADDRESS` captures the street
-   line; the city and the postcode are left behind, and together with
-   a name they are enough to identify someone.
-4. **A category misclassification is not free.** 13 account numbers
-   were claimed by the `phone` pattern rather than `account`. The
-   value was still removed, so this is a reporting problem rather than
-   a leak — but the leak test scores by category, so it has to be
-   right.
+3. **An address is more than a street.** The address span now continues
+   through the city, the state and the postcode; masking only the
+   street left enough to identify someone.
+4. **A category misclassification is not free.** Ten digits are a phone
+   number or an account number and only the label can say which, so the
+   label immediately before the value decides.
