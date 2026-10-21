@@ -248,10 +248,10 @@ check_model_call() {
     fi
 
     local out
-    out="$(openshell sandbox exec -n "$SANDBOX_NAME" --no-login-shell -- \
-        /opt/hermes/.venv/bin/hermes chat \
-        --provider nebius --model "$MODEL_NANO" \
-        -q 'Reply with exactly: LEDGER-OK' 2>&1)"
+    out="$(timeout 45s openshell sandbox exec -n "$SANDBOX_NAME" --no-login-shell -- \
+        /opt/hermes/.venv/bin/hermes chat --oneshot \
+    --provider nebius --model "$MODEL_NANO" \
+    -q 'Reply with exactly: LEDGER-OK' 2>&1)"
 
     if echo "$out" | grep -q 'LEDGER-OK'; then
         record required "model call returns LEDGER-OK" PASS "model ${MODEL_NANO}"
@@ -268,7 +268,7 @@ check_credential_scoping() {
     # The expansion of $NEBIUS_API_KEY happens INSIDE the sandbox, so this
     # sends the opaque placeholder, not the real key.
     local out rc
-    out="$(openshell sandbox exec -n "$SANDBOX_NAME" --no-login-shell -- \
+    out="$(timeout 45s openshell sandbox exec -n "$SANDBOX_NAME" --no-login-shell -- \
         /bin/sh -c "curl -sS -o /dev/null -w '%{http_code}' \
             -H \"Authorization: Bearer \$NEBIUS_API_KEY\" \
             https://${UNBOUND_HOST}${UNBOUND_PATH}" 2>&1)"; rc=$?
@@ -303,9 +303,9 @@ check_routing_drift() {
     # Factory only. This is the strongest form of the routing proof: the
     # agent actively tries to leave and the sandbox says no.
     local out rc
-    out="$(openshell sandbox exec -n "$SANDBOX_NAME" --no-login-shell -- \
+    out="$(timeout 45s openshell sandbox exec -n "$SANDBOX_NAME" --no-login-shell -- \
         /usr/bin/env NEBIUS_BASE_URL=https://api.example.invalid/v1 \
-        /opt/hermes/.venv/bin/hermes chat --provider nebius \
+        /opt/hermes/.venv/bin/hermes chat --oneshot --provider nebius \
         --model "$MODEL_NANO" -q 'ping' 2>&1)"; rc=$?
 
     if [ "$rc" -ne 0 ] && ! echo "$out" | grep -qi 'credential_endpoint_mismatch'; then
