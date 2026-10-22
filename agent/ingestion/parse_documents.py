@@ -36,6 +36,7 @@ Design notes:
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import os
 import shutil
@@ -46,6 +47,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from agent.ingestion.ocr_text import repair_ocr_text
+from privacy_router.egress import OutboundRequest, Transport
 from privacy_router.redact import RedactionMap, redacted_text
 
 # Model ID for document understanding. Pinned from the live Token Factory
@@ -63,6 +65,13 @@ TOKEN_FACTORY_BASE_URL = os.environ.get(
 
 # How long a local extractor may take on one page.
 EXTRACT_TIMEOUT = 120.0
+
+# The vision fallback's instruction. It is the only outbound request whose
+# payload is an image rather than text.
+OCR_TRANSCRIPTION_PROMPT = """\
+Transcribe every character of this document exactly as it appears, keeping
+the line breaks. Do not summarise, correct, or explain. Output the text
+only."""
 
 
 @dataclass(slots=True)
@@ -313,6 +322,47 @@ def _extract_local(path: Path, media_type: str) -> tuple[str, list[str]]:
     return "", [f"no local extractor for {media_type}"]
 
 
+# --- the vision fallback ----------------------------------------------------
+
+
+def _extract_with_model(
+    path: Path, *, model: str, transport: Transport
+) -> tuple[str, str]:
+    """Send the page image to the vision model.
+
+    **This is the only path in which a document's pixels leave the machine.**
+    It exists because local OCR cannot read everything — a creased page, an
+    unusual script, a photo at an angle — and a document the agent cannot
+    read is a deadline it cannot flag.
+
+    It is the last resort, not the first: `parse_document` reaches it only
+    when the local extractor returned nothing at all. On the corpus that
+    never happens, so this line item is zero — which is the strongest
+    result the leak test can report, and it is only credible because the
+    path exists.
+
+    The payload is the base64 image. An image is personal *by definition*
+    — it is the document — so the leak test scores an `ocr_call` as a leak
+    whenever one happens, without trying to pattern-match base64.
+    """
+    media_type = guess_media_type(path)
+    if not media_type.startswith("image/"):
+        return "", f"no vision fallback for {media_type}"
+
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    request = OutboundRequest(
+        kind="ocr_call",
+        payload=encoded,
+        prompt=OCR_TRANSCRIPTION_PROMPT,
+        model=model,
+        detail=f"vision fallback for {path.name} ({media_type})",
+    )
+    answer = transport(request)
+    if not answer.strip():
+        return "", f"the vision model returned no text for {path.name}"
+    return repair_ocr_text(answer), f"vision fallback: {model}"
+
+
 # --- the public entry point -------------------------------------------------
 
 
@@ -320,6 +370,7 @@ def parse_document(
     path: str | Path,
     *,
     model: str | None = None,
+    transport: Transport | None = None,
     household_names: Iterable[str] = (),
     redact: bool = True,
 ) -> Document:
@@ -331,11 +382,16 @@ def parse_document(
             Unused on the local path, which is the point: the local
             extractor is tried first and the model is only reached for
             what it cannot read.
+        transport: How a vision fallback would be sent. When omitted the
+            model is never called, so a parse is always local.
         household_names: Names known to be personal — the household's
             names, from the memory layer. Passed to the redactor so it
             does not have to recognise a name in prose.
-        redact: Whether to redact. Off only for tests that need the raw
-            text; the pipeline always redacts.
+        redact: Whether the document text is redacted. Off is the leak
+            test's router-OFF condition. The redaction *map* is built
+            either way, because it is how the pipeline learns the real
+            reference and holder — only the text differs between the two
+            conditions.
 
     Returns:
         A `Document`. Never raises for a document it cannot read — an
@@ -356,16 +412,22 @@ def parse_document(
     try:
         raw_text, warnings = _extract_local(source, media_type)
     except Exception as exc:
-        document.warnings.append(f"extraction failed: {exc}")
-        return document
+        raw_text, warnings = "", [f"local extraction failed: {exc}"]
 
     document.warnings.extend(warnings)
-    document.pages = [p for p in raw_text.split("\f") if p.strip()] or ([raw_text] if raw_text else [])
-    document.metadata["page_count"] = len(document.pages)
+
+    if not raw_text.strip() and model and transport:
+        # The one outbound path. Reached only for an image the local
+        # extractor could not read at all.
+        raw_text, note = _extract_with_model(source, model=model, transport=transport)
+        document.warnings.append(note)
 
     if not raw_text.strip():
         document.warnings.append("no text extracted")
         return document
+
+    document.pages = [p for p in raw_text.split("\f") if p.strip()] or ([raw_text] if raw_text else [])
+    document.metadata["page_count"] = len(document.pages)
 
     # The repair runs *before* the redaction, so the redactor sees
     # labels it can actually match. Repairing afterwards would be too
@@ -375,10 +437,16 @@ def parse_document(
     if repaired != raw_text:
         document.warnings.append("repaired OCR spacing")
 
+    # The local pass always runs: its map is how the pipeline learns the
+    # real reference and holder without a second parser. `redact=False`
+    # changes what the text holds, not what we learned about it.
+    redacted, mapping = redacted_text(repaired, names=household_names)
+    document.redactions = mapping
+    document.metadata["redaction_count"] = len(mapping.values)
+
     if redact:
-        document.text, document.redactions = redacted_text(repaired, names=household_names)
+        document.text = redacted
         document.metadata["redacted"] = True
-        document.metadata["redaction_count"] = len(document.redactions.values)
     else:
         document.text = repaired
         document.metadata["redacted"] = False

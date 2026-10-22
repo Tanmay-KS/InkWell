@@ -5,8 +5,13 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-PY := $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
+# VENV has to be defined before PY: `:=` expands immediately, so a PY
+# defined first sees an empty VENV, falls through the wildcard to
+# `/bin/python`, and every target runs outside the virtualenv. That
+# failure is invisible until a target imports a dependency — `make demo`
+# works on the system interpreter, `make leak-test` does not.
 VENV := .venv
+PY := $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 SANDBOX := sandbox
 EVAL := eval
 
@@ -134,7 +139,8 @@ ocr-bench: ## Compare OCR models on a sample of the corpus
 
 .PHONY: leak-test
 leak-test: ## Phase 2 — run the corpus through the pipeline, router ON vs OFF
-	$(PY) $(EVAL)/leak_test.py
+	$(PY) $(EVAL)/leak_test.py --docs $(EVAL)/synthetic_docs \
+		--json $(EVAL)/results/leak_test.json --strict
 
 .PHONY: memory-eval
 memory-eval: ## Phase 3 — memory-with-updates accuracy

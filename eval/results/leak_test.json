@@ -1,0 +1,124 @@
+{
+  "corpus": "eval/synthetic_docs",
+  "documents": 200,
+  "scans": false,
+  "reference_date": "2026-10-20",
+  "conditions": {
+    "router_off": {
+      "condition": "router_off",
+      "documents": 200,
+      "headline": {
+        "condition": "router_off",
+        "kind": "headline",
+        "payloads": 200,
+        "payloads_with_pii": 200,
+        "leak_rate": 1.0,
+        "categories": {
+          "account": 200,
+          "name": 200
+        },
+        "examples": [
+          {
+            "categories": "account, name",
+            "excerpt": "Lakeshore Family Health Plan medical cancellation policy 0847-4851 Devin Sullivan"
+          }
+        ],
+        "note": ""
+      },
+      "line_items": {
+        "lookup_call": {
+          "condition": "router_off",
+          "kind": "lookup_call",
+          "payloads": 200,
+          "payloads_with_pii": 200,
+          "leak_rate": 1.0,
+          "categories": {
+            "account": 200,
+            "name": 200
+          },
+          "examples": [
+            {
+              "categories": "account, name",
+              "excerpt": "Lakeshore Family Health Plan medical cancellation policy 0847-4851 Devin Sullivan"
+            },
+            {
+              "categories": "account, name",
+              "excerpt": "Streamline Media subscription cancellation policy 5794 8454 Alex Chen"
+            },
+            {
+              "categories": "account, name",
+              "excerpt": "Lakeshore Family Health Plan medical cancellation policy 0862 9948 Jordan Okafor"
+            }
+          ],
+          "note": "200 queries from 200 documents"
+        },
+        "ocr_call": {
+          "condition": "router_off",
+          "kind": "ocr_call",
+          "payloads": 0,
+          "payloads_with_pii": 0,
+          "leak_rate": 0.0,
+          "categories": {},
+          "examples": [],
+          "note": "no document needed the vision model \u2014 the local extractor read every page, so no image left the machine"
+        },
+        "redact_call": {
+          "condition": "router_off",
+          "kind": "redact_call",
+          "payloads": 0,
+          "payloads_with_pii": 0,
+          "leak_rate": 0.0,
+          "categories": {},
+          "examples": [],
+          "note": "not applicable \u2014 with no router there is no escalation call"
+        }
+      }
+    },
+    "router_on": {
+      "condition": "router_on",
+      "documents": 200,
+      "headline": {
+        "condition": "router_on",
+        "kind": "headline",
+        "payloads": 200,
+        "payloads_with_pii": 0,
+        "leak_rate": 0.0,
+        "categories": {},
+        "examples": [],
+        "note": ""
+      },
+      "line_items": {
+        "lookup_call": {
+          "condition": "router_on",
+          "kind": "lookup_call",
+          "payloads": 200,
+          "payloads_with_pii": 0,
+          "leak_rate": 0.0,
+          "categories": {},
+          "examples": [],
+          "note": "200 queries from 200 documents"
+        },
+        "ocr_call": {
+          "condition": "router_on",
+          "kind": "ocr_call",
+          "payloads": 0,
+          "payloads_with_pii": 0,
+          "leak_rate": 0.0,
+          "categories": {},
+          "examples": [],
+          "note": "no document needed the vision model \u2014 the local extractor read every page, so no image left the machine"
+        },
+        "redact_call": {
+          "condition": "router_on",
+          "kind": "redact_call",
+          "payloads": 200,
+          "payloads_with_pii": 0,
+          "leak_rate": 0.0,
+          "categories": {},
+          "examples": [],
+          "note": "the router's own call; carries the locally-redacted payload, not the source text"
+        }
+      }
+    }
+  }
+}

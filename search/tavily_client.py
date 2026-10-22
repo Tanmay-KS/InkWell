@@ -31,17 +31,48 @@ handled here rather than left to chance:
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 
+from privacy_router.egress import OutboundRequest, Transport
 from privacy_router.redact import local_redact
 
-__all__ = ["SearchResult", "TavilyClient", "TavilyError"]
+__all__ = ["SearchResult", "TavilyClient", "TavilyError", "build_query"]
 
 TAVILY_BASE_URL = os.environ.get("TAVILY_BASE_URL", "https://api.tavily.com")
+
+
+def build_query(
+    *,
+    provider: str = "",
+    kind: str = "",
+    reference: str = "",
+    holder: str = "",
+) -> str:
+    """The query an agent would actually type to find out how to act.
+
+    It quotes the reference and the holder because that is what makes a
+    search specific: "how do I cancel *my* policy" returns a generic help
+    page, and "Lakeshore … 0847-4851 Devin Sullivan" returns the right
+    one. That is also exactly why the query is the leak vector — the
+    details that make it useful are the details that must not leave.
+
+    Kept as a pure function of plain strings so the leak test can build
+    the same query in both conditions and vary only the router.
+    """
+    parts = [provider or "the provider"]
+    if kind:
+        parts.append(kind)
+    parts.append("cancellation policy")
+    if reference:
+        parts.append(reference)
+    if holder:
+        parts.append(holder)
+    return " ".join(part for part in parts if part)
 
 
 class TavilyError(RuntimeError):
@@ -69,11 +100,15 @@ class TavilyClient:
             placeholder that OpenShell substitutes at the network boundary.
         timeout: Per-request timeout in seconds.
         client: The underlying HTTP client, injectable for tests.
+        transport: Where the request goes. When given, it replaces the
+            HTTP call entirely — which is how the leak test captures the
+            query without sending it.
     """
 
     api_key: str
     timeout: float = 30.0
     client: httpx.Client | None = field(default=None, repr=False)
+    transport: Transport | None = field(default=None, repr=False)
 
     def search(
         self,
@@ -126,25 +161,20 @@ class TavilyClient:
         if include_domains:
             payload["include_domains"] = include_domains
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        client = self.client or httpx.Client(timeout=self.timeout)
+        # Every outbound query crosses the egress seam, so the leak test
+        # sees it. `payload=outbound` is what actually leaves — not the
+        # `query` argument, which may have been redacted on the way in.
+        request = OutboundRequest(
+            kind="lookup_call",
+            payload=outbound,
+            detail=f"tavily search (max_results={max_results}, depth={search_depth})",
+        )
+        body = self._send(request, payload)
         try:
-            response = client.post(
-                f"{TAVILY_BASE_URL}/search", json=payload, headers=headers
-            )
-        except httpx.HTTPError as exc:
-            raise TavilyError(f"Tavily request failed: {exc}") from exc
+            data = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise TavilyError(f"Tavily returned something that is not JSON: {body[:200]!r}") from exc
 
-        if response.status_code != 200:
-            raise TavilyError(
-                f"Tavily returned {response.status_code}: {response.text[:200]}"
-            )
-
-        data = response.json()
         results: list[SearchResult] = []
         for item in data.get("results", []):
             results.append(
@@ -158,6 +188,37 @@ class TavilyClient:
                 )
             )
         return results
+
+    def _send(self, request: OutboundRequest, payload: dict[str, Any]) -> str:
+        """Put the request on the wire, or hand it to the transport.
+
+        When a transport is set there is no network at all: that is the
+        leak test's mode, and the reason the measurement is free and
+        reproducible.
+        """
+        if self.transport is not None:
+            return self.transport(request)
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            if self.client is not None:
+                response = self.client.post(
+                    f"{TAVILY_BASE_URL}/search", json=payload, headers=headers
+                )
+            else:
+                with httpx.Client(timeout=self.timeout) as client:
+                    response = client.post(
+                        f"{TAVILY_BASE_URL}/search", json=payload, headers=headers
+                    )
+        except httpx.HTTPError as exc:
+            raise TavilyError(f"Tavily request failed: {exc}") from exc
+
+        if response.status_code != 200:
+            raise TavilyError(f"Tavily returned {response.status_code}: {response.text[:200]}")
+        return response.text
 
     def close(self) -> None:
         if self.client is not None:

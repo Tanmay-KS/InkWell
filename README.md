@@ -9,14 +9,16 @@ sandbox with a declarative egress policy, and a privacy router strips your
 personal details from anything that leaves, so the expensive models and
 third-party search engines never see them.
 
-> **Status: Phase 0 complete, Phase 1 in progress.**
+> **Status: Phase 1 built; Phase 2 leak test measured.**
 > The stack is de-risked and the decisions are recorded. The Phase 0 exit
 > condition was met by hand on 2026-10-21; the automated verifier has not
 > yet produced a green run, and two Phase 0 benchmark runs disagree about
-> which model reads documents (F-032). See
+> which model reads documents (F-032). The Phase 1 pipeline runs end to
+> end, but the sandbox leg of its exit condition is outstanding. See
 > [`docs/phase0-runbook.md`](docs/phase0-runbook.md) for the infra side,
 > [`docs/ocr-decision.md`](docs/ocr-decision.md) for the model decision
-> and the privacy architecture, and
+> and the privacy architecture,
+> [`docs/leak-test.md`](docs/leak-test.md) for the leak measurement, and
 > [`IMPLEMENTATION.md`](IMPLEMENTATION.md) for the full plan.
 
 ### Phase 0 decisions
@@ -63,13 +65,55 @@ document's lines, at 1.3s a page, with no egress at all.
 > measured on it was wrong. It renders an A4 page at 150 DPI now, which
 > is what a real scan gives you. See F-037 in the friction log.
 
+### Phase 2 — the leak test
+
+The agent has to look things up: *"what is the cancellation notice period
+for this provider?"* The naive query quotes the reference and the holder,
+because that is what makes a search specific — and those are exactly the
+details that must not leave.
+
+```bash
+make leak-test    # 200 documents, router ON vs OFF, ~2 seconds, no network
+```
+
+| Condition | Outbound payloads | With personal detail | Leak rate |
+|---|---:|---:|---:|
+| router OFF | 200 | 200 | **100.0%** |
+| router ON | 200 | 0 | **0.0%** |
+
+Same pipeline, same documents, same query. The only difference is whether
+the payload passes through `privacy_router.redact`:
+
+```
+OFF:  Lakeshore Family Health Plan medical cancellation policy 0847-4851 Devin Sullivan
+ON:   Lakeshore Family Health Plan medical cancellation policy [ACCOUNT_1] [NAME_1]
+```
+
+Nothing is sent. Every outbound call crosses one seam
+(`privacy_router/egress.py`), and the harness captures the payload there,
+so the measurement costs nothing and is byte-identical on every run.
+
+The router ON leg **can fail**: the test suite runs it with a router that
+does nothing and asserts that it leaks (F-038, F-039). A 0% result that
+cannot become 100% is not evidence.
+
+> **The honest caveat.** This measures the redaction layer the OpenShell
+> middleware invokes — the same `privacy_router.redact` — not the gateway
+> applying it. The sandbox's ON condition is the presence of the
+> `network_middlewares` entry, and that leg needs the gateway host. Until
+> it runs, the claim is *"the router's coverage is 100%"*, not *"the
+> sandbox enforced 100%"*.
+
+See [`docs/leak-test.md`](docs/leak-test.md) for the method and what the
+number does not cover.
+
 ---
 
 ## The three claims
 
 | # | Claim | Where it is proven | Phase |
 |---|---|---|---|
-| 1 | Personal details do not leak out of the agent | `eval/leak_test.py` | 2 |
+| 1 | Personal details do not leak out of the agent | `eval/leak_test.py` — **100% → 0%** on 200 documents, see [`docs/leak-test.md`](docs/leak-test.md) | 2 |
 | 2 | A prompt-injected agent cannot exfiltrate your data, and the attempt is on the record | `sandbox/middleware/ledger-router/` | 2 |
 | 3 | The agent's memory is right when the facts change, not just when they are recalled | `eval/memory_updates_eval.py` | 3 |
 
@@ -206,6 +250,7 @@ ledger/
 │
 ├── privacy_router/               Phase 2 — redaction and guardrails
 │   ├── redact.py                 the redaction library
+│   ├── egress.py                 the seam every outbound request crosses
 │   ├── injection_guard.py        exfiltration detection
 │   └── audit_log.py              normalizes OpenShell's audit events
 │

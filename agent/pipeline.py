@@ -25,6 +25,7 @@ that does not need one cannot leak anything to one.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import date
@@ -34,6 +35,7 @@ from agent.actions.draft_actions import ActionKind, DraftAction, draft_action
 from agent.deadlines.flag_deadlines import Deadline, flag_deadlines
 from agent.ingestion.parse_documents import Document, parse_document
 from agent.memory.hermes_memory import HouseholdItem, HouseholdMemory, TrackedState
+from privacy_router.egress import Transport
 
 # The organisation a notice is from. Two shapes, in order of confidence:
 # "…registration with the City Business Licensing Office" and the
@@ -263,6 +265,8 @@ def process_document(
     today: date | None = None,
     kind: str = "",
     action_kind: ActionKind | None = None,
+    redact: bool = True,
+    transport: Transport | None = None,
 ) -> PipelineResult:
     """Run the whole pipeline over one document.
 
@@ -275,6 +279,12 @@ def process_document(
             not given.
         action_kind: Force the kind of action. Inferred from the deadline
             when not given.
+        redact: Whether the document text is redacted. Off is the leak
+            test's router-OFF condition; everything else about the run is
+            identical.
+        transport: How a vision fallback would be sent, if the local
+            extractor cannot read the page. When omitted, extraction is
+            entirely local.
 
     Returns:
         A `PipelineResult`.
@@ -291,7 +301,13 @@ def process_document(
         except Exception as exc:
             result.warnings.append(f"could not read the household picture: {exc}")
 
-    document = parse_document(path, household_names=names)
+    document = parse_document(
+        path,
+        model=os.environ.get("LEDGER_MODEL_OCR", "") or None,
+        transport=transport,
+        household_names=names,
+        redact=redact,
+    )
     result.document = document
     result.warnings.extend(document.warnings)
 

@@ -417,6 +417,30 @@ Every Phase 0 number was measured on that corpus, so every one of them was disto
 **Detection:** tesseract scoring *worse* than a pip-only fallback, and the `0`→`8` pattern across every date. A model-independent failure is a harness failure — the same shape as F-011.
 **Fix:** the corpus renders an A4 page at ~150 DPI with a 10pt body — what a scan or a phone photo gives. With that, tesseract scores **100% field recovery and 100% line coverage**, and the pipeline extracts the provider, the kind, the reference and the amount correctly on every document. The lesson is worth more than the fix: **a benchmark is only as representative as its fixtures, and a fixture that is harder than reality measures the fixture.**
 
+### F-038 · The leak test measured 0 out of 0 and would have called it a perfect score
+**Owner:** Person B · **Phase:** 2 · **Status:** fixed
+The harness was written against the pipeline as it stood, and the pipeline makes **no outbound calls at all**: local OCR, local redaction, template drafts. Run as specified, both conditions would have reported 0 payloads with 0 personal detail — a **0.0% leak rate that means "nothing happened"**, not "nothing leaked". A ratio whose denominator is zero is not a measurement.
+**Cost if unresolved:** the project's headline number would have been a division by zero dressed up as a result, and the video would have claimed a privacy property that nothing had exercised. Worse than a wrong number: a number that cannot be wrong.
+**Detection:** the first run over three documents reported `0 / 0` for both conditions. The tell was that the OFF leg — which is supposed to be the leaky one — also reported nothing.
+**Fix:** the outbound paths the architecture already claimed were built, not simulated. `privacy_router/egress.py` is one seam with three kinds (`ocr_call`, `redact_call`, `lookup_call`); the vision fallback in `parse_documents.py` is reached only when local OCR returns nothing; `redact.py` escalates residual spans; `search/tavily_client.py` builds and sends the query. Every call now records an `OutboundRequest`, so a call site that does not name a kind does not exist. With something to leak, the OFF leg reports **200/200** and the ON leg **0/200**.
+**Lesson:** a leak test needs something to leak before it needs a router.
+
+### F-039 · Turning the router off also turned off the values the test needed
+**Owner:** Person B · **Phase:** 2 · **Status:** fixed
+`parse_document(redact=False)` originally meant "do not build the redaction map". The map is where `build_item` reads the real policy number and holder — so with the router off, the query came out as `"Lakeshore Family Health Plan medical cancellation policy"`, with no identifier and no name. **The OFF condition leaked nothing**, and the comparison would have shown no difference between the two conditions.
+**Cost if unresolved:** a 0% vs 0% result, or an outright *negative* finding — "the router makes no difference" — from a test that had disabled the very values it was meant to observe. This is F-023's shape again: a negative test passing for the wrong reason.
+**Detection:** printing the first OFF-condition query. The member ID that was plainly in the document was not in the query.
+**Fix:** `redact=False` now always builds the map and only leaves the *text* unredacted. The map is the parser's view of the identifiers; the router decides whether they reach the text, not whether they exist. The OFF payload carries `0847-4851` and `Devin Sullivan`, and the ON payload carries `[ACCOUNT_1]` and `[NAME_1]` — the same query, one difference.
+**Lesson:** an OFF switch that disables the thing you are measuring is not a control.
+
+### F-040 · `make` was running targets outside the virtualenv, and only one target said so
+**Owner:** Person B · **Phase:** 2 · **Status:** fixed
+`PY := $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)` was defined **above** `VENV := .venv`. `:=` expands immediately, so `$(VENV)` was empty, the wildcard tested `/bin/python`, and that exists — so every `make` target ran on the system interpreter. `make demo` passed, because the pipeline needs only the standard library, so nothing looked wrong. `make leak-test` failed with `ModuleNotFoundError: No module named 'httpx'`.
+**Cost if unresolved:** the documented entry points — the ones a stranger follows — were not running the code the test suite ran. A dependency would appear installed on one path and missing on the other, and "reproduce it yourself" would not reproduce anything.
+**Detection:** the traceback named `/bin/python`, not `.venv/bin/python`.
+**Fix:** define `VENV` first. `make -n demo` now prints `.venv/bin/python agent/demo.py`.
+**Lesson:** a runner that falls back silently to another interpreter is a reproducibility bug wearing a convenience feature.
+
 ### Pre-registered risks, now closed
 
 | Ref | Was | Now |

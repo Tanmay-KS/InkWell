@@ -35,6 +35,9 @@ eval/results/*
 !eval/results/ocr_bench.json
 !eval/results/redacted_extract.json
 !eval/results/redaction_audit.json
+# The leak test is the headline number and it is 4 KB. It is the evidence
+# for the video's central claim, so it is kept like the Phase 0 results.
+!eval/results/leak_test.json
 video/recordings/
 *.mp4
 
