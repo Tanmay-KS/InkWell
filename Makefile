@@ -74,6 +74,16 @@ sandbox-logs: ## Tail sandbox logs (shows denied connections)
 verify: ## Run the Phase 0 exit verification (pass/fail table)
 	bash $(SANDBOX)/verify.sh
 
+.PHONY: run-pipeline
+run-pipeline: ## Run a document through the pipeline inside the sandbox (DOC=path)
+	@test -n "$(DOC)" || { echo "usage: make run-pipeline DOC=eval/synthetic_docs/doc-0000.png"; exit 1; }
+	bash $(SANDBOX)/run_pipeline.sh "$(DOC)"
+
+.PHONY: pipeline-check
+pipeline-check: ## Check the sandbox plumbing only, without the pipeline (DOC=path)
+	@test -n "$(DOC)" || { echo "usage: make pipeline-check DOC=eval/synthetic_docs/doc-0000.png"; exit 1; }
+	bash $(SANDBOX)/run_pipeline.sh "$(DOC)" --check
+
 .PHONY: gateway-preflight
 gateway-preflight: ## Validate sandbox/gateway.toml with the real OpenShell binary
 	@command -v openshell-gateway >/dev/null 2>&1 \
@@ -132,9 +142,23 @@ ocr-bench: ## Compare OCR models on a sample of the corpus
 
 # --- later phases ----------------------------------------------------------
 
+# A partial run must never overwrite the canonical result. Only the
+# default, full-corpus run writes `leak_test.json`; an explicitly
+# overridden `CORPUS_COUNT` is a smoke run and writes somewhere else.
+#
+# This is not hypothetical: `make leak-test CORPUS_COUNT=3` once replaced
+# the committed 200-document number with a 3-document sample.
+LEAK_JSON := $(if $(filter command line,$(origin CORPUS_COUNT)),$(EVAL)/results/leak_test.smoke.json,$(EVAL)/results/leak_test.json)
+
 .PHONY: leak-test
-leak-test: ## Phase 2 — run the corpus through the pipeline, router ON vs OFF
-	$(PY) $(EVAL)/leak_test.py
+leak-test: ## Measure the leak rate with the router ON vs OFF
+	$(PY) $(EVAL)/leak_test.py --docs $(EVAL)/synthetic_docs --count $(CORPUS_COUNT) \
+		--json $(LEAK_JSON)
+
+.PHONY: leak-test-smoke
+leak-test-smoke: ## Fast leak-test smoke run — never overwrites the canonical result
+	$(PY) $(EVAL)/leak_test.py --docs $(EVAL)/synthetic_docs --count 5 \
+		--json $(EVAL)/results/leak_test.smoke.json
 
 .PHONY: memory-eval
 memory-eval: ## Phase 3 — memory-with-updates accuracy

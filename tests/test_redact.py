@@ -331,3 +331,76 @@ def test_a_renewal_date_survives():
 def test_an_amount_survives():
     result = local_redact("Your rate is $148.95 per month.")
     assert "$148.95" in result.text
+
+
+# --- the map: the local-resolution side of the architecture ----------------
+#
+# The model never sees a personal detail; the agent still has to write a
+# useful draft. The map is how both are true at once, and it is a trapdoor:
+# it stays in the sandbox, and `resolve` is the only way out of it.
+
+
+def test_a_map_built_from_a_result_resolves_placeholders():
+    """`RedactionMap.from_result()` is the path for a caller that already
+    holds a redaction result and needs the map without redoing the work."""
+    from privacy_router.redact import RedactionMap
+
+    result = local_redact("Account 1234-5678 belongs to sam@example.com")
+    mapping = RedactionMap.from_result(result)
+
+    resolved = mapping.resolve(f"Your account {result.placeholders()[0]} is ready")
+    assert "1234-5678" in resolved
+    assert "[ACCOUNT_1]" not in resolved
+
+
+def test_resolving_leaves_unknown_placeholders_alone():
+    """An unknown placeholder is a fact about the pipeline.
+
+    Silently deleting it would hide a bug; the caller needs to see it.
+    """
+    from privacy_router.redact import RedactionMap
+
+    mapping = RedactionMap.from_result(local_redact("Account 1234-5678"))
+
+    assert mapping.resolve("Reference [ACCOUNT_9]") == "Reference [ACCOUNT_9]"
+
+
+def test_the_map_never_prints_its_values():
+    """A map that leaks through a log line is worse than no map at all."""
+    from privacy_router.redact import RedactionMap
+
+    mapping = RedactionMap.from_result(
+        local_redact("Account 1234-5678 belongs to sam@example.com")
+    )
+
+    for rendered in (repr(mapping), str(mapping)):
+        assert "1234-5678" not in rendered
+        assert "sam@example.com" not in rendered
+
+
+def test_the_map_value_lookup():
+    """The single-placeholder lookup, and its size."""
+    from privacy_router.redact import RedactionMap
+
+    result = local_redact("Account 1234-5678")
+    mapping = RedactionMap.from_result(result)
+
+    placeholder = result.placeholders()[0]
+    assert mapping.value(placeholder) == "1234-5678"
+    assert mapping.value("[NOPE_1]") is None
+    assert len(mapping) == 1
+
+
+def test_the_redacted_text_stays_safe_to_log():
+    """The text and the map are separate objects on purpose.
+
+    `RedactionResult.text` is what travels; the map is what stays.
+    """
+    from privacy_router.redact import RedactionMap
+
+    result = local_redact("Account 1234-5678 belongs to sam@example.com")
+
+    assert "1234-5678" not in result.text
+    assert "sam@example.com" not in result.text
+    # ...but the map still holds what is needed to resolve locally.
+    assert RedactionMap.from_result(result).value("[ACCOUNT_1]") == "1234-5678"

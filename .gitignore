@@ -50,6 +50,12 @@ tls/
 # running elsewhere can authenticate. These are credentials — never commit.
 .openshell/
 
+# Superseded by sandbox/setup.sh, which installs OpenShell from the release
+# RPMs with a staged copy into /usr and does the same job without binding the
+# gateway's control plane to the LAN. Kept on disk for reference; never
+# committed.
+sandbox/host-bootstrap.sh
+
 # --- Editors / OS ----------------------------------------------------------
 .DS_Store
 .idea/

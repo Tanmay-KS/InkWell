@@ -26,6 +26,7 @@ that does not need one cannot leak anything to one.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -34,6 +35,7 @@ from agent.actions.draft_actions import ActionKind, DraftAction, draft_action
 from agent.deadlines.flag_deadlines import Deadline, flag_deadlines
 from agent.ingestion.parse_documents import Document, parse_document
 from agent.memory.hermes_memory import HouseholdItem, HouseholdMemory, TrackedState
+from privacy_router.redact import redacted_text
 
 # The organisation a notice is from. Two shapes, in order of confidence:
 # "…registration with the City Business Licensing Office" and the
@@ -174,17 +176,41 @@ def pick_reference(document: Document) -> str | None:
     return accounts[0]
 
 
+def redact_source(path: str | Path, names: Iterable[str] = ()) -> str:
+    """The document's name, with personal detail removed.
+
+    The durable household picture keeps where an obligation was learned
+    about. A file the user named themselves — `Devin Sullivan -
+    policy.pdf` — would put a household name into that record, and the
+    redactor never sees it: the redactor runs over the document's *text*,
+    and a filename is not text.
+
+    So the basename goes through the same pass, and the directory is
+    dropped. A directory can carry a username, and nothing here needs it.
+    """
+    name = Path(path).name
+    if not name:
+        return ""
+    redacted, _ = redacted_text(name, names=names)
+    return redacted
+
+
 def build_item(
     document: Document,
     deadline: Deadline | None,
     *,
     kind: str = "",
     source: str | None = None,
+    names: Iterable[str] = (),
 ) -> HouseholdItem:
     """Build the household item a document describes.
 
     The real values come from the redaction map — they are in the
     sandbox, and this is the one place they are needed in the clear.
+
+    `source` is redacted before it is kept: it is the one field that
+    would otherwise carry a filename through, and the redactor does not
+    run over filenames.
     """
     provider = guess_provider(document.text)
     holder = next(iter(document.redactions.names()), None)
@@ -199,7 +225,7 @@ def build_item(
         renewal_date=deadline.date if deadline else None,
         amount=guess_amount(document.text),
         state=TrackedState.NEW,
-        source=source or str(document.source_path),
+        source=redact_source(source or document.source_path, names),
     )
 
 
@@ -289,7 +315,9 @@ def process_document(
         try:
             names = memory.household_names()
         except Exception as exc:
-            result.warnings.append(f"could not read the household picture: {exc}")
+            result.warnings.append(
+                f"could not read the household picture ({type(exc).__name__})"
+            )
 
     document = parse_document(path, household_names=names)
     result.document = document
@@ -305,13 +333,17 @@ def process_document(
         return result
 
     primary = pick_deadline(result.deadlines, today=today)
-    result.item = build_item(document, primary, kind=kind, source=str(path))
+    result.item = build_item(
+        document, primary, kind=kind, source=str(path), names=names
+    )
 
     if memory is not None:
         try:
             memory.upsert(result.item)
         except Exception as exc:
-            result.warnings.append(f"could not store the item: {exc}")
+            result.warnings.append(
+                f"could not store the item ({type(exc).__name__})"
+            )
 
     result.action = draft_action(primary, context=result.item, kind=action_kind)
     return result

@@ -412,6 +412,76 @@ def test_the_pipeline_reports_a_document_it_cannot_read(tmp_path):
     assert result.warnings
 
 
+def test_a_memory_failure_does_not_print_the_household_picture(tmp_path):
+    """F-039: a warning names the exception type, never its message.
+
+    The household picture *is* the personal data, and a warning is text
+    that reaches the user's screen. An exception message is unbounded
+    third-party text, so it must not travel with it.
+    """
+
+    class LeakyMemory:
+        sentinel = "Devin Sullivan 1234-5678"
+
+        def household_names(self):
+            raise RuntimeError(self.sentinel)
+
+        def upsert(self, item):
+            raise RuntimeError(self.sentinel)
+
+    source = tmp_path / "notice.txt"
+    source.write_text(INSURANCE_NOTICE, encoding="utf-8")
+
+    result = process_document(source, memory=LeakyMemory(), today=TODAY)
+
+    warnings = " ".join(result.warnings)
+    assert "RuntimeError" in warnings, "the exception type is still reported"
+    assert LeakyMemory.sentinel not in warnings, "the message never is"
+
+
+def test_an_unreadable_document_reports_the_failure_type_only(tmp_path):
+    """F-039, the extraction path: same rule, one layer down."""
+    source = tmp_path / "broken.pdf"
+    source.write_bytes(b"not a pdf")
+
+    result = process_document(source, today=TODAY)
+
+    warning = next(w for w in result.warnings if w.startswith("extraction failed:"))
+    detail = warning.split(":", 1)[1].strip()
+    assert detail.isidentifier(), f"a type name, not a message: {detail!r}"
+
+
+def test_the_stored_source_is_a_redacted_basename(tmp_path):
+    """F-038: a user-named file must not put a name into the memory.
+
+    The durable household picture records where an obligation was
+    learned about. The redactor only sees the document's text, so a
+    filename is a way in that nothing else checks.
+    """
+    store = HouseholdMemory(tmp_path / "memory.db")
+    store.upsert(
+        HouseholdItem(
+            item_id="item-seed",
+            kind="insurance",
+            provider="Meridian Mutual",
+            holder="Devin Sullivan",
+        )
+    )
+
+    folder = tmp_path / "Devin Sullivan documents"
+    folder.mkdir()
+    source = folder / "Devin Sullivan - policy.txt"
+    source.write_text(INSURANCE_NOTICE, encoding="utf-8")
+
+    result = process_document(source, memory=store, today=TODAY)
+
+    assert result.item is not None
+    assert result.item.source is not None
+    assert "Devin Sullivan" not in result.item.source, "the name is redacted"
+    assert str(tmp_path) not in result.item.source, "the directory is not kept"
+    assert result.item.source.endswith("policy.txt"), "the name is still useful"
+
+
 def test_the_document_serialisable_form_carries_no_personal_details(tmp_path):
     source = tmp_path / "notice.txt"
     source.write_text(INSURANCE_NOTICE, encoding="utf-8")

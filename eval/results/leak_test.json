@@ -1,0 +1,72 @@
+{
+  "conditions": {
+    "router_off": {
+      "condition": "router_off",
+      "documents": 200,
+      "payloads_with_personal_detail": 200,
+      "leak_rate": 1.0,
+      "bytes_per_document": 458.2,
+      "leaked_by_value": {
+        "account_number": 200,
+        "city": 200,
+        "email": 200,
+        "holder": 200,
+        "phone": 200,
+        "policy_number": 23,
+        "postcode": 194,
+        "street": 200
+      },
+      "present_by_value": {
+        "account_number": 200,
+        "city": 200,
+        "email": 200,
+        "holder": 200,
+        "phone": 200,
+        "policy_number": 25,
+        "postcode": 200,
+        "street": 200
+      },
+      "retained_kept": {
+        "amount": 200,
+        "provider": 200,
+        "renewal_date": 200
+      },
+      "retained_total": {
+        "amount": 200,
+        "provider": 200,
+        "renewal_date": 200
+      }
+    },
+    "router_on": {
+      "condition": "router_on",
+      "documents": 200,
+      "payloads_with_personal_detail": 0,
+      "leak_rate": 0.0,
+      "bytes_per_document": 404.0,
+      "leaked_by_value": {},
+      "present_by_value": {
+        "account_number": 200,
+        "city": 200,
+        "email": 200,
+        "holder": 200,
+        "phone": 200,
+        "policy_number": 25,
+        "postcode": 200,
+        "street": 200
+      },
+      "retained_kept": {
+        "amount": 200,
+        "provider": 200,
+        "renewal_date": 200
+      },
+      "retained_total": {
+        "amount": 200,
+        "provider": 200,
+        "renewal_date": 200
+      }
+    }
+  },
+  "reversible": 200,
+  "reversibility_checked": 200,
+  "notes": []
+}

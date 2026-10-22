@@ -417,6 +417,84 @@ Every Phase 0 number was measured on that corpus, so every one of them was disto
 **Detection:** tesseract scoring *worse* than a pip-only fallback, and the `0`→`8` pattern across every date. A model-independent failure is a harness failure — the same shape as F-011.
 **Fix:** the corpus renders an A4 page at ~150 DPI with a 10pt body — what a scan or a phone photo gives. With that, tesseract scores **100% field recovery and 100% line coverage**, and the pipeline extracts the provider, the kind, the reference and the amount correctly on every document. The lesson is worth more than the fix: **a benchmark is only as representative as its fixtures, and a fixture that is harder than reality measures the fixture.**
 
+### F-038 · The document's own path is stored and printed
+**Owner:** Person A · **Phase:** 1 · **Status:** fixed — the durable copy is a redacted basename; the CLI echo is kept
+The leak review of the Phase 1 pipeline (§4 of the runbook) found that the
+household item's `source` column holds the document's path, and that
+`agent/demo.py` prints the path. A file the user named themselves — `Devin
+Sullivan - policy.pdf` — puts a household name into the memory database and
+into the output, through a door nobody chose to open. The path is also the
+one place a filename can carry a name that the redactor never sees, because
+the redactor only runs over the document's *text*.
+**Cost if unresolved:** low today, because the sandbox uploads to a neutral
+`/sandbox/inbox/`, but the demo runs over `eval/synthetic_docs/` on the host
+and a real deployment would run over a user's own directory. A filename is
+personal data that no pattern catches.
+**Detection:** reading `build_item()` — `source=source or
+str(document.source_path)` — and `demo.py`'s `print(f"{path}")`.
+**Fix:** `build_item()` now runs the basename through the same
+`redacted_text()` pass the document goes through, with the household names,
+and stores only that. The directory is dropped: a directory can carry a
+username, and nothing needs it. `redacted_text("Devin Sullivan -
+policy.pdf", names=["Devin Sullivan"])` gives `[NAME_1] - policy.pdf`, so
+the record still says *which* document it was. `demo.py`'s
+`print(f"{path}")` is kept deliberately — it echoes the argument the user
+typed back to the user's own terminal, which is not a new disclosure.
+Regression test: `test_the_stored_source_is_a_redacted_basename`.
+
+### F-039 · An exception message can carry the household picture
+**Owner:** Person A · **Phase:** 1 · **Status:** fixed
+`agent/pipeline.py` puts an arbitrary exception string into the warnings
+that are printed: `f"could not read the household picture: {exc}"` and
+`f"could not store the item: {exc}"`. Today the exceptions are SQLite
+errors, which name columns rather than values, so nothing leaks. But the
+household picture *is* the personal data, and the warning is unbounded
+third-party text going straight to the output. The safe form is the same
+one the rest of the project uses for secrets: the exception *type*, never its
+message.
+**Cost if unresolved:** a future exception type — a constraint violation
+that echoes the row, a driver error that quotes the value — turns a warning
+into a leak, and it would appear in the chat the user reads.
+**Detection:** the leak review, §4.2 of the runbook: "a personal detail in
+an exception message or a traceback".
+**Fix:** all four sites now report `type(exc).__name__` and never
+`str(exc)` — the two in `agent/pipeline.py` and, so the rule is uniform
+rather than applied only where the review happened to look, the two in
+`agent/ingestion/parse_documents.py`. Regression tests:
+`test_a_memory_failure_does_not_print_the_household_picture` and
+`test_an_unreadable_document_reports_the_failure_type_only`.
+
+### F-040 · The sandbox plumbing check reported a false failure
+**Owner:** Person A · **Phase:** 1 · **Status:** fixed
+The first live run of `sandbox/run_pipeline.sh … --check` reached the
+gateway, found the sandbox and the provider, and then reported "the model
+call from inside the sandbox failed" with `MODEL-FAIL AttributeError
+'NoneType' object has no attribute 'strip'`, concluding "the sandbox cannot
+reach Token Factory". Nothing was wrong with the network. The probe read
+`message.get("content", "").strip()`; `dict.get` returns its default only
+when the key is *missing*, and the API had returned `content: null` with
+`finish_reason: "length"`, because `max_tokens: 8` was spent on the
+reasoning pass before any prose was written — the same shape as F-025. The
+`AttributeError` was then caught by the same `except` that was meant to
+catch transport errors, so a successful call was reported as a connectivity
+failure.
+**Cost if unresolved:** the one check that proves the sandbox can reach the
+model would fail on every reasoning model, and it would send the next
+person to debug certificates and DNS for a bug in a `.strip()`. The Phase 1
+exit condition cannot be closed by a check that cannot pass.
+**Detection:** the first live `--check` on the gateway host, 2026-10-22.
+Reproduced outside the sandbox with a direct request: HTTP 200,
+`finish_reason: "length"`, `content: null`.
+**Fix:** success is now a parsed response — a non-empty `choices` array —
+and never the prose. Only `urlopen` and the decode sit inside the `try`;
+the body handling moved to an `else`, so a shape error can no longer be
+reported as a network error. Content is read with `(message.get("content")
+or "").strip()`; empty content prints `MODEL-OK (no prose,
+finish_reason=…)`, and an empty `choices` list prints `MODEL-FAIL
+NoChoices`. The budget went from 8 to 64 tokens so the line usually shows
+prose, but nothing depends on it. Regression test:
+`test_the_plumbing_check_accepts_a_reply_without_prose`.
+
 ### Pre-registered risks, now closed
 
 | Ref | Was | Now |
@@ -424,7 +502,7 @@ Every Phase 0 number was measured on that corpus, so every one of them was disto
 | F-002 | Model ID casing is inconsistent across Nebius's own docs | **Confirmed and worse than expected** — see F-017 and F-018. Every ID is now read from the live catalog. |
 | F-007 | Rate limits will bite during the leak test | **Not yet hit.** A 20-document, 5-model benchmark (100 calls) ran without a throttle. The 200-document, two-condition leak test is 10× that — still to be proven. |
 
-_(F-001…F-031 above are the Phase 0 record. Later phases append here.)_
+_(F-001…F-040 above are the Phase 0 and Phase 1 record. Later phases append here.)_
 
 ---
 

@@ -297,7 +297,7 @@ def _extract_local(path: Path, media_type: str) -> tuple[str, list[str]]:
                 try:
                     page_text, _backend = ocr_image(page)
                 except Exception as exc:
-                    warnings.append(f"{page.name}: {exc}")
+                    warnings.append(f"{page.name}: {type(exc).__name__}")
                     continue
                 chunks.append(page_text)
             return "\n\n".join(chunks), warnings
@@ -356,7 +356,7 @@ def parse_document(
     try:
         raw_text, warnings = _extract_local(source, media_type)
     except Exception as exc:
-        document.warnings.append(f"extraction failed: {exc}")
+        document.warnings.append(f"extraction failed: {type(exc).__name__}")
         return document
 
     document.warnings.extend(warnings)

@@ -21,11 +21,13 @@ from privacy_router.injection_guard import Decision, GuardVerdict
 from privacy_router.redact import (
     Category,
     Redaction,
+    RedactionMap,
     RedactionResult,
     contains_personal_detail,
     find_spans,
     local_redact,
     redact,
+    redacted_text,
 )
 
 __all__ = [
@@ -35,9 +37,11 @@ __all__ = [
     "Decision",
     "GuardVerdict",
     "Redaction",
+    "RedactionMap",
     "RedactionResult",
     "contains_personal_detail",
     "find_spans",
     "local_redact",
     "redact",
+    "redacted_text",
 ]
