@@ -8,13 +8,14 @@
     "fields_found": 99,
     "fields_total": 100,
     "accuracy": 0.99,
+    "line_coverage": 0.9904545454545455,
     "per_field": {
       "renewal_date": {
         "found": 20,
         "total": 20
       },
       "account_number": {
-        "found": 20,
+        "found": 19,
         "total": 20
       },
       "provider": {
@@ -26,15 +27,15 @@
         "total": 20
       },
       "amount": {
-        "found": 19,
+        "found": 20,
         "total": 20
       }
     },
-    "mean_latency": 3.9817228071995485,
-    "p95_latency": 5.502112375001161,
-    "prompt_tokens": 29340,
-    "completion_tokens": 16590,
-    "cost_usd": 0.023732999999999997,
+    "mean_latency": 3.792488564949417,
+    "p95_latency": 4.606321514998854,
+    "prompt_tokens": 44080,
+    "completion_tokens": 17191,
+    "cost_usd": 0.028695899999999996,
     "errors": []
   },
   {
@@ -46,6 +47,7 @@
     "fields_found": 100,
     "fields_total": 100,
     "accuracy": 1.0,
+    "line_coverage": 1.0,
     "per_field": {
       "renewal_date": {
         "found": 20,
@@ -68,11 +70,11 @@
         "total": 20
       }
     },
-    "mean_latency": 3.5375110399505503,
-    "p95_latency": 4.224775657999999,
-    "prompt_tokens": 37100,
-    "completion_tokens": 5881,
-    "cost_usd": 0.0085055,
+    "mean_latency": 3.4248409383000764,
+    "p95_latency": 3.9862064749977435,
+    "prompt_tokens": 57800,
+    "completion_tokens": 5862,
+    "cost_usd": 0.011600999999999998,
     "errors": []
   },
   {
@@ -84,6 +86,7 @@
     "fields_found": 100,
     "fields_total": 100,
     "accuracy": 1.0,
+    "line_coverage": 0.9954545454545455,
     "per_field": {
       "renewal_date": {
         "found": 20,
@@ -106,11 +109,11 @@
         "total": 20
       }
     },
-    "mean_latency": 2.856776464550785,
-    "p95_latency": 3.674878934001754,
-    "prompt_tokens": 18460,
-    "completion_tokens": 4885,
-    "cost_usd": 0.0114,
+    "mean_latency": 2.687044220149983,
+    "p95_latency": 3.0719932860010886,
+    "prompt_tokens": 21440,
+    "completion_tokens": 4754,
+    "cost_usd": 0.0121368,
     "errors": []
   },
   {
@@ -122,6 +125,7 @@
     "fields_found": 100,
     "fields_total": 100,
     "accuracy": 1.0,
+    "line_coverage": 1.0,
     "per_field": {
       "renewal_date": {
         "found": 20,
@@ -144,11 +148,11 @@
         "total": 20
       }
     },
-    "mean_latency": 2.501891627599252,
-    "p95_latency": 3.159932858998218,
-    "prompt_tokens": 29180,
-    "completion_tokens": 4110,
-    "cost_usd": 0.025460999999999998,
+    "mean_latency": 3.0869138089999977,
+    "p95_latency": 3.995881789996929,
+    "prompt_tokens": 44800,
+    "completion_tokens": 4030,
+    "cost_usd": 0.03225,
     "errors": []
   },
   {
@@ -160,6 +164,7 @@
     "fields_found": 100,
     "fields_total": 100,
     "accuracy": 1.0,
+    "line_coverage": 1.0,
     "per_field": {
       "renewal_date": {
         "found": 20,
@@ -182,71 +187,51 @@
         "total": 20
       }
     },
-    "mean_latency": 4.253507916799753,
-    "p95_latency": 5.342727784998715,
-    "prompt_tokens": 10340,
-    "completion_tokens": 7568,
-    "cost_usd": 0.015204200000000001,
+    "mean_latency": 4.685196907849604,
+    "p95_latency": 6.745546464000654,
+    "prompt_tokens": 13000,
+    "completion_tokens": 7253,
+    "cost_usd": 0.01660483,
     "errors": []
   },
   {
     "name": "local-tesseract",
     "kind": "local",
-    "status": "skipped",
-    "skip_reason": "all calls failed \u2014 doc-0000: tesseract is not installed",
-    "docs": 0,
-    "fields_found": 0,
-    "fields_total": 0,
-    "accuracy": 0.0,
+    "status": "ok",
+    "skip_reason": "",
+    "docs": 20,
+    "fields_found": 100,
+    "fields_total": 100,
+    "accuracy": 1.0,
+    "line_coverage": 1.0,
     "per_field": {
       "renewal_date": {
-        "found": 0,
-        "total": 0
+        "found": 20,
+        "total": 20
       },
       "account_number": {
-        "found": 0,
-        "total": 0
+        "found": 20,
+        "total": 20
       },
       "provider": {
-        "found": 0,
-        "total": 0
+        "found": 20,
+        "total": 20
       },
       "holder": {
-        "found": 0,
-        "total": 0
+        "found": 20,
+        "total": 20
       },
       "amount": {
-        "found": 0,
-        "total": 0
+        "found": 20,
+        "total": 20
       }
     },
-    "mean_latency": 0.0,
-    "p95_latency": 0.0,
+    "mean_latency": 2.067217471650656,
+    "p95_latency": 2.8296582229995693,
     "prompt_tokens": 0,
     "completion_tokens": 0,
     "cost_usd": 0.0,
-    "errors": [
-      "doc-0000: tesseract is not installed",
-      "doc-0001: tesseract is not installed",
-      "doc-0002: tesseract is not installed",
-      "doc-0003: tesseract is not installed",
-      "doc-0004: tesseract is not installed",
-      "doc-0005: tesseract is not installed",
-      "doc-0006: tesseract is not installed",
-      "doc-0007: tesseract is not installed",
-      "doc-0008: tesseract is not installed",
-      "doc-0009: tesseract is not installed",
-      "doc-0010: tesseract is not installed",
-      "doc-0011: tesseract is not installed",
-      "doc-0012: tesseract is not installed",
-      "doc-0013: tesseract is not installed",
-      "doc-0014: tesseract is not installed",
-      "doc-0015: tesseract is not installed",
-      "doc-0016: tesseract is not installed",
-      "doc-0017: tesseract is not installed",
-      "doc-0018: tesseract is not installed",
-      "doc-0019: tesseract is not installed"
-    ]
+    "errors": []
   },
   {
     "name": "local-rapidocr",
@@ -254,12 +239,13 @@
     "status": "ok",
     "skip_reason": "",
     "docs": 20,
-    "fields_found": 93,
+    "fields_found": 96,
     "fields_total": 100,
-    "accuracy": 0.93,
+    "accuracy": 0.96,
+    "line_coverage": 0.9212878787878788,
     "per_field": {
       "renewal_date": {
-        "found": 19,
+        "found": 20,
         "total": 20
       },
       "account_number": {
@@ -275,12 +261,12 @@
         "total": 20
       },
       "amount": {
-        "found": 16,
+        "found": 18,
         "total": 20
       }
     },
-    "mean_latency": 1.3339289841003847,
-    "p95_latency": 1.574595624999347,
+    "mean_latency": 3.417637616349566,
+    "p95_latency": 3.96465975600222,
     "prompt_tokens": 0,
     "completion_tokens": 0,
     "cost_usd": 0.0,
@@ -295,6 +281,7 @@
     "fields_found": 100,
     "fields_total": 100,
     "accuracy": 1.0,
+    "line_coverage": 1.0,
     "per_field": {
       "renewal_date": {
         "found": 20,

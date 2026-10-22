@@ -24,6 +24,7 @@ third-party search engines never see them.
 | How do personal details stay inside the sandbox? | Extract locally → redact locally → the model only ever reads redacted text | [`docs/ocr-decision.md`](docs/ocr-decision.md) |
 | What does the deterministic redactor miss? | Names, alphanumeric identifiers, city and postcode — now closed: **200/200 documents clean** with the household's names | [`docs/redaction-audit.md`](docs/redaction-audit.md) |
 | Which model IDs do we use? | Pinned from the live catalog, never hand-typed | [`docs/model-catalog.md`](docs/model-catalog.md) |
+| Can the model read redacted text? | **20/20 documents, 100% on every field, zero hallucinations, and the model saw no personal detail at all** | [`docs/ocr-decision.md`](docs/ocr-decision.md) |
 
 The last row matters more than it looks: Nebius's web catalog, its API
 catalog and its cookbook disagree about which models exist, and the same

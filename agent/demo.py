@@ -89,6 +89,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--docs", default="eval/synthetic_docs", help="the synthetic corpus")
     parser.add_argument("--count", type=int, default=3, help="how many corpus documents")
     parser.add_argument("--today", default="2026-10-20", help="the reference date")
+    parser.add_argument(
+        "--text",
+        action="store_true",
+        help="use the source text instead of the rendered scan (skips the OCR step)",
+    )
     args = parser.parse_args(argv)
 
     today = date.fromisoformat(args.today)
@@ -99,7 +104,11 @@ def main(argv: list[str] | None = None) -> int:
         if not corpus.exists():
             print(f"{corpus} does not exist — run: make synth", file=sys.stderr)
             return 1
-        paths = sorted(corpus.glob("doc-*.txt"))[: args.count]
+        # The rendered scan by default, because that is the document a
+        # user actually has. `--text` uses the source text instead, which
+        # skips the OCR step entirely.
+        suffix = ".txt" if args.text else ".png"
+        paths = sorted(corpus.glob(f"doc-*{suffix}"))[: args.count]
 
     if not paths:
         print("nothing to process", file=sys.stderr)

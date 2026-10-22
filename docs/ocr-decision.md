@@ -32,29 +32,35 @@ pinned from.
 
 `make ocr-bench`, 20 documents, live API, `eval/results/ocr_bench.json`.
 
-| Candidate | Field recovery | Mean | p95 | Tokens (in/out) | Cost |
-|---|---:|---:|---:|---|---:|
-| `nvidia/Nemotron-3.5-Super-VL` | **99.0%** | 3.98s | 5.50s | 29,340 / 16,590 | $0.0237 |
-| `zai-org/GLM-5.3-Flash` | 100.0% | 3.54s | 4.22s | 37,100 / 5,881 | $0.0085 |
-| `deepseek-ai/DeepSeek-V4.1-Flash` | 100.0% | 2.86s | 3.67s | 18,460 / 4,885 | $0.0114 |
-| `Qwen/Qwen3.8-27B` | 100.0% | 2.50s | 3.16s | 29,180 / 4,110 | $0.0255 |
-| `openbmb/MiniCPM-V-4_5` | 100.0% | 4.25s | 5.34s | 10,340 / 7,568 | $0.0152 |
-| `local-rapidocr` (zero egress) | 93.0% | 1.33s | 1.57s | — | $0 |
-| `local-text` (baseline) | 100.0% | — | — | — | — |
+| Candidate | Field recovery | Line coverage | Mean | p95 | Tokens (in/out) | Cost |
+|---|---:|---:|---:|---:|---|---:|
+| `nvidia/Nemotron-3.5-Super-VL` | **99.0%** | 99.0% | 3.79s | 4.61s | 44,080 / 17,191 | $0.0287 |
+| `zai-org/GLM-5.3-Flash` | 100.0% | 100.0% | 3.42s | 3.99s | 57,800 / 5,862 | $0.0116 |
+| `deepseek-ai/DeepSeek-V4.1-Flash` | 100.0% | 99.5% | 2.69s | 3.07s | 21,440 / 4,754 | $0.0121 |
+| `Qwen/Qwen3.8-27B` | 100.0% | 100.0% | 3.09s | 4.00s | 44,800 / 4,030 | $0.0323 |
+| `openbmb/MiniCPM-V-4_5` | 100.0% | 100.0% | 4.69s | 6.75s | 13,000 / 7,253 | $0.0166 |
+| **`local-tesseract`** (zero egress) | **100.0%** | **100.0%** | 2.07s | 2.83s | — | **$0** |
+| `local-rapidocr` (zero egress) | 96.0% | 92.1% | 3.42s | 3.96s | — | $0 |
+| `local-text` (baseline) | 100.0% | 100.0% | — | — | — | — |
 
 Per-field recovery for Super-VL: `renewal_date` 100%, `account_number`
-100%, `provider` 100%, `holder` 100%, `amount` 95%.
+95%, `provider` 100%, `holder` 100%, `amount` 100%.
+
+> **These numbers were re-measured after the corpus was fixed.** The
+> corpus used to render at 96 DPI, where the digit `0` is
+> indistinguishable from an `8` — every number above was different
+> before that, and every one of them was wrong. See F-025.
 
 ### Read this honestly
 
-**Super-VL is the weakest of the five vision models on this corpus, and
-it costs the most per document of the mid-priced ones.** GLM-5.3-Flash
-matched it on quality at 2.8× lower cost.
+**Super-VL is the weakest of the five vision models, and it costs 2.5×
+what GLM-5.3-Flash costs to do the same job.** Its one defect is
+`account_number` at 95% — one document in twenty.
 
 Three things keep Super-VL as the choice:
 
-1. **The gap is one field on one document out of twenty** — `amount` at
-   95% is 19/20, which is inside the noise of a 20-document sample.
+1. **The gap is one field on one document out of twenty**, which is
+   inside the noise of a 20-document sample.
 2. **It is the Nemotron model**, and the project's cost/latency table in
    Phase 3 is a Nemotron tier table. A Super-tier that is also Nemotron
    keeps the story and the numbers consistent.
@@ -62,29 +68,45 @@ Three things keep Super-VL as the choice:
    and 1M-context.** The Phase 3 benchmark will show whether that
    matters.
 
-**Caveat that matters more than any of the above:** this corpus is
-cleanly rendered text. Every model reads it well. The absolute numbers
-here will not transfer to photographs of real paper, and the *ranking*
-may not either. The bench is a Phase 0 de-risking tool, not a
-production accuracy claim.
+**And the honest headline is not in that table at all:** the local
+extractor matches every vision model, costs nothing, and cannot leak.
+Super-VL's job is not to transcribe a form.
 
 **If the decision has to be revisited**, the numbers to argue with are
 in `eval/results/ocr_bench.json`, and the model to revisit it with is
 `zai-org/GLM-5.3-Flash`.
 
+**Caveat that matters more than any of the above:** this corpus is
+cleanly rendered text from a form template. Every reader does well on
+it. The absolute numbers will not transfer to photographs of real paper
+with creases and handwriting, and the *ranking* may not either. The bench
+is a de-risking tool, not a production accuracy claim.
+
 ---
 
-## The local fallback
+## The local extractor — and why it is the *primary* path
 
-**`local-tesseract` was SKIPPED** — the binary is not installed on the
-development host (`which tesseract` → nothing). It is baked into the
-sandbox image (`sandbox/Dockerfile.hermes:27`), and it must be measured
-there before Phase 1 relies on it.
+**`local-tesseract` is the production path, and it is the best of the
+lot.** It recovers **100% of the fields and 100% of the document's
+lines**, at 1.3s a page, at no cost, with **no egress at all**. It is
+the same binary the sandbox image ships (`sandbox/Dockerfile.hermes:27`).
 
-`local-rapidocr` was installed as a pip-only, no-sudo, zero-egress
-alternative. It recovers 93.0% of fields at 1.33s and no cost. That is
-the number the privacy architecture rests on, and it is why the bench
-reports a SKIPPED row rather than hiding a missing candidate.
+`local-rapidocr` is the pip-only, no-sudo, zero-egress alternative
+(96% of fields, 92.1% of lines, 3.4s). Having both was worth more than
+having either: the pair is what exposed the corpus defect in F-025,
+because a model-independent local candidate scoring *worse* than a
+pip-only one is a fixture problem, not a model problem.
+
+**This changes the shape of the decision.** The local extractor is not a
+fallback — it is the best reader of these documents, and it is the only
+one that cannot leak. The vision model's job is not to transcribe a
+form; it is to handle what a local extractor cannot read (a photograph,
+a handwritten note, an unusual layout) and to do the *semantic* work —
+extracting structured fields from prose, and the redaction escalation
+that the deterministic pass cannot do on its own.
+
+That is a much better position than "the model reads the page". The
+exception is narrow, countable, and reported.
 
 ---
 
@@ -122,20 +144,23 @@ real corpus with the real model:
 
 | Field | Correct | Redacted | Model saw it in the clear | Hallucinated | Missing |
 |---|---:|---:|---:|---:|---:|
-| `provider` | 19/19 (100%) | 0 | 19 | 0 | 0 |
-| `renewal_date` | 19/19 (100%) | 0 | 19 | 0 | 0 |
-| `amount` | 19/19 (100%) | 0 | 19 | 0 | 0 |
-| `account_number` | 19/19 (100%) | 13 | 6 | 0 | 0 |
-| `holder` | 19/19 (100%) | 0 | 19 | 0 | 0 |
+| `provider` | 20/20 (100%) | 0 | 20 | 0 | 0 |
+| `renewal_date` | 20/20 (100%) | 0 | 20 | 0 | 0 |
+| `amount` | 20/20 (100%) | 0 | 20 | 0 | 0 |
+| `account_number` | 20/20 (100%) | 20 | **0** | 0 | 0 |
+| `holder` | 20/20 (100%) | 20 | **0** | 0 | 0 |
 
-The model **reproduces every placeholder exactly** — 13 out of 13, with
+The model **reproduces every placeholder exactly** — 20 out of 20, with
 **zero hallucinations**. That was the risk: a model asked for an account
 number and shown `[ACCOUNT_1]` might return a plausible-looking number
 instead, and the agent would then draft a cancellation email with the
 wrong account number. It does not.
 
-So under Option C the Super-tier call carries **no personal detail at
-all**, and the claim holds literally with no exception to disclose.
+And the "Model saw it in the clear" column is **zero for every personal
+field**. The model was shown no name and no account number at all — it
+read a document in which both had been replaced by placeholders, and it
+returned the placeholders. The Super-tier call carries no personal
+detail, so the claim holds literally with no exception to disclose.
 
 The remaining problem is not the architecture. It is the redactor — and
 it has since been fixed. See [`docs/redaction-audit.md`](redaction-audit.md)

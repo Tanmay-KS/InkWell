@@ -54,6 +54,17 @@ TOKEN_FACTORY_BASE_URL = os.environ.get(
     "NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1"
 ).rstrip("/")
 
+# The completion budget.
+#
+# Super-VL is a *reasoning* model: it spends most of its completion
+# tokens thinking, and those tokens count against `max_tokens`. At 1024,
+# three documents in twenty came back with an empty `content` — the
+# reasoning had used up the budget before the answer was written. The
+# failure looked like a parsing bug, and it was not one.
+#
+# The budget has to cover the thinking and the answer.
+MAX_COMPLETION_TOKENS = 4096
+
 PROMPT = (
     "Read this redacted document and extract its fields.\n\n"
     "Reply with ONLY a JSON object, no prose and no code fence:\n"
@@ -162,7 +173,7 @@ def call_model(model: str, text: str, api_key: str, timeout: float) -> tuple[dic
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": f"{PROMPT}\n\n---\n{text}"}],
-        "max_tokens": 1024,
+        "max_tokens": MAX_COMPLETION_TOKENS,
         "temperature": 0.0,
     }
 
@@ -176,8 +187,21 @@ def call_model(model: str, text: str, api_key: str, timeout: float) -> tuple[dic
         raise RuntimeError(f"HTTP {response.status_code}: {response.text[:200]}")
 
     data = response.json()
-    content = data["choices"][0]["message"].get("content") or ""
+    message = data["choices"][0]["message"]
+    content = message.get("content") or ""
     usage = data.get("usage", {})
+
+    if not content.strip():
+        # A reasoning model that ran out of budget says nothing at all.
+        # Say *why*, because "the model returned nothing" is not a
+        # diagnosis.
+        reasoning = message.get("reasoning_content") or ""
+        raise RuntimeError(
+            f"the model returned no content (finish_reason="
+            f"{data['choices'][0].get('finish_reason')!r}, "
+            f"reasoning tokens={usage.get('completion_tokens_details', {}).get('reasoning_tokens')})"
+            + (f"; it was still thinking: {reasoning[:80]!r}" if reasoning else "")
+        )
 
     parsed = parse_json_object(content)
     if parsed is None:

@@ -233,6 +233,14 @@ Every Phase 0 number was measured on that corpus, so every one of them was disto
 
 ---
 
+### F-026 · A reasoning model spent the whole completion budget thinking
+**Owner:** Person B · **Phase:** 1 · **Status:** fixed
+The redacted-text benchmark came back with **3 documents in 20 reporting "could not parse a JSON object from: ''"** — an empty response. It read like a parsing bug in the harness. It was not: `nvidia/Nemotron-3.5-Super-VL` is a **reasoning model**, and it spends its completion tokens on `reasoning_content` before it writes an answer. On one measured call, 847 of 859 completion tokens went to the reasoning and 12 to the answer. With `max_tokens: 1024` the thinking had used the entire budget before the answer was written, and the model returned nothing.
+**Cost if unresolved:** a 15% silent failure rate in the extraction path, and — worse — the *shape* of the failure. An empty response looks like "the model could not do this task", when the truth is "the model did the task and was not allowed to finish talking". The Phase 2 leak test would have scored that as a detection failure, which is a completely different conclusion.
+**Detection:** the error said "could not parse a JSON object from: ''" — an empty string, not malformed JSON. An empty response is a different failure from a malformed one.
+**Fix:** the completion budget is now 4096, which covers the thinking and the answer, and the error message now names the finish reason and the reasoning-token count so the next reader can tell "ran out of budget" from "could not do it". 20/20 documents now parse, 100% correct, zero hallucinations.
+The general lesson: **on a reasoning model, `max_tokens` is a budget for the thinking, not for the answer.**
+
 ### Pre-registered risks, now closed
 
 | Ref | Was | Now |
