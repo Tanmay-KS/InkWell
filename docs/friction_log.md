@@ -97,6 +97,8 @@ and chowned to UID 10000 before first boot.
 
 _(recorded during Phase 0, 2026-10-20 → 2026-10-21 — the first time anything in this repo was actually run)_
 
+
+
 ### F-009 · The benchmark could never have tested a vision model
 **Owner:** Person B · **Phase:** 0 · **Status:** fixed
 `make synth` did not pass `--render`, so no PNGs existed. The benchmark fell back to the `.txt` files, base64-encoded them, and posted them as `data:image/png;base64,…`. Every vision candidate would have failed with an opaque HTTP 400, and the table would have said "0% accuracy" for all of them — which reads like "these models are terrible" rather than "the harness was broken".
@@ -188,11 +190,11 @@ The headline claim is that personal details never reach a Super/Ultra tier. The 
 **Fix:** Option C — extract locally, redact locally, then send only redacted text to the model. Validated with `make redacted-extract`: the model reproduced every placeholder exactly (13/13, zero hallucinations) and extracted every clear field perfectly. The Super-tier call then carries no personal detail at all. See `docs/ocr-decision.md`.
 
 ### F-020 · No passwordless sudo, so the local OCR baseline could not be installed
-**Owner:** Person B · **Phase:** 0 · **Status:** worked around
+**Owner:** Person B · **Phase:** 0 · **Status:** fixed
 `tesseract` is not on the development host and `pacman -S` prompts for a password. The benchmark's local candidate was therefore SKIPPED — which is the F-013 scenario, one layer down.
 **Cost if unresolved:** the local path's accuracy would be unknown, and Option C's fallback (a low-confidence page sent to Super-VL as an image) could not be sized.
 **Detection:** `which tesseract` → nothing.
-**Fix:** `rapidocr-onnxruntime` was installed as a pip-only, no-sudo, zero-egress alternative and measures 93% field recovery at 1.33s and no cost. The real tesseract build still has to be measured **inside the sandbox image**, because that is where it will actually run. Person A to run that measurement.
+**Fix:** `rapidocr-onnxruntime` was installed as a pip-only, no-sudo, zero-egress alternative, and tesseract was installed later. **Having both turned out to be worth more than having either**: the pair is what exposed F-037, because a model-independent local candidate scoring *worse* than a pip-only one is a fixture problem, not a model problem. The sandbox image already ships `tesseract-ocr` and `poppler-utils`, so the production path is covered.
 
 ### F-021 · The gateway needs Docker at startup, not just for sandboxes
 **Owner:** Person A · **Phase:** 0
@@ -259,22 +261,21 @@ hand-type a model ID.
 the two vision models that actually exist; the OCR model is pinned in
 `.env` as `LEDGER_MODEL_OCR`.
 
-### F-025 · A reasoning model will spend the whole OCR budget thinking
-**Owner:** Person B · **Phase:** 0
-`openbmb/MiniCPM-V-4_5` reasons before it answers. On a transcription
-task it can burn the entire completion budget inside a `<think>` block and
-return an empty string — 16,363 characters of trace and no answer, with
-the block left **unclosed**. The first version of the benchmark scored
-that as "zero fields recovered" and hid a real failure behind a number.
-**Cost if unresolved:** an unusable OCR path, and a benchmark that
-reports a failure as a score.
-**Detection:** the benchmark now treats an unclosed reasoning block as an
-error, not a zero.
-**Fix:** `chat_template_kwargs: {"enable_thinking": false}` in the request
-body. A literal `/no_think` appended to the prompt does **not** work on
-this endpoint — it makes the model think more, not less, and every
-document failed. With the real control the same model went from 25/25
-errors to 0/25 and dropped from 4.3s to 2.9s per document.
+### F-025 · A reasoning model will spend the whole completion budget thinking
+**Owner:** Person B · **Phase:** 0/1 · **Status:** fixed
+Two models, one mechanism, and it is the kind of failure that hides behind a number: a model that reasons before it answers can spend the entire completion budget thinking and return an empty string.
+
+**`openbmb/MiniCPM-V-4_5` — the OCR path.** On a transcription task it can burn the entire completion budget inside a `<think>` block and return an empty string — 16,363 characters of trace and no answer, with the block left **unclosed**. The first version of the benchmark scored that as "zero fields recovered" and hid a real failure behind a number.
+**Cost if unresolved:** an unusable OCR path, and a benchmark that reports a failure as a score.
+**Detection:** the benchmark now treats an unclosed reasoning block as an error, not a zero.
+**Fix:** `chat_template_kwargs: {"enable_thinking": false}` in the request body. A literal `/no_think` appended to the prompt does **not** work on this endpoint — it makes the model think more, not less, and every document failed. With the real control the same model went from 25/25 errors to 0/25 and dropped from 4.3s to 2.9s per document.
+
+**`nvidia/Nemotron-3.5-Super-VL` — the extraction path.** The redacted-text benchmark came back with **3 documents in 20 reporting "could not parse a JSON object from: ''"** — an empty response. It read like a parsing bug in the harness. It was not: Super-VL is a **reasoning model**, and it spends its completion tokens on `reasoning_content` before it writes an answer. On one measured call, 847 of 859 completion tokens went to the reasoning and 12 to the answer. With `max_tokens: 1024` the thinking had used the entire budget before the answer was written.
+**Cost if unresolved:** a 15% silent failure rate in the extraction path, and — worse — the *shape* of the failure. An empty response looks like "the model could not do this task", when the truth is "the model did the task and was not allowed to finish talking". The Phase 2 leak test would have scored that as a detection failure, which is a completely different conclusion.
+**Detection:** the error said "could not parse a JSON object from: ''" — an empty string, not malformed JSON. An empty response is a different failure from a malformed one.
+**Fix:** the completion budget is now 4096, which covers the thinking and the answer, and the error message now names the finish reason and the reasoning-token count so the next reader can tell "ran out of budget" from "could not do it". 20/20 documents now parse, 100% correct, zero hallucinations.
+
+**The general lesson:** on a reasoning model, `max_tokens` is a budget for the thinking, not for the answer. And a benchmark must treat an empty response as an *error*, never as a score.
 
 ### F-026 · A wrong API key is indistinguishable from a missing one
 **Owner:** Person A · **Phase:** 0
@@ -379,7 +380,42 @@ Two independent runs of `make ocr-bench`, over different corpora and with differ
 **Detection:** reading the OCR decision in `docs/phase0-runbook.md` §8 — it records two runs with two winners.
 **Fix:** Super-VL is the decision of record: it is what `eval/pin_models.py` pins, what `docs/ocr-decision.md` records, and what the Phase 2 router architecture was validated against. MiniCPM stays in the benchmark's candidate list, so the comparison stays reproducible, and its measurement is kept. Revisiting the choice is the first item carried into Phase 1; re-deciding it means re-validating the privacy architecture against a different reader.
 
----
+### F-033 · The whole Token Factory domain stopped accepting connections
+**Owner:** Person B · **Phase:** 0 · **Status:** fixed — recovered on its own
+After roughly 250 API calls across three benchmark runs in a single session, `api.tokenfactory.nebius.com:443` stopped accepting TCP connections. DNS still resolved; the connect itself hung until it timed out. The whole `tokenfactory.nebius.com` domain was affected, not just the API path, and `github.com` and `pypi.org` were reachable at the same moment, so it was not the host's general connectivity.
+**Cost if unresolved:** the live benchmarks cannot be re-run. This is F-007 arriving early and in a different shape: F-007 predicted a *rate limit* (a 429 with headers telling you to slow down); what happened was a *connection refusal* with nothing to read, which is much harder to diagnose from the error alone.
+**Detection:** the redacted-text bench reported "timed out" on every document. A single `curl -v` showed `Trying 213.239.161.19:443...` and then nothing.
+**Fix:** it recovered on its own within a day, with no change on this side, which is consistent with an IP-level block expiring rather than a configuration error. The Option C validation had already been run and committed before the outage, so the decision was never at risk. The lesson stands: **batch the benchmarks rather than running them back to back**, and keep the raw results committed so a decision never depends on being able to re-run it.
+
+### F-034 · The field-recovery metric was too forgiving, and it hid a dropped line
+**Owner:** Person B · **Phase:** 1 · **Status:** fixed
+The OCR benchmark scored the local extractor at 93% field recovery, and the pipeline then discovered that the extractor was **dropping whole lines** from the documents — a line carrying the renewal date and the amount simply came back absent, and the field score did not say so. The metric compares normalised text, so `Registeredaddress:1003BraddockBoulevard` still scored as a perfect address. It was measuring the right fields and hiding the wrong failure.
+**Cost if unresolved:** the local path looked fit for the pipeline when it was not, and the failure would have shown up as "the agent sometimes misses the amount" rather than "the OCR is losing lines".
+**Detection:** building the pipeline on top of the extractor. A document whose amount was missing turned out to be a document whose *line* was missing.
+**Fix:** a **line-coverage** metric alongside field recovery — the fraction of the source document's lines that survive the extraction. The local extractor scores 96% of fields and 85.5% of lines, and that gap is now visible instead of hidden.
+
+### F-035 · OCR damage has shapes, and two of them are repairable
+**Owner:** Person B · **Phase:** 1 · **Status:** worked around
+The extractor returns the text it guessed, and the guesses have shapes: the space after a colon or a comma is dropped (`Accountnumber:`), two words run together (`1003BraddockBoulevard`), a lowercase word loses its space (`Dateof expiry:`), and a character is misread (`Office` comes back as `0ffice`).
+The first three break every label-based parser, so a redactor and a deadline detector that need `Account number:` simply do not work on a scanned document.
+**Cost if unresolved:** the pipeline works on clean text and silently fails on real scans, which is the only kind that matters.
+**Detection:** the extracted text, read next to the source.
+**Fix:** `agent/ingestion/ocr_text.py` repairs the damage that has a shape — inserting the missing spaces, splitting run-together words, and rejoining the known document labels. The repair runs *before* the redaction, because a redactor that could not find the label has already failed. The misread character is not repairable and is not pretended to be: that is what the model-assisted extraction is for.
+
+### F-036 · A notice can carry more than one identifier
+**Owner:** Person B · **Phase:** 1 · **Status:** fixed
+An insurance renewal carries **both** a policy number (`POL-482913-Z`) and an account number (`1234-5678`). The first redaction of the account category was the policy number, and the first of the two was whichever the redactor reached first — so the draft quoted the account number to an insurer who wanted the policy number. A letter quoting the wrong identifier is worse than no letter.
+**Cost if unresolved:** the agent sends a real letter to a real company with the wrong reference in it.
+**Detection:** the test asserted the reference was the account number and the pipeline produced the policy number.
+**Fix:** the label in front of the identifier decides which one to quote, and the label is still in the redacted text next to the placeholder. The policy number wins over the account number, a membership number over both.
+
+### F-037 · The corpus was rendered at 96 DPI, and it was the benchmark's biggest defect
+**Owner:** Person B · **Phase:** 0/1 · **Status:** fixed
+With tesseract finally installed (F-020), the local extractor scored **84%** field recovery and **55% on renewal dates** — worse than the pip-only fallback, and implausible. The cause was not the OCR: the corpus rendered the documents at 15px monospace on a 1000px page, about **96 DPI**, and at that size the digit `0` is genuinely indistinguishable from an `8`. Tesseract read `2027-03-07` as `2827-83-07` and `2027-10-07` as `2627-18-87`. A real scan of a letter is 150–300 DPI, and a real document is legible.
+Every Phase 0 number was measured on that corpus, so every one of them was distorted: the local fallback looked far worse than it is, the vision models looked far better than they are, and the "which model reads documents" decision was made on a document nobody would ever receive.
+**Cost if unresolved:** the whole benchmark answers a question nobody asked. And the pipeline inherited it: with the old rendering, the reference number was missing from half the documents, the provider was wrong, the amount was missing, and the deadline kind was unknown.
+**Detection:** tesseract scoring *worse* than a pip-only fallback, and the `0`→`8` pattern across every date. A model-independent failure is a harness failure — the same shape as F-011.
+**Fix:** the corpus renders an A4 page at ~150 DPI with a 10pt body — what a scan or a phone photo gives. With that, tesseract scores **100% field recovery and 100% line coverage**, and the pipeline extracts the provider, the kind, the reference and the amount correctly on every document. The lesson is worth more than the fix: **a benchmark is only as representative as its fixtures, and a fixture that is harder than reality measures the fixture.**
 
 ### Pre-registered risks, now closed
 

@@ -116,6 +116,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--snapshot-only", action="store_true", help="do not touch .env")
     parser.add_argument("--dry-run", action="store_true", help="print, change nothing")
     parser.add_argument("--env", default=".env", help="the .env file to write")
+    parser.add_argument(
+        "--example",
+        default=".env.example",
+        help="the example file to keep in sync with .env",
+    )
     parser.add_argument("--snapshot", default="docs/model-catalog.md", help="snapshot path")
     args = parser.parse_args(argv)
 
@@ -188,6 +193,20 @@ def main(argv: list[str] | None = None) -> int:
             for note in notes:
                 print(f"  {note}")
             if not notes:
+                print("  (already up to date)")
+
+        # The example file is the documented contract, and it drifted once:
+        # the Super tier was pinned to the text-only model in `.env.example`
+        # while the tool pinned the multimodal one in `.env`. Two files, two
+        # answers, and no signal that they disagreed. Both are written from
+        # the same catalog now.
+        example_path = Path(args.example)
+        if example_path.exists():
+            example_notes = update_env(example_path, values)
+            print(f"\nwrote {example_path}:")
+            for note in example_notes:
+                print(f"  {note}")
+            if not example_notes:
                 print("  (already up to date)")
 
     snapshot_path = Path(args.snapshot)

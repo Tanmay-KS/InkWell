@@ -76,20 +76,41 @@ household memory, a messaging gateway, and a skills system.
 
 1. A document (PDF, image, email) arrives — in the demo, from a file drop or
    a forwarded email.
-2. `agent/ingestion/parse_documents.py` extracts text. The primary path is a
-   vision model on Token Factory (`nvidia/Nemotron-3.5-Super-VL`, pinned via
-   `LEDGER_MODEL_OCR`);
-   a local extractor is the fallback and the zero-egress path.
+2. `agent/ingestion/parse_documents.py` extracts text **locally** (tesseract
+   for a scan, poppler for a PDF's text layer) and then redacts it
+   **locally**. The document it hands on is already redacted, so anything
+   that reasons about it — a model included — never sees a personal detail.
+   The local extractor is the primary path, not the fallback: on the corpus
+   it recovers 100% of the fields and 100% of the document's lines, it
+   costs nothing, and it has no egress at all. The vision model of record
+   (`nvidia/Nemotron-3.5-Super-VL`, pinned via `LEDGER_MODEL_OCR`) is
+   there for what local extraction cannot read and for the semantic work.
 3. `agent/memory/hermes_memory.py` records what the household already knows
-   and what has already been handled.
-4. `agent/deadlines/flag_deadlines.py` derives dated obligations.
+   and what has already been handled, and it is where the household's names
+   come from — so the redactor is *told* the names rather than having to
+   recognise them in prose.
+4. `agent/deadlines/flag_deadlines.py` derives dated obligations, each one
+   carrying the exact line of text it came from.
 5. `agent/actions/draft_actions.py` drafts the response — a cancellation
-   email, a refund request, a renewal reminder.
+   email, a refund request, a renewal reminder. The draft has the *real*
+   values in it, because it is for the user and the user's channel is
+   inside the boundary.
 6. The result goes back to the user through Hermes's messaging gateway or the
    web view.
 
 Every outbound request on this path crosses the OpenShell network proxy,
 where the privacy router (Phase 2) intercepts it.
+
+**The whole pipeline runs without a model call.** That is the design, not a
+fallback: a renewal notice that says "your policy renews on 2027-03-07" does
+not need a language model, and a pipeline that does not need one cannot leak
+anything to one. The model is used where the text is prose rather than a
+form, and even then it only ever sees redacted text.
+
+The redaction map — the placeholder → real value table — is what lets step 5
+write a draft with the real account number in it while the model that
+helped never saw one. It never leaves the sandbox, and it is not part of
+the document's serialisable form.
 
 ---
 

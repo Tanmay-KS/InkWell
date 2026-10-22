@@ -259,6 +259,47 @@ class AggregateScore:
             self.per_field_total[field_name] = self.per_field_total.get(field_name, 0) + 1
 
 
+def line_coverage(source: str, extracted: str) -> float:
+    """How much of the source document survived the extraction.
+
+    Field recovery is a forgiving metric: it normalises away the spaces
+    and the punctuation, so a line that came back as
+    `Registeredaddress:1003BraddockBoulevard` still scores as a perfect
+    address. That is correct for the question it answers, and it hides
+    a different and worse failure — a line that came back **not at all**.
+
+    An OCR engine that drops a line leaves a document with a hole in it.
+    The pipeline can still work (the date is usually mentioned twice),
+    but any fact that lived only on the lost line is gone, and nothing
+    in a field-recovery score would say so.
+
+    A line counts as recovered when a recognisable part of it appears in
+    the extracted text. The comparison is normalised the same way as
+    everything else here, so spacing and punctuation damage is not
+    counted as a lost line — only a line that is genuinely absent.
+    """
+    source_lines = [normalise_alnum(line) for line in source.splitlines() if line.strip()]
+    if not source_lines:
+        return 1.0
+
+    haystack = normalise_alnum(extracted)
+    if not haystack:
+        return 0.0
+
+    recovered = 0
+    for line in source_lines:
+        if line in haystack:
+            recovered += 1
+            continue
+        # The OCR may have dropped the tail of a line. The head is
+        # enough to count the line as present.
+        head = line[:40]
+        if head and head in haystack:
+            recovered += 1
+
+    return recovered / len(source_lines)
+
+
 def render_field_table(aggregate: AggregateScore, fields: list[str] | None = None) -> str:
     """Render the per-field breakdown as a markdown fragment."""
     fields = fields or SCORED_FIELDS

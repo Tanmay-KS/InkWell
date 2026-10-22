@@ -54,6 +54,17 @@ TOKEN_FACTORY_BASE_URL = os.environ.get(
     "NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1"
 ).rstrip("/")
 
+# The completion budget.
+#
+# Super-VL is a *reasoning* model: it spends most of its completion
+# tokens thinking, and those tokens count against `max_tokens`. At 1024,
+# three documents in twenty came back with an empty `content` — the
+# reasoning had used up the budget before the answer was written. The
+# failure looked like a parsing bug, and it was not one.
+#
+# The budget has to cover the thinking and the answer.
+MAX_COMPLETION_TOKENS = 4096
+
 PROMPT = (
     "Read this redacted document and extract its fields.\n\n"
     "Reply with ONLY a JSON object, no prose and no code fence:\n"
@@ -162,7 +173,7 @@ def call_model(model: str, text: str, api_key: str, timeout: float) -> tuple[dic
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": f"{PROMPT}\n\n---\n{text}"}],
-        "max_tokens": 1024,
+        "max_tokens": MAX_COMPLETION_TOKENS,
         "temperature": 0.0,
     }
 
@@ -176,13 +187,42 @@ def call_model(model: str, text: str, api_key: str, timeout: float) -> tuple[dic
         raise RuntimeError(f"HTTP {response.status_code}: {response.text[:200]}")
 
     data = response.json()
-    content = data["choices"][0]["message"].get("content") or ""
+    message = data["choices"][0]["message"]
+    content = message.get("content") or ""
     usage = data.get("usage", {})
+
+    if not content.strip():
+        # A reasoning model that ran out of budget says nothing at all.
+        # Say *why*, because "the model returned nothing" is not a
+        # diagnosis.
+        reasoning = message.get("reasoning_content") or ""
+        raise RuntimeError(
+            f"the model returned no content (finish_reason="
+            f"{data['choices'][0].get('finish_reason')!r}, "
+            f"reasoning tokens={usage.get('completion_tokens_details', {}).get('reasoning_tokens')})"
+            + (f"; it was still thinking: {reasoning[:80]!r}" if reasoning else "")
+        )
+
+    if _OPEN_THINK.search(content):
+        # An unclosed reasoning block means the model ran out of budget
+        # mid-thought and never produced an answer at all. That is an
+        # error, not a zero.
+        raise RuntimeError(
+            "the model returned an unclosed reasoning block and no answer "
+            f"(finish_reason={data['choices'][0].get('finish_reason')!r})"
+        )
 
     parsed = parse_json_object(content)
     if parsed is None:
         raise RuntimeError(f"could not parse a JSON object from: {content[:200]!r}")
     return parsed, int(usage.get("prompt_tokens", 0)), int(usage.get("completion_tokens", 0))
+
+
+# A reasoning model can leave an unclosed `<think>` block in its answer.
+# That is not an answer, and treating it as one would score the document
+# as a zero rather than flagging a real failure — see F-025.
+_THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_OPEN_THINK = re.compile(r"<think>", re.IGNORECASE)
 
 
 def parse_json_object(content: str) -> dict | None:
@@ -191,6 +231,9 @@ def parse_json_object(content: str) -> dict | None:
     if content.startswith("```"):
         content = re.sub(r"^```[a-zA-Z]*\n?", "", content)
         content = re.sub(r"```$", "", content).strip()
+
+    # A closed reasoning block is not part of the answer.
+    content = _THINK_BLOCK.sub("", content).strip()
 
     start = content.find("{")
     end = content.rfind("}")

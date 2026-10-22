@@ -24,10 +24,19 @@ State machine for a tracked item:
 
 `dismissed` is the interesting one: the user said "I know, leave it alone",
 and the agent must not bring it back.
+
+**The memory layer is also the redactor's source of truth for names.**
+The household picture knows who the household is, so the redactor is
+*told* the names rather than having to recognise them in prose. That is
+the difference between catching a name in a labelled field and catching
+it anywhere at all — see `docs/redaction-audit.md`, where the deterministic
+pass gets names to 83.5% and the household path gets them to 100%.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import sqlite3
 from dataclasses import dataclass, field
@@ -83,13 +92,28 @@ class HouseholdItem:
     source: str | None = None
     metadata: dict[str, object] = field(default_factory=dict)
 
+    @staticmethod
+    def make_id(provider: str, holder: str | None, reference: str | None) -> str:
+        """A stable id for an obligation.
+
+        Derived from what the obligation *is*, not from when it was seen,
+        so the same notice arriving twice is the same obligation and does
+        not produce a duplicate. Without this, a household that receives
+        two copies of a renewal notice gets told about it twice.
+        """
+        key = "|".join(
+            [
+                (provider or "").strip().lower(),
+                (holder or "").strip().lower(),
+                (reference or "").strip().lower(),
+            ]
+        )
+        digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+        return f"item-{digest}"
+
 
 class HouseholdMemory:
-    """The household picture plus the handled log.
-
-    Phase 1 implementation: SQLite for the structured sidecar, Hermes's
-    memory files for the narrative picture.
-    """
+    """The household picture plus the handled log."""
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = Path(path) if path else SIDECAR_PATH
@@ -146,6 +170,9 @@ class HouseholdMemory:
                 created_at  TEXT NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY (item_id) REFERENCES household_item (item_id)
             );
+
+            CREATE INDEX IF NOT EXISTS idx_event_item
+                ON handled_event (item_id, event);
             """
         )
         conn.commit()
@@ -155,18 +182,82 @@ class HouseholdMemory:
             self._conn.close()
             self._conn = None
 
+    def __enter__(self) -> HouseholdMemory:
+        self.connect()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
     # --- API ---------------------------------------------------------------
 
     def upsert(self, item: HouseholdItem) -> HouseholdItem:
         """Insert or update a household item.
 
-        Phase 1 implementation.
+        A re-seen item keeps its state. That is the whole point: a
+        document arriving twice must not reset an obligation the user
+        has already dismissed back to "new" and have the agent bring it
+        up again.
         """
-        raise NotImplementedError("Phase 1 — see IMPLEMENTATION.md")
+        conn = self.connect()
+        existing = self.get(item.item_id)
+
+        if existing is not None and existing.state is not TrackedState.NEW:
+            # Keep the state the user set.
+            item.state = existing.state
+
+        conn.execute(
+            """
+            INSERT INTO household_item (
+                item_id, kind, provider, holder, reference, renewal_date,
+                amount, state, source, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(item_id) DO UPDATE SET
+                kind         = excluded.kind,
+                provider     = excluded.provider,
+                holder       = excluded.holder,
+                reference    = excluded.reference,
+                renewal_date = excluded.renewal_date,
+                amount       = excluded.amount,
+                state        = excluded.state,
+                source       = excluded.source,
+                metadata     = excluded.metadata,
+                updated_at   = datetime('now')
+            """,
+            (
+                item.item_id,
+                item.kind,
+                item.provider,
+                item.holder,
+                item.reference,
+                item.renewal_date.isoformat() if item.renewal_date else None,
+                item.amount,
+                item.state.value,
+                item.source,
+                json.dumps(item.metadata, sort_keys=True, default=str),
+            ),
+        )
+        conn.commit()
+        return item
 
     def get(self, item_id: str) -> HouseholdItem | None:
         """Fetch one item by id."""
-        raise NotImplementedError("Phase 1 — see IMPLEMENTATION.md")
+        conn = self.connect()
+        row = conn.execute(
+            "SELECT * FROM household_item WHERE item_id = ?", (item_id,)
+        ).fetchone()
+        return _row_to_item(row) if row else None
+
+    def all_items(self) -> list[HouseholdItem]:
+        """Every item, newest renewal first."""
+        conn = self.connect()
+        rows = conn.execute(
+            """
+            SELECT * FROM household_item
+            ORDER BY renewal_date IS NULL, renewal_date, provider
+            """
+        ).fetchall()
+        return [_row_to_item(row) for row in rows]
 
     def due_within(self, days: int, *, today: date | None = None) -> list[HouseholdItem]:
         """Items renewing within `days` that we have not dismissed.
@@ -174,7 +265,30 @@ class HouseholdMemory:
         This is the query the daily brief and the background deadline
         monitor both run.
         """
-        raise NotImplementedError("Phase 1 — see IMPLEMENTATION.md")
+        today = today or date.today()
+        horizon = today + _days(days)
+        conn = self.connect()
+        rows = conn.execute(
+            """
+            SELECT * FROM household_item
+            WHERE renewal_date IS NOT NULL
+              AND renewal_date <= ?
+              AND state != ?
+            ORDER BY renewal_date
+            """,
+            (horizon.isoformat(), TrackedState.DISMISSED.value),
+        ).fetchall()
+        return [_row_to_item(row) for row in rows]
+
+    def set_state(self, item_id: str, state: TrackedState) -> HouseholdItem | None:
+        """Move an item through its lifecycle."""
+        conn = self.connect()
+        conn.execute(
+            "UPDATE household_item SET state = ?, updated_at = datetime('now') WHERE item_id = ?",
+            (state.value, item_id),
+        )
+        conn.commit()
+        return self.get(item_id)
 
     def record_event(self, item_id: str, event: str, detail: str | None = None) -> None:
         """Append to the handled log.
@@ -183,11 +297,43 @@ class HouseholdMemory:
         append-only on purpose: an audit trail that can be edited is not an
         audit trail.
         """
-        raise NotImplementedError("Phase 1 — see IMPLEMENTATION.md")
+        conn = self.connect()
+        conn.execute(
+            "INSERT INTO handled_event (item_id, event, detail) VALUES (?, ?, ?)",
+            (item_id, event, detail),
+        )
+        conn.commit()
 
     def was_handled(self, item_id: str, event: str) -> bool:
         """Whether a given event was already recorded for an item."""
-        raise NotImplementedError("Phase 1 — see IMPLEMENTATION.md")
+        conn = self.connect()
+        row = conn.execute(
+            "SELECT 1 FROM handled_event WHERE item_id = ? AND event = ? LIMIT 1",
+            (item_id, event),
+        ).fetchone()
+        return row is not None
+
+    def events_for(self, item_id: str) -> list[dict[str, object]]:
+        """The handled log for one item, oldest first."""
+        conn = self.connect()
+        rows = conn.execute(
+            "SELECT event, detail, created_at FROM handled_event WHERE item_id = ? ORDER BY event_id",
+            (item_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def household_names(self) -> list[str]:
+        """The names in the household, for the redactor.
+
+        This is the connection between the memory layer and the privacy
+        router. The redactor can only recognise a name in prose if it is
+        told the name, and the memory layer is what knows it.
+        """
+        conn = self.connect()
+        rows = conn.execute(
+            "SELECT DISTINCT holder FROM household_item WHERE holder IS NOT NULL AND holder != ''"
+        ).fetchall()
+        return sorted(str(row["holder"]) for row in rows)
 
     def household_summary(self) -> str:
         """A short narrative description of the household picture.
@@ -195,7 +341,67 @@ class HouseholdMemory:
         This is the text that goes into Hermes's `MEMORY.md`. It is written
         for the agent, not for the user: dense, factual, and free of
         anything that does not need to be remembered.
-
-        Phase 1 implementation.
         """
-        raise NotImplementedError("Phase 1 — see IMPLEMENTATION.md")
+        items = self.all_items()
+        if not items:
+            return "No obligations are being tracked yet."
+
+        names = self.household_names()
+        lines = []
+        if names:
+            lines.append(f"Household members: {', '.join(names)}.")
+        else:
+            lines.append("Household members: not yet known.")
+
+        by_provider: dict[str, list[HouseholdItem]] = {}
+        for item in items:
+            by_provider.setdefault(item.provider, []).append(item)
+
+        lines.append("")
+        lines.append("Tracked obligations:")
+        for provider, provider_items in sorted(by_provider.items()):
+            lines.append(f"  {provider}:")
+            for item in provider_items:
+                holder = f" ({item.holder})" if item.holder else ""
+                when = item.renewal_date.isoformat() if item.renewal_date else "no date"
+                amount = f", {item.amount:.2f}" if item.amount is not None else ""
+                lines.append(
+                    f"    - {item.kind}{holder}, renews {when}{amount} — {item.state.value}"
+                )
+
+        dismissed = [i for i in items if i.state is TrackedState.DISMISSED]
+        if dismissed:
+            lines.append("")
+            lines.append("Dismissed — do not raise these again:")
+            for item in dismissed:
+                lines.append(f"  - {item.provider} ({item.kind})")
+
+        return "\n".join(lines)
+
+
+def _days(count: int):
+    from datetime import timedelta
+
+    return timedelta(days=count)
+
+
+def _row_to_item(row: sqlite3.Row) -> HouseholdItem:
+    """Rebuild a `HouseholdItem` from a database row."""
+    try:
+        metadata = json.loads(row["metadata"]) if row["metadata"] else {}
+    except (json.JSONDecodeError, TypeError):
+        metadata = {}
+
+    renewal = row["renewal_date"]
+    return HouseholdItem(
+        item_id=row["item_id"],
+        kind=row["kind"],
+        provider=row["provider"],
+        holder=row["holder"],
+        reference=row["reference"],
+        renewal_date=date.fromisoformat(renewal) if renewal else None,
+        amount=row["amount"],
+        state=TrackedState(row["state"]),
+        source=row["source"],
+        metadata=metadata,
+    )

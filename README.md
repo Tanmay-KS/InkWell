@@ -9,11 +9,11 @@ sandbox with a declarative egress policy, and a privacy router strips your
 personal details from anything that leaves, so the expensive models and
 third-party search engines never see them.
 
-> **Status: Phase 0 — infra verification.**
-> The stack is de-risked and the decisions are recorded. The exit condition
-> was met by hand on 2026-10-21; the automated verifier has not yet produced
-> a green run, and two Phase 0 benchmark runs disagree about which model
-> reads documents (F-032). See
+> **Status: Phase 0 complete, Phase 1 in progress.**
+> The stack is de-risked and the decisions are recorded. The Phase 0 exit
+> condition was met by hand on 2026-10-21; the automated verifier has not
+> yet produced a green run, and two Phase 0 benchmark runs disagree about
+> which model reads documents (F-032). See
 > [`docs/phase0-runbook.md`](docs/phase0-runbook.md) for the infra side,
 > [`docs/ocr-decision.md`](docs/ocr-decision.md) for the model decision
 > and the privacy architecture, and
@@ -25,13 +25,43 @@ third-party search engines never see them.
 |---|---|---|
 | Which model reads documents? | `nvidia/Nemotron-3.5-Super-VL` — 99% field recovery, $0.30/1M in | [`docs/ocr-decision.md`](docs/ocr-decision.md) |
 | How do personal details stay inside the sandbox? | Extract locally → redact locally → the model only ever reads redacted text | [`docs/ocr-decision.md`](docs/ocr-decision.md) |
-| What does the deterministic redactor miss? | Names, alphanumeric account numbers, policy numbers, city and postcode — **0% detected** | [`docs/redaction-audit.md`](docs/redaction-audit.md) |
+| What does the deterministic redactor miss? | Names, alphanumeric identifiers, city and postcode — now closed: **200/200 documents clean** with the household's names | [`docs/redaction-audit.md`](docs/redaction-audit.md) |
 | Which model IDs do we use? | Pinned from the live catalog, never hand-typed | [`docs/model-catalog.md`](docs/model-catalog.md) |
+| Can the model read redacted text? | **20/20 documents, 100% on every field, zero hallucinations, and the model saw no personal detail at all** | [`docs/ocr-decision.md`](docs/ocr-decision.md) |
 
 The last row matters more than it looks: Nebius's web catalog, its API
 catalog and its cookbook disagree about which models exist, and the same
 model is published under several casings. Every model ID in this repo
 comes from the live catalog.
+
+### Phase 1 — the pipeline
+
+```
+document ──► ingestion ──► memory ──► deadlines ──► action
+             (local OCR,    (SQLite     (evidence      (a draft
+              then local     sidecar)    for every      the user
+              redaction)                 date)         sends)
+```
+
+```bash
+make demo      # run it over the corpus and print what it produced
+```
+
+**The whole pipeline runs without a model call.** That is the design, not
+a fallback: a renewal notice that says "your policy renews on 2027-03-07"
+does not need a language model, and a pipeline that does not need one
+cannot leak anything to one. The model is used where the text is prose
+rather than a form, and even then it only ever sees redacted text.
+
+The local extractor is **tesseract**, the same one the sandbox image
+ships. On the corpus it recovers 100% of the fields and 100% of the
+document's lines, at 1.3s a page, with no egress at all.
+
+> A benchmark is only as representative as its fixtures. The corpus used
+> to render at 96 DPI, where the digit `0` is indistinguishable from an
+> `8` — tesseract read `2027-03-07` as `2827-83-07` and every number
+> measured on it was wrong. It renders an A4 page at 150 DPI now, which
+> is what a real scan gives you. See F-037 in the friction log.
 
 ---
 
@@ -123,11 +153,10 @@ pulled from `ghcr.io/nvidia/openshell/` on first sandbox creation.
 | Purpose | Model | $/1M in/out |
 |---|---|---|
 | redaction, classification | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | 0.06 / 0.24 |
-| main agent reasoning | `nvidia/nemotron-3-super-120b-a12b` | 0.30 / 0.90 |
+| main agent reasoning **and** document OCR | `nvidia/Nemotron-3.5-Super-VL` | 0.30 / 0.90 |
 | hardest reasoning | `nvidia/Nemotron-3-Ultra-550b-a55b` | 1.00 / 3.00 |
-| **document OCR** | **`nvidia/Nemotron-3.5-Super-VL`** | 0.30 / 0.90 |
 
-The OCR model is the Super tier: it is multimodal, and it is the model the
+The Super tier is Super-VL: it is multimodal, it is the model the
 decision record ([`docs/ocr-decision.md`](docs/ocr-decision.md)) names and
 the Phase 2 privacy architecture was validated against. The choice was
 measured, not preferred — 20 documents, five vision models, 99.0% field
@@ -135,11 +164,16 @@ recovery.
 
 A second, independent run (30 rendered scans) preferred
 `openbmb/MiniCPM-V-4_5` — 98.0% field recovery at $0.00050 per document
-against Super-VL's 96.0% / $0.00124, with the local `tesseract` fallback
-measured at 86.7% and zero egress. That comparison is **open** (F-032):
+against Super-VL's 96.0% / $0.00124. That comparison is **open** (F-032):
 re-deciding it means re-validating the privacy architecture against a
-different reader, so it is the first item carried into Phase 1. Two models
-named in the original plan do not exist on Token Factory at all; see the
+different reader, so it is the first item carried into Phase 1.
+
+Both numbers were measured before the corpus was fixed (F-037), and have
+been re-measured since. The current table, on the corrected corpus, is in
+[`docs/ocr-decision.md`](docs/ocr-decision.md) — the short version is that
+the **local** extractor now matches every vision model at 100% of fields
+and 100% of lines, for no cost and with no egress at all. Two models named
+in the original plan do not exist on Token Factory at all; see the
 friction log. Reproduce with `make ocr-bench`.
 
 ---

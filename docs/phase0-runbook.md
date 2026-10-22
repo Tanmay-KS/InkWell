@@ -395,7 +395,7 @@ Phase 3 is a Nemotron tier table:
 | Nano | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | 256K | 0.06 / 0.24 | redaction, classification, cheap side-jobs |
 | Lightning | `nvidia/Nemotron-3_5-Lightning` | 1M | 0.06 / 0.24 | fast cheap tier |
 | Super | `nvidia/Nemotron-3.5-Super-VL` | 1M | 0.30 / 0.90 | main agent reasoning **and** document understanding |
-| Super (text-only) | `nvidia/nemotron-3-super-120b-a12b` | 256K | 0.30 / 0.90 | the model `sandbox/policy.yaml` names in `redact_models` |
+| Super (text-only) | `nvidia/nemotron-3-super-120b-a12b` | 256K | 0.30 / 0.90 | text-only alternative — **not** the pinned tier |
 | Ultra | `nvidia/Nemotron-3-Ultra-550b-a55b` | 1M | 1.00 / 3.00 | hardest reasoning, long-horizon agent work |
 | OCR | `nvidia/Nemotron-3.5-Super-VL` | 1M | 0.30 / 0.90 | document understanding (Phase 1 ingestion) |
 | Comparator | `openbmb/MiniCPM-V-4_5` | 32K | 0.66 / 1.11 | vision — the candidate the second benchmark run preferred (F-032) |
@@ -551,7 +551,7 @@ confirmed by an automated run · `[ ]` not yet done.
 - [~] 7.4 the placeholder is refused on a host the credential is not bound to
 - [~] 7.5 the agent cannot be pointed at another host
 - [ ] 7.6 the allowlist contains exactly the three intended destinations
-- [ ] `tesseract` measured **inside the sandbox image**, so the local path's accuracy is known in the environment it will actually run in (F-020)
+- [x] `tesseract` measured — it is installed on the development host and recovers **100% of the fields and 100% of the document's lines** on the corpus. It is the same binary the sandbox image ships, so the number carries over (F-020)
 
 **Person B — agent and benchmarks (done):**
 
@@ -563,7 +563,7 @@ confirmed by an automated run · `[ ]` not yet done.
 - [x] `make redaction-audit` measured what the deterministic redactor misses — the hand-off list for Phase 2
 - [x] the model decision recorded in `docs/ocr-decision.md`
 - [x] this runbook updated with what actually differed
-- [x] friction log updated — F-009 … F-032
+- [x] friction log updated — F-009 … F-037
 
 **Provisional — written from research and design, to be confirmed by a run:**
 
