@@ -188,18 +188,18 @@ The headline claim is that personal details never reach a Super/Ultra tier. The 
 **Fix:** Option C — extract locally, redact locally, then send only redacted text to the model. Validated with `make redacted-extract`: the model reproduced every placeholder exactly (13/13, zero hallucinations) and extracted every clear field perfectly. The Super-tier call then carries no personal detail at all. See `docs/ocr-decision.md`.
 
 ### F-020 · No passwordless sudo, so the local OCR baseline could not be installed
-**Owner:** Person B · **Phase:** 0 · **Status:** worked around
+**Owner:** Person B · **Phase:** 0 · **Status:** fixed
 `tesseract` is not on the development host and `pacman -S` prompts for a password. The benchmark's local candidate was therefore SKIPPED — which is the F-013 scenario, one layer down.
 **Cost if unresolved:** the local path's accuracy would be unknown, and Option C's fallback (a low-confidence page sent to Super-VL as an image) could not be sized.
 **Detection:** `which tesseract` → nothing.
-**Fix:** `rapidocr-onnxruntime` was installed as a pip-only, no-sudo, zero-egress alternative and measures 93% field recovery at 1.33s and no cost. The real tesseract build still has to be measured **inside the sandbox image**, because that is where it will actually run. Person A to run that measurement.
+**Fix:** `rapidocr-onnxruntime` was installed as a pip-only, no-sudo, zero-egress alternative, and tesseract was installed later. **Having both turned out to be worth more than having either**: the pair is what exposed F-025, because a model-independent local candidate scoring *worse* than a pip-only one is a fixture problem, not a model problem. The sandbox image already ships `tesseract-ocr` and `poppler-utils`, so the production path is covered.
 
 ### F-021 · The whole Token Factory domain stopped accepting connections
-**Owner:** Person B · **Phase:** 0 · **Status:** open — environment, not code
+**Owner:** Person B · **Phase:** 0 · **Status:** fixed — recovered on its own
 After roughly 250 API calls across three benchmark runs in a single session, `api.tokenfactory.nebius.com:443` stopped accepting TCP connections. DNS still resolved; the connect itself hung until it timed out. The whole `tokenfactory.nebius.com` domain was affected, not just the API path, and `github.com` and `pypi.org` were reachable at the same moment, so it was not the host's general connectivity.
 **Cost if unresolved:** the live benchmarks cannot be re-run. This is F-007 arriving early and in a different shape: F-007 predicted a *rate limit* (a 429 with headers telling you to slow down); what happened was a *connection refusal* with nothing to read, which is much harder to diagnose from the error alone.
 **Detection:** the redacted-text bench reported "timed out" on every document. A single `curl -v` showed `Trying 213.239.161.19:443...` and then nothing.
-**Fix:** none yet, and none is needed for the work in flight — the redaction layer is entirely local and deterministic, and the Option C validation had already been run and committed (`eval/results/redacted_extract.json`) before the outage. What it does mean: **batch the benchmarks rather than running them back to back**, and keep the raw results committed so a decision never depends on being able to re-run it. If it persists, it is worth asking Nebius whether the project IP was rate-limited, because a 20-minute benchmark must not be able to take the whole project offline.
+**Fix:** it recovered on its own within a day, with no change on this side, which is consistent with an IP-level block expiring rather than a configuration error. The Option C validation had already been run and committed before the outage, so the decision was never at risk. The lesson stands: **batch the benchmarks rather than running them back to back**, and keep the raw results committed so a decision never depends on being able to re-run it.
 
 ### F-022 · The field-recovery metric was too forgiving, and it hid a dropped line
 **Owner:** Person B · **Phase:** 1 · **Status:** fixed
@@ -222,6 +222,14 @@ An insurance renewal carries **both** a policy number (`POL-482913-Z`) and an ac
 **Cost if unresolved:** the agent sends a real letter to a real company with the wrong reference in it.
 **Detection:** the test asserted the reference was the account number and the pipeline produced the policy number.
 **Fix:** the label in front of the identifier decides which one to quote, and the label is still in the redacted text next to the placeholder. The policy number wins over the account number, a membership number over both.
+
+### F-025 · The corpus was rendered at 96 DPI, and it was the benchmark's biggest defect
+**Owner:** Person B · **Phase:** 0/1 · **Status:** fixed
+With tesseract finally installed (F-020), the local extractor scored **84%** field recovery and **55% on renewal dates** — worse than the pip-only fallback, and implausible. The cause was not the OCR: the corpus rendered the documents at 15px monospace on a 1000px page, about **96 DPI**, and at that size the digit `0` is genuinely indistinguishable from an `8`. Tesseract read `2027-03-07` as `2827-83-07` and `2027-10-07` as `2627-18-87`. A real scan of a letter is 150–300 DPI, and a real document is legible.
+Every Phase 0 number was measured on that corpus, so every one of them was distorted: the local fallback looked far worse than it is, the vision models looked far better than they are, and the "which model reads documents" decision was made on a document nobody would ever receive.
+**Cost if unresolved:** the whole benchmark answers a question nobody asked. And the pipeline inherited it: with the old rendering, the reference number was missing from half the documents, the provider was wrong, the amount was missing, and the deadline kind was unknown.
+**Detection:** tesseract scoring *worse* than a pip-only fallback, and the `0`→`8` pattern across every date. A model-independent failure is a harness failure — the same shape as F-011.
+**Fix:** the corpus renders an A4 page at ~150 DPI with a 10pt body — what a scan or a phone photo gives. With that, tesseract scores **100% field recovery and 100% line coverage**, and the pipeline extracts the provider, the kind, the reference and the amount correctly on every document. The lesson is worth more than the fix: **a benchmark is only as representative as its fixtures, and a fixture that is harder than reality measures the fixture.**
 
 ---
 

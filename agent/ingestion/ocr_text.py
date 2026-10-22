@@ -150,6 +150,7 @@ def repair_ocr_text(text: str) -> str:
 
     # Split run-together words, per whitespace-delimited token, so a
     # repair cannot cross a line or a field boundary.
+    trailing_newline = repaired.endswith("\n")
     lines = []
     for line in repaired.splitlines():
         lines.append(" ".join(_split_camel(token) for token in line.split(" ")))
@@ -158,6 +159,13 @@ def repair_ocr_text(text: str) -> str:
     # Collapse the double spaces the repairs can leave behind, but keep
     # the line structure.
     repaired = re.sub(r"[ \t]{2,}", " ", repaired)
+
+    # `splitlines` drops the final newline, and a document that ends
+    # with one is not a document that has been repaired. Keeping it also
+    # means the repair is a no-op on clean text, which is what lets the
+    # caller say "nothing was changed" honestly.
+    if trailing_newline:
+        repaired += "\n"
 
     return repaired
 

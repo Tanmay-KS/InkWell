@@ -198,6 +198,12 @@ def test_repairs_a_run_together_label():
     assert "Date of expiry" in repair_ocr_text("Dateof expiry:2027-02-26")
 
 
+def test_the_repair_is_a_no_op_on_clean_text():
+    """A repair that changes clean text is a repair that damages it."""
+    clean = INSURANCE_NOTICE
+    assert repair_ocr_text(clean) == clean
+
+
 # --- memory -----------------------------------------------------------------
 
 

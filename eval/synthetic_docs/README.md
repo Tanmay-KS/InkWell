@@ -50,13 +50,27 @@ and the amount.
 python eval/gen_synthetic_docs.py --out eval/synthetic_docs --count 200 --render
 ```
 
-Needs Pillow (`pip install pillow`). The rendering is deliberately crude —
-monospaced text on a light background, a slight rotation, some grain — so
-that a vision model is doing more than reading a text file.
+Needs Pillow (`pip install pillow`). The rendering is deliberately
+scan-like — a monospaced page on a light background, very slightly
+crooked, very slightly noisy — so that a vision model is doing more than
+reading a text file.
 
-The sandbox image already includes `tesseract-ocr` and `poppler-utils`
-(`sandbox/Dockerfile.hermes`), which is the local candidate in the
-benchmark.
+**The resolution matters, and it was the benchmark's biggest defect for
+a long time.** The page used to render at 15px monospace on a 1000px
+page, about 96 DPI, and at that size the digit `0` is genuinely
+indistinguishable from an `8`: tesseract read `2027-03-07` as
+`2827-83-07` and scored 55% on renewal dates. The defect was in the
+renderer, not in the OCR, and it distorted every measurement taken on
+this corpus.
+
+The page is now an A4 page at roughly 150 DPI with a 10pt body — what a
+real scan or a phone photo of a letter gives you. Tesseract scores 100%
+field recovery and 100% line coverage on it, and the pipeline extracts
+the provider, the kind, the reference and the amount correctly.
+
+A benchmark is only as representative as its fixtures, and a fixture
+that is harder than reality measures the fixture. See F-025 in the
+friction log.
 
 ## Regenerating with a different seed
 

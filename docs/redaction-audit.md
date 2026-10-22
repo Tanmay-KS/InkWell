@@ -14,7 +14,7 @@ before Phase 2 exists.
 | **deterministic** | What a generic document yields with no knowledge of who the reader is. The floor. |
 | **deterministic + household names** | What the product actually does. The agent's memory layer already holds the household picture, so the redactor is *told* the names instead of having to recognise them in prose. **This is the number that bounds the leak rate.** |
 
-**Documents:** 200 · **documents with no surviving personal value:** deterministic 167/200 · with household names 200/200 · **text reduced by:** 13.7%
+**Documents:** 200 · **documents with no surviving personal value:** deterministic 167/200 · with household names 200/200 · **text reduced by:** 11.7%
 
 ## Personal values — these must not leave the sandbox
 

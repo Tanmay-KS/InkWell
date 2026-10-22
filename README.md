@@ -49,6 +49,16 @@ does not need a language model, and a pipeline that does not need one
 cannot leak anything to one. The model is used where the text is prose
 rather than a form, and even then it only ever sees redacted text.
 
+The local extractor is **tesseract**, the same one the sandbox image
+ships. On the corpus it recovers 100% of the fields and 100% of the
+document's lines, at 1.3s a page, with no egress at all.
+
+> A benchmark is only as representative as its fixtures. The corpus used
+> to render at 96 DPI, where the digit `0` is indistinguishable from an
+> `8` — tesseract read `2027-03-07` as `2827-83-07` and every number
+> measured on it was wrong. It renders an A4 page at 150 DPI now, which
+> is what a real scan gives you. See F-025 in the friction log.
+
 ---
 
 ## The three claims

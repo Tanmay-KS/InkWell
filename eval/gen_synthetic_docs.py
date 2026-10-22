@@ -45,12 +45,27 @@ from pathlib import Path
 # measures the renderer instead of the models. These constants define the
 # page; `wrap_lines` fits the text to it and `render_image` grows the
 # page rather than dropping what does not fit.
-PAGE_WIDTH = 1000
-PAGE_HEIGHT = 1400
-MARGIN = 70
-LINE_HEIGHT = 24
-FONT_SIZE = 15
+#
+# The resolution matters as much as the size. These numbers are an A4
+# page at roughly 150 DPI with a 10pt body — what a real scan or a phone
+# photo of a letter gives you. The corpus used to be rendered at 15px,
+# which is about 96 DPI, and at that size the digit `0` is genuinely
+# indistinguishable from an `8`: tesseract read `2027-03-07` as
+# `2827-83-87` on most of the corpus and scored 55% on renewal dates
+# while the defect was in the renderer, not in the OCR. A benchmark that
+# measures a defect nobody will ever meet is not worth running.
+PAGE_WIDTH = 1240
+PAGE_HEIGHT = 1754
+MARGIN = 80
+LINE_HEIGHT = 32
+FONT_SIZE = 20
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
+
+# How the page is degraded from a clean render. A scan is not a text
+# file: it is very slightly crooked and very slightly noisy. Both of
+# these are mild on purpose.
+ROTATION_DEGREES = 0.15
+NOISE_AMPLITUDE = 2
 
 # --- fake people and places -------------------------------------------------
 #
@@ -428,12 +443,12 @@ def render_image(text: str, path: Path) -> bool:
         y += LINE_HEIGHT
 
     # A little skew and grain, so this is not trivially a text render.
-    image = image.rotate(0.4, expand=False, fillcolor="#f7f5f0")
+    image = image.rotate(ROTATION_DEGREES, expand=False, fillcolor="#f7f5f0")
     pixels = image.load()
     for x in range(0, PAGE_WIDTH, 3):
         for yy in range(0, height, 3):
             r, g, b = pixels[x, yy]
-            jitter = ((x * 7 + yy * 13) % 9) - 4
+            jitter = ((x * 7 + yy * 13) % (NOISE_AMPLITUDE * 2 + 1)) - NOISE_AMPLITUDE
             pixels[x, yy] = (
                 max(0, min(255, r + jitter)),
                 max(0, min(255, g + jitter)),

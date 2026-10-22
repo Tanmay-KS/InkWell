@@ -3,8 +3,8 @@
     "documents": 200,
     "documents_with_no_surviving_personal_value": 167,
     "bytes_before": 91248,
-    "bytes_after": 78744,
-    "reduction_percent": 13.703314045239345
+    "bytes_after": 80565,
+    "reduction_percent": 11.707653866386114
   },
   "summary_with_household_names": {
     "documents": 200,
