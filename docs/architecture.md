@@ -98,8 +98,22 @@ household memory, a messaging gateway, and a skills system.
 6. The result goes back to the user through Hermes's messaging gateway or the
    web view.
 
-Every outbound request on this path crosses the OpenShell network proxy,
-where the privacy router (Phase 2) intercepts it.
+Every outbound request on this path crosses one seam —
+`privacy_router/egress.py`. There are three kinds, and all three can carry
+source text:
+
+| Kind | Destination | When |
+|---|---|---|
+| `ocr_call` | Token Factory | a page local OCR could not read at all |
+| `redact_call` | Token Factory | the router escalating residual spans |
+| `lookup_call` | Tavily | the agent asking how to act |
+
+One seam rather than three call sites means the leak test cannot miss a
+request: a new outbound call has to name a kind, or it does not exist.
+Each request records what it carries, so the measurement is of the
+payload, not of a flag. Inside the sandbox the same traffic also crosses
+the OpenShell network proxy, where the supervisor middleware applies the
+same redaction to everything — including calls Hermes makes on its own.
 
 **The whole pipeline runs without a model call.** That is the design, not a
 fallback: a renewal notice that says "your policy renews on 2027-03-07" does
@@ -120,7 +134,7 @@ The video needs three numbers. Each maps to a place in this tree.
 
 | Proof | Lives in | What it shows |
 |---|---|---|
-| Leak rate | `eval/leak_test.py` | how often personal details appear in outbound payloads with the router ON vs OFF |
+| Leak rate | `eval/leak_test.py` | how often personal details appear in outbound payloads with the router ON vs OFF — **100% → 0%** on 200 documents ([`docs/leak-test.md`](leak-test.md)) |
 | Memory accuracy | `eval/memory_updates_eval.py` | accuracy on questions where the underlying fact changed, not just recall |
 | Cost / latency per tier | `eval/cost_latency_bench.py` | the price of routing across Nano / Super / Ultra |
 

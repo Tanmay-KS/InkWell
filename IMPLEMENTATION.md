@@ -59,10 +59,10 @@ was refused. Evidence and the per-item breakdown are in
 **Goal:** Working end-to-end agent loop: document in → deadline flagged → draft action out.
 
 ### Person B (lead)
-- [ ] Build document/email ingestion (parsing, chunking, extraction using the OCR/vision model from Phase 0)
-- [ ] Build persistent memory layer in Hermes: household picture, what's already been handled
-- [ ] Build deadline-flagging logic from extracted document data
-- [ ] Build first draft-action generation (e.g. "draft cancellation email," "draft refund request")
+- [x] Build document/email ingestion (parsing, chunking, extraction using the OCR/vision model from Phase 0) — `agent/ingestion/`; local extraction is primary, the vision model is the fallback (`parse_documents.py`)
+- [x] Build persistent memory layer in Hermes: household picture, what's already been handled — `agent/memory/hermes_memory.py`
+- [x] Build deadline-flagging logic from extracted document data — `agent/deadlines/flag_deadlines.py`, line-level evidence for every date
+- [x] Build first draft-action generation (e.g. "draft cancellation email," "draft refund request") — `agent/actions/draft_actions.py`
 
 ### Person A
 - [x] Wire Hermes/OpenShell so B's pipeline runs on the real sandbox from day one, not bolted on later — Ledger's packages ship in the image at `/opt/ledger` and are launched past Hermes's own `agent` package; the live-sandbox run is the last §5 acceptance check
@@ -78,14 +78,14 @@ was refused. Evidence and the per-item breakdown are in
 **Goal:** Build the project's actual technical differentiator.
 
 ### Person A (lead)
-- [ ] Implement Nemotron Nano redaction layer — strips personal details before data reaches Super/Ultra models or Tavily
+- [x] Implement Nemotron Nano redaction layer — strips personal details before data reaches Super/Ultra models or Tavily — `privacy_router/redact.py`: the deterministic pass plus the Nano escalation. Measured at **0/200** outbound payloads carrying a personal detail (`docs/leak-test.md`). The OpenShell middleware wrapper around it is the next item, and it is open.
 - [ ] Implement OpenShell egress policy enforcement (block/allow rules on outbound traffic)
 - [ ] Build the live prompt-injection-block demo scenario: untrusted message tries to exfiltrate data, sandbox stops it on screen, produces an audit log entry
 
 ### Person B
-- [ ] Build the leak-test harness: run the ~200 synthetic docs (from Phase 0) through the pipeline with the router ON and OFF
-- [ ] Measure and log how often sensitive details appear in outbound queries in each condition
-- [ ] Package results into a clear before/after comparison (table or chart) for the video
+- [x] Build the leak-test harness: run the ~200 synthetic docs (from Phase 0) through the pipeline with the router ON and OFF — `eval/leak_test.py`; every outbound payload is captured at one seam (`privacy_router/egress.py`), so the run needs no network and no API key
+- [x] Measure and log how often sensitive details appear in outbound queries in each condition — **200/200 (100%) OFF, 0/200 (0%) ON**, raw numbers in `eval/results/leak_test.json`
+- [x] Package results into a clear before/after comparison (table or chart) for the video — `docs/leak-test.md` and the README table; the three line items are broken out
 
 **Exit condition:** Real leak-rate number (with/without router), injection block reproducible on screen with audit log.
 

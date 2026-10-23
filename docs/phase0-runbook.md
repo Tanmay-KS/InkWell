@@ -563,7 +563,7 @@ confirmed by an automated run · `[ ]` not yet done.
 - [x] `make redaction-audit` measured what the deterministic redactor misses — the hand-off list for Phase 2
 - [x] the model decision recorded in `docs/ocr-decision.md`
 - [x] this runbook updated with what actually differed
-- [x] friction log updated — F-009 … F-037
+- [x] friction log updated — F-009 … F-040
 
 **Provisional — written from research and design, to be confirmed by a run:**
 
