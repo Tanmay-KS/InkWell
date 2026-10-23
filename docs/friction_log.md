@@ -374,11 +374,12 @@ remedy. Three states now: PASS, FAIL, SKIP.
 **Status:** fixed.
 
 ### F-032 · Two Phase 0 benchmark runs disagree about which model reads documents
-**Owner:** Person A + Person B · **Phase:** 0/1 · **Status:** open
+**Owner:** Person A + Person B · **Phase:** 0/1 · **Status:** fixed
 Two independent runs of `make ocr-bench`, over different corpora and with different candidate sets, name different winners. The 20-document run over five vision models scored `nvidia/Nemotron-3.5-Super-VL` at 99.0% field recovery and made it the OCR model of record (`docs/ocr-decision.md`). The 30-rendered-scan run scored `openbmb/MiniCPM-V-4_5` at 98.0% against Super-VL's 96.0%, at 2.5× less per document, and named MiniCPM instead. The two runs are not contradictory measurements — MiniCPM scores at or above Super-VL in both — but they disagree on the winner, and the choice is a product decision, not a merge detail: Super-VL is a Super-tier model, so using it as the document reader is exactly what forces the "extract locally, redact locally" architecture that was validated against it.
 **Cost if unresolved:** Phase 1 builds the ingestion path on one model while the pinned `.env`, the decision record and the architecture document disagree about which one it is — and the Phase 2 router's redact target was chosen to match the reader.
 **Detection:** reading the OCR decision in `docs/phase0-runbook.md` §8 — it records two runs with two winners.
 **Fix:** Super-VL is the decision of record: it is what `eval/pin_models.py` pins, what `docs/ocr-decision.md` records, and what the Phase 2 router architecture was validated against. MiniCPM stays in the benchmark's candidate list, so the comparison stays reproducible, and its measurement is kept. Revisiting the choice is the first item carried into Phase 1; re-deciding it means re-validating the privacy architecture against a different reader.
+**Resolved 2026-10-24:** the decision of record is applied — `eval/pin_models.py` pins `nvidia/Nemotron-3.5-Super-VL` for both the `super` and `ocr` roles, and `docs/ocr-decision.md` records the choice and keeps MiniCPM's measurement. Nothing in the code or the pinned configuration still names two winners.
 
 ### F-033 · The whole Token Factory domain stopped accepting connections
 **Owner:** Person B · **Phase:** 0 · **Status:** fixed — recovered on its own
