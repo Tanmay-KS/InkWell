@@ -1,0 +1,8 @@
+# The build context is the repository root. The image only needs agent/,
+# privacy_router/ and sandbox/ledger_runner.py, so keep host byte-code and
+# virtualenvs out: a stale __pycache__ from the host's Python must never be
+# copied into /opt/ledger, where the image's interpreter would find it.
+.git
+.venv
+**/__pycache__
+**/*.pyc

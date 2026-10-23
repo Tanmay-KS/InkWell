@@ -42,6 +42,24 @@ RUN apt-get -o Acquire::Retries=3 update && \
 WORKDIR /sandbox
 RUN mkdir -p /sandbox && chown 10000:10000 /sandbox
 
+# Bundle Ledger's application code so fresh sandboxes do not depend
+# on manually uploaded Python packages.
+#
+# OpenShell strips PYTHONPATH from the sandbox environment, so the ENV below
+# is only a convenience for a plain `docker run`; under OpenShell the
+# launcher is what puts /opt/ledger on sys.path.
+COPY agent /opt/ledger/agent
+COPY privacy_router /opt/ledger/privacy_router
+COPY sandbox/ledger_runner.py /opt/ledger/ledger_runner.py
+
+# The runtime user is UID 10000, and policy.yaml mounts /opt/ledger read-only.
+# Compile byte-code with this image's own interpreter so imports never try to
+# write into a read-only path (and so host `.pyc` files can never be reused),
+# then make the tree readable by the unprivileged user by construction.
+RUN /opt/hermes/.venv/bin/python -m compileall -q /opt/ledger && \
+    chmod -R a+rX /opt/ledger
+ENV PYTHONPATH="/opt/ledger"
+
 # The upstream image ends with `USER root` because its s6-overlay entrypoint
 # needs root to chown the data volume and drop privileges per supervised
 # service. OpenShell rejects a root workload unless the policy names a

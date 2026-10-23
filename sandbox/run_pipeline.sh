@@ -60,7 +60,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 SANDBOX_NAME="${LEDGER_SANDBOX_NAME:-ledger-hermes}"
 INBOX="/sandbox/inbox"
-PIPELINE_CMD="${LEDGER_PIPELINE_CMD:-/opt/hermes/.venv/bin/python -m agent.demo}"
+PIPELINE_CMD="${LEDGER_PIPELINE_CMD:-/opt/hermes/.venv/bin/python /opt/ledger/ledger_runner.py}"
 PYTHON_BIN="/opt/hermes/.venv/bin/python"
 
 BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[31m'; GREEN=$'\033[32m'
@@ -198,6 +198,22 @@ PY
         die "the model call from inside the sandbox did not succeed"
     fi
 
+    # The package collision is silent — the upstream image ships its own
+    # `agent` package — so prove which one resolves before the pipeline is
+    # allowed to run. The launcher's --where prints the imported file.
+    local imports
+    imports="$(openshell sandbox exec -n "$SANDBOX_NAME" --no-login-shell -- \
+        "$PYTHON_BIN" /opt/ledger/ledger_runner.py --where 2>&1)"
+    if echo "$imports" | grep -qx '/opt/ledger/agent/__init__.py'; then
+        ok "Ledger packages resolve from /opt/ledger"
+    else
+        fail "the sandbox resolves 'agent' from the wrong place"
+        echo "$imports" | sed 's/^/      /'
+        info "expected /opt/ledger/agent/__init__.py — the image is stale or"
+        info "was built without the Ledger packages; rebuild it"
+        die "import check failed"
+    fi
+
     # The write surface: state belongs in /opt/data, scratch in /sandbox.
     if openshell sandbox exec -n "$SANDBOX_NAME" --no-login-shell -- \
         sh -c 'mkdir -p /opt/data/.probe && echo ok > /opt/data/.probe/x && rm -rf /opt/data/.probe' \
@@ -224,9 +240,9 @@ run_pipeline() {
         fail "the pipeline exited ${rc}"
         if echo "$out" | grep -q "No module named agent"; then
             info "the pipeline entry point does not exist inside the sandbox."
-            info "Expected: ${PIPELINE_CMD} — agent/ has to be in the image."
-            info "Either build it into the image or mount it at /sandbox/agent"
-            info "for development."
+            info "Expected: ${PIPELINE_CMD}"
+            info "agent/ and privacy_router/ belong at /opt/ledger in the image;"
+            info "run: bash sandbox/setup.sh   (rebuilds the image and sandbox)"
         fi
         return "$rc"
     fi
