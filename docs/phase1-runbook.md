@@ -37,6 +37,21 @@ allowlist.
 | Working directory | `/sandbox` (the image's WORKDIR) |
 | Python | `/opt/hermes/.venv/bin/python` — the venv interpreter is the real path the OpenShell proxy matches when it binds a credential to a binary |
 
+Ledger's own code is **packaged at build time**, never uploaded. The image
+(`sandbox/Dockerfile.hermes`) copies `agent/`, `privacy_router/` and
+`sandbox/ledger_runner.py` to `/opt/ledger`, which `policy.yaml` mounts
+read-only. OpenShell strips `PYTHONPATH`, so the pipeline is launched as:
+
+```
+/opt/hermes/.venv/bin/python /opt/ledger/ledger_runner.py <document>
+```
+
+The launcher puts `/opt/ledger` on `sys.path` and refuses to start if
+`agent` resolves anywhere else — the upstream image ships its own `agent`
+package, so that collision is silent otherwise. `run_pipeline.sh --check`
+asserts the resolved path before the pipeline is allowed to run. A code
+change therefore needs an image rebuild, not an upload.
+
 ### 1.2 Model access
 
 - `NEBIUS_API_KEY` in the environment is an **opaque placeholder**. The real
