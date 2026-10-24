@@ -51,12 +51,20 @@ class JobConfig:
 
     look_ahead_days: int = 14
     notify: bool = True
-    state_path: str = os.environ.get("LEDGER_STATE_PATH", "/opt/data/state/job_state.json")
-    household_id: str = os.environ.get("LEDGER_HOUSEHOLD_ID", "default")
+    state_path: str = field(
+        default_factory=lambda: os.environ.get(
+            "LEDGER_STATE_PATH", "/opt/data/state/job_state.json"
+        )
+    )
+    household_id: str = field(
+        default_factory=lambda: os.environ.get("LEDGER_HOUSEHOLD_ID", "default")
+    )
     extra: dict[str, object] = field(default_factory=dict)
 
 
-def run_once(config: JobConfig | None = None, *, today: date | None = None) -> list[dict[str, object]]:
+def run_once(
+    config: JobConfig | None = None, *, today: date | None = None
+) -> list[dict[str, object]]:
     """Run one pass of the deadline check.
 
     Returns:
