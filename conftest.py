@@ -12,6 +12,11 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
+SANDBOX_DIR = REPO_ROOT / "sandbox"
+DEMO_DIR = REPO_ROOT / "demo" / "injection"
+MIDDLEWARE_DIR = SANDBOX_DIR / "middleware" / "ledger-router"
+GENERATED_DIR = MIDDLEWARE_DIR / "generated"
 
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+for path in (REPO_ROOT, SANDBOX_DIR, DEMO_DIR, MIDDLEWARE_DIR, GENERATED_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))

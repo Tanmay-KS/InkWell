@@ -9,17 +9,21 @@ sandbox with a declarative egress policy, and a privacy router strips your
 personal details from anything that leaves, so the expensive models and
 third-party search engines never see them.
 
-> **Status: Phase 1 built; Phase 2 leak test measured.**
+> **Status: Phase 1 built; Phase 2 router implemented; live gateway proof pending.**
 > The stack is de-risked and the decisions are recorded. The Phase 0 exit
 > condition was met by hand on 2026-10-21; the automated verifier has not
 > yet produced a green run, and two Phase 0 benchmark runs disagree about
 > which model reads documents (F-032). The Phase 1 pipeline runs end to
-> end, but the sandbox leg of its exit condition is outstanding. See
+> end, but the sandbox leg of its exit condition is outstanding. The Phase 2
+> middleware, guard, audit trail and injection demo are implemented and
+> pass the offline suite; the live gateway leg is blocked by the client
+> certificate and missing Docker daemon recorded in F-030/F-043. See
 > [`docs/phase0-runbook.md`](docs/phase0-runbook.md) for the infra side,
 > [`docs/ocr-decision.md`](docs/ocr-decision.md) for the model decision
 > and the privacy architecture,
-> [`docs/leak-test.md`](docs/leak-test.md) for the leak measurement, and
-> [`IMPLEMENTATION.md`](IMPLEMENTATION.md) for the full plan.
+> [`docs/leak-test.md`](docs/leak-test.md) for the leak measurement,
+> [`docs/phase2-runbook.md`](docs/phase2-runbook.md) for the live router
+> procedure, and [`IMPLEMENTATION.md`](IMPLEMENTATION.md) for the full plan.
 
 ### Phase 0 decisions
 
@@ -107,6 +111,54 @@ cannot become 100% is not evidence.
 See [`docs/leak-test.md`](docs/leak-test.md) for the method and what the
 number does not cover.
 
+### Phase 2 — the router in the path
+
+The leak test measures the redaction function. The OpenShell supervisor
+middleware is what makes the sandbox call it:
+
+```
+sandbox ──► network policy (host/path/port) ──► ledger-router ──► upstream
+                                                ALLOW / REDACT / DENY
+                                                + audit JSONL
+```
+
+It sees every allowed request to the hosts the policy attaches it to —
+the inference endpoint and Tavily — including calls the agent code did not
+write, and it returns one of three decisions with a stable reason code.
+The guard denies an unknown host, a denied host, a task-host mismatch (when
+`task_hosts` is configured), a third-party echo request (`include_answer`),
+a bulk transfer of personal details, and an image going to a model not on
+the OCR allowlist. The deterministic pass runs first; `escalate` defaults
+to `false`.
+
+```bash
+make router-check                 # validate the config, no gateway needed
+make router-serve                 # run the gRPC service on the host
+make router-probe                 # Describe + redaction self-test
+make router-register              # register with the gateway (probes first)
+make router-on                    # attach the policy with --wait
+make verify-phase2                # egress proof + audit + injection demo
+make injection-demo               # the scenario on its own
+make router-off                   # back to the base policy (the OFF leg)
+```
+
+The injection is deliberately persuasive: the agent reads
+`demo/injection/untrusted_message.txt`, which tells it to upload the
+household record to `collect.evil.example` and, as a fallback, to search
+Tavily with `include_answer: true`. The script runs inside the sandbox and
+makes all four requests. The unknown host is refused by the network policy;
+the two Tavily shapes are refused by the middleware with
+`third_party_model_echo_forbidden` and
+`bulk_personal_detail_to_third_party`; the benign control is allowed. The
+runner prints the new audit rows and refuses to print a log containing the
+synthetic account or email.
+
+The audit log stores the decision, the reason code, the host, a body hash
+and **category counts** — never the request body or a personal value. If
+the log is unwritable, the service fails closed. See
+[`docs/phase2-runbook.md`](docs/phase2-runbook.md) for the exact live
+procedure, rollback, and the current blocker.
+
 ---
 
 ## The three claims
@@ -114,7 +166,7 @@ number does not cover.
 | # | Claim | Where it is proven | Phase |
 |---|---|---|---|
 | 1 | Personal details do not leak out of the agent | `eval/leak_test.py` — **100% → 0%** on 200 documents, see [`docs/leak-test.md`](docs/leak-test.md) | 2 |
-| 2 | A prompt-injected agent cannot exfiltrate your data, and the attempt is on the record | `sandbox/middleware/ledger-router/` | 2 |
+| 2 | A prompt-injected agent cannot exfiltrate your data, and the attempt is on the record | `sandbox/middleware/ledger-router/`, `privacy_router/injection_guard.py`, `demo/injection/`, `sandbox/verify_phase2.sh` | 2 |
 | 3 | The agent's memory is right when the facts change, not just when they are recalled | `eval/memory_updates_eval.py` | 3 |
 
 Plus a cost/latency table across three model tiers

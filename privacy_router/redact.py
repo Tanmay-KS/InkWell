@@ -680,7 +680,7 @@ def redact(
     )
 
 
-def contains_personal_detail(text: str, *, names: Iterable[str] = ()) -> list[Category]:
+def contains_personal_detail(text: str, *, names: Iterable[str] = ()) -> set[Category]:
     """Report which categories of personal detail appear in text.
 
     Used by the leak test to score an outbound payload. It answers "does

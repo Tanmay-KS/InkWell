@@ -19,6 +19,13 @@ dev = [
     "pyyaml>=6.0",
     "ruff>=0.5",
 ]
+middleware = [
+    "grpcio>=1.60",
+    "grpcio-tools>=1.60",
+    "grpcio-health-checking>=1.60",
+    "protobuf>=4.25",
+    "pyyaml>=6.0",
+]
 ocr = [
     "pillow>=10.3",
     "pypdf>=4.3",
@@ -50,6 +57,8 @@ packages = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Generated gRPC stubs are vendored; lint them at the source, not here.
+extend-exclude = ["sandbox/middleware/ledger-router/generated"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]

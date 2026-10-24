@@ -34,7 +34,7 @@ help: ## Show this help
 venv: ## Create the local virtualenv and install dev dependencies
 	$(PY) -m venv $(VENV)
 	$(VENV)/bin/pip install -q --upgrade pip
-	$(VENV)/bin/pip install -q -e ".[dev,ocr]"
+	$(VENV)/bin/pip install -q -e ".[dev,ocr,middleware]"
 	@echo "venv ready: $(VENV)/bin/python"
 
 .PHONY: install
@@ -144,6 +144,59 @@ ocr-bench: ## Compare OCR models on a sample of the corpus
 	$(PY) $(EVAL)/ocr_bench.py --docs $(EVAL)/synthetic_docs --count 10 \
 		--comparators \
 		--json $(EVAL)/results/ocr_bench.json
+
+# --- Phase 2: the privacy router -------------------------------------------
+
+ROUTER_DIR := sandbox/middleware/ledger-router
+AUDIT_LOG ?= /var/log/ledger/audit.jsonl
+
+.PHONY: router-probe
+router-probe: ## Describe + redaction self-test against the running middleware
+	$(PY) $(ROUTER_DIR)/probe.py --self-test
+
+.PHONY: router-serve
+router-serve: ## Run the privacy router middleware (host path; binds 0.0.0.0:50051)
+	LEDGER_ROUTER_PYTHON="$(PY)" bash $(ROUTER_DIR)/run.sh
+
+.PHONY: router-check
+router-check: ## Validate the router config without touching the gateway
+	$(PY) $(SANDBOX)/router_policy.py --check
+
+.PHONY: router-policy
+router-policy: ## Print the router-enabled policy generated from the base policy
+	$(PY) $(SANDBOX)/router_policy.py --on
+
+.PHONY: router-on
+router-on: ## Attach the router to the live sandbox (probe, policy set --wait)
+	LEDGER_ROUTER_PYTHON="$(PY)" bash $(SANDBOX)/router_on.sh --audit-log "$(AUDIT_LOG)"
+
+.PHONY: router-off
+router-off: ## Detach the router; the base policy becomes the OFF condition
+	LEDGER_ROUTER_PYTHON="$(PY)" bash $(SANDBOX)/router_off.sh
+
+.PHONY: router-register
+router-register: ## Register the middleware with the gateway (probe, preflight, restart)
+	LEDGER_ROUTER_PYTHON="$(PY)" bash $(SANDBOX)/router_register.sh
+
+.PHONY: router-unregister
+router-unregister: ## Remove the middleware registration from the gateway
+	LEDGER_ROUTER_PYTHON="$(PY)" bash $(SANDBOX)/router_unregister.sh
+
+.PHONY: egress-probe
+egress-probe: ## Prove allowed host/path and refused unknown host/path/port
+	bash $(SANDBOX)/egress_probe.sh
+
+.PHONY: verify-phase2
+verify-phase2: ## Phase 2 exit verification, including the injection demo
+	LEDGER_ROUTER_PYTHON="$(PY)" bash $(SANDBOX)/verify_phase2.sh --audit-log "$(AUDIT_LOG)"
+
+.PHONY: injection-demo
+injection-demo: ## Run the live prompt-injection-block demo
+	LEDGER_ROUTER_PYTHON="$(PY)" bash demo/injection/run_injection_demo.sh --audit-log "$(AUDIT_LOG)"
+
+.PHONY: audit-tail
+audit-tail: ## Show the last audit decisions (never the payload)
+	$(PY) $(SANDBOX)/audit_tail.py --path "$(AUDIT_LOG)" --last 20
 
 # --- later phases ----------------------------------------------------------
 
