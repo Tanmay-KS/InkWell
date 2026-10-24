@@ -53,6 +53,7 @@ packages = [
 
 [tool.setuptools.package-data]
 "interface.web" = ["*.html", "*.js", "*.css"]
+"eval" = ["pricing.json"]
 
 [tool.ruff]
 line-length = 100

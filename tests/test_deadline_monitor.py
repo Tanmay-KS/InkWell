@@ -40,6 +40,21 @@ class FakeNotifier:
             raise self.error
 
 
+class FailFirstNotifier(FakeNotifier):
+    """Fail the first delivery, then succeed, to test per-item isolation."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.failed = False
+
+    def __call__(self, notice: dict[str, object]) -> None:
+        if not self.failed:
+            self.failed = True
+            self.notices.append(dict(notice))
+            raise RuntimeError("first delivery failed")
+        super().__call__(notice)
+
+
 @pytest.fixture
 def memory(tmp_path):
     store = HouseholdMemory(tmp_path / "memory.db")
@@ -213,6 +228,22 @@ def test_notifier_failure_is_retryable(memory, config):
     assert second[0]["notified"] is True
     assert memory.was_handled(item.item_id, "notified") is True
     assert len(succeeding.notices) == 1
+
+
+def test_notifier_failure_does_not_prevent_later_items(memory, config):
+    failed_item = add_item(memory, provider="First", days=2)
+    delivered_item = add_item(memory, provider="Second", days=3)
+    notifier = FailFirstNotifier()
+
+    flagged = run_once(config, today=TODAY, memory=memory, notifier=notifier)
+
+    assert len(flagged) == 2
+    assert flagged[0]["item_id"] == failed_item.item_id
+    assert flagged[0]["notified"] is False
+    assert flagged[1]["item_id"] == delivered_item.item_id
+    assert flagged[1]["notified"] is True
+    assert memory.was_handled(failed_item.item_id, "notified") is False
+    assert memory.was_handled(delivered_item.item_id, "notified") is True
 
 
 def test_dry_run_does_not_notify_or_mark_handled(memory, tmp_path):

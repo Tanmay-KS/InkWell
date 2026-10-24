@@ -337,6 +337,8 @@ make pin-models       # re-pin the live catalog into .env + docs/model-catalog.m
 make ocr-bench        # which model reads documents best
 make redacted-extract # can the model read redacted text? (the privacy architecture)
 make redaction-audit  # what the deterministic redactor misses
+make bench            # Nemotron tier cost/latency (needs NEBIUS_API_KEY)
+make deadline-monitor-dry-run  # one deadline-monitor pass, no notifications
 ```
 
 `make synth` needs Pillow (`make venv` installs it). The corpus is
