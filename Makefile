@@ -226,6 +226,15 @@ memory-eval: ## Phase 3 — memory-with-updates accuracy
 bench: ## Phase 3 — per-tier cost and latency
 	$(PY) $(EVAL)/cost_latency_bench.py
 
+.PHONY: deadline-monitor
+deadline-monitor: ## Phase 3 — run one deadline-monitor pass
+	$(PY) -m jobs.deadline_monitor
+
+.PHONY: deadline-monitor-dry-run
+deadline-monitor-dry-run: ## Phase 3 — query due items without notifying
+	$(PY) -m jobs.deadline_monitor --dry-run \
+		--state-path /tmp/ledger-job-state.json
+
 .PHONY: clean
 clean: ## Remove caches and build artifacts
 	rm -rf .pytest_cache .ruff_cache .mypy_cache
