@@ -1,8 +1,10 @@
 """Personal-detail redaction.
 
-Phase 2 core — Person A. The deterministic local pass below is implemented
-now because it is pure, testable, and has **no egress at all**; the
-model-assisted escalation lands in Phase 2.
+Phase 2 core — Person A. The deterministic local pass is pure, testable,
+and has **no egress at all**. The model-assisted escalation is implemented
+too, and it is the *only* call the router itself makes — which is why the
+leak test reports it as its own line item instead of folding it into the
+headline.
 
 The ordering is the whole design:
 
@@ -33,10 +35,14 @@ Hermes source). That layer is not duplicated here.
 
 from __future__ import annotations
 
+import json
+import os
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
+
+from privacy_router.egress import OutboundRequest, Transport, http_transport
 
 __all__ = [
     "Category",
@@ -46,6 +52,7 @@ __all__ = [
     "contains_personal_detail",
     "find_spans",
     "local_redact",
+    "parse_residual_spans",
     "redact",
     "redacted_text",
 ]
@@ -522,7 +529,108 @@ def local_redact(text: str, *, names: Iterable[str] = ()) -> RedactionResult:
     return RedactionResult(text="".join(pieces), redactions=redactions)
 
 
-def redact(text: str, *, model: str | None = None, names: Iterable[str] = ()) -> RedactionResult:
+# What the escalation is asked. The instruction is ours, not the user's,
+# so it is `OutboundRequest.prompt` and is never scored as personal detail.
+RESIDUAL_PROMPT = """\
+You are a privacy filter. The text below has already had structured
+personal details replaced with [PLACEHOLDER] tokens.
+
+List every personal detail that still remains in the text: a person's
+name, an address, a phone number, an account or policy number, a date of
+birth, or anything else that identifies one individual.
+
+Rules:
+- Quote each detail exactly as it appears in the text.
+- Do not list anything that is already a [PLACEHOLDER] token.
+- Do not list the organisation's name or a product name.
+- Return JSON only, and nothing else.
+
+Return {"spans": []} when nothing personal remains."""
+
+_PLACEHOLDER = re.compile(r"^\[[A-Z]+_\d+\]$")
+
+
+def parse_residual_spans(answer: str) -> list[str]:
+    """The spans the escalation found, from the model's JSON answer.
+
+    An unparseable answer is not an error here. The escalation is a
+    best-effort second pass: if the model returns prose instead of JSON,
+    the local pass has still run and the caller is no worse off. What
+    would be wrong is treating "I could not parse the answer" as "there
+    was nothing there", so the caller is told which happened through
+    `RedactionResult.escalated` and the returned spans.
+    """
+    if not answer or not answer.strip():
+        return []
+    start = answer.find("{")
+    end = answer.rfind("}")
+    if start == -1 or end < start:
+        return []
+    try:
+        data = json.loads(answer[start : end + 1])
+    except json.JSONDecodeError:
+        return []
+    raw = data.get("spans") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        return []
+
+    spans: list[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        span = item.strip()
+        if not span or _PLACEHOLDER.match(span):
+            continue
+        # A span that is longer than a paragraph is the model answering a
+        # different question. Masking it would destroy the payload.
+        if len(span) > 200:
+            continue
+        if span not in spans:
+            spans.append(span)
+    return spans
+
+
+def _apply_residual(
+    text: str, spans: Iterable[str], existing: list[Redaction]
+) -> tuple[str, list[Redaction]]:
+    """Mask the spans the local pass missed, continuing its numbering."""
+    used = {r.placeholder for r in existing}
+    counter = sum(1 for r in existing if r.category is Category.OTHER)
+    added: list[Redaction] = []
+
+    # Longest first: masking "Sullivan" before "Devin Sullivan" would turn
+    # the longer span into "Devin [OTHER_1]" and lose that they are one name.
+    for span in sorted(set(spans), key=len, reverse=True):
+        if not span or span not in text:
+            continue
+        counter += 1
+        placeholder = f"[OTHER_{counter}]"
+        while placeholder in used:
+            counter += 1
+            placeholder = f"[OTHER_{counter}]"
+        used.add(placeholder)
+        start = text.find(span)
+        text = text.replace(span, placeholder)
+        added.append(
+            Redaction(
+                category=Category.OTHER,
+                placeholder=placeholder,
+                original=span,
+                start=start,
+                end=start + len(placeholder),
+            )
+        )
+
+    return text, added
+
+
+def redact(
+    text: str,
+    *,
+    model: str | None = None,
+    transport: Transport | None = None,
+    names: Iterable[str] = (),
+) -> RedactionResult:
     """Redact personal details from text.
 
     Runs the deterministic local pass, then escalates to a Nemotron Nano
@@ -530,27 +638,46 @@ def redact(text: str, *, model: str | None = None, names: Iterable[str] = ()) ->
     middle of a sentence, or a context-dependent identifier like "the
     policy under Sarah's name".
 
+    **The escalation request carries the locally-redacted text.** That is
+    the whole ordering argument: the call is made, and it is reported, but
+    what it carries has already been through the deterministic pass. It is
+    still the one outbound call that exists *because of* the router, so
+    the leak test scores it as a line item of its own and never folds it
+    into the headline.
+
     Args:
         text: The text to redact.
         model: The redaction model. Defaults to `LEDGER_MODEL_REDACT`.
+        transport: How to send the escalation request. Defaults to a real
+            HTTP call. The leak test passes a capturing transport, so the
+            measurement never leaves the machine.
         names: Names known to be personal — the household's names.
 
     Returns:
         A `RedactionResult` whose `escalated` flag says whether a model
-        call was made.
-
-    Phase 2 implementation: the local pass is done; the escalation is
-    Phase 2 work. Until then, this function is the local pass, and the
-    caller must not treat a clean result as proof that nothing personal
-    remains.
+        call was made, and whose `redactions` include the spans the model
+        found as well as the ones the local pass found.
     """
-    result = local_redact(text, names=names)
-    if model is not None:
-        raise NotImplementedError(
-            "Model-assisted redaction is Phase 2 work. "
-            "Until it lands, redact() performs the deterministic local pass only."
-        )
-    return result
+    local = local_redact(text, names=names)
+    if model is None and transport is None:
+        return local
+
+    send = transport or http_transport()
+    request = OutboundRequest(
+        kind="redact_call",
+        payload=local.text,
+        prompt=RESIDUAL_PROMPT,
+        model=model or os.environ.get("LEDGER_MODEL_REDACT", ""),
+        detail="residual personal-detail detection",
+    )
+    answer = send(request)
+
+    masked, added = _apply_residual(local.text, parse_residual_spans(answer), local.redactions)
+    return RedactionResult(
+        text=masked,
+        redactions=[*local.redactions, *added],
+        escalated=True,
+    )
 
 
 def contains_personal_detail(text: str, *, names: Iterable[str] = ()) -> list[Category]:

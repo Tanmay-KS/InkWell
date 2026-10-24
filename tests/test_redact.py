@@ -1,19 +1,22 @@
-"""Tests for the deterministic redaction pass.
+"""Tests for the redaction pass.
 
 The local pass is the part of the privacy router that costs nothing and
 never lets a detail out, so it is worth testing properly. The model-assisted
-escalation is Phase 2 and is not covered here.
+escalation is the router's one outbound call, so what it *carries* is
+tested as carefully as what it removes.
 """
 
 from __future__ import annotations
 
 import itertools
 
+from privacy_router.egress import capture, capturing_transport
 from privacy_router.redact import (
     Category,
     contains_personal_detail,
     find_spans,
     local_redact,
+    parse_residual_spans,
     redact,
 )
 
@@ -142,14 +145,36 @@ def test_redact_without_a_model_is_the_local_pass():
     assert result.escalated is False
 
 
-def test_redact_with_a_model_is_not_implemented_yet():
-    """The escalation must fail loudly, not silently fall back to the local
-    pass — a caller that believes it got semantic redaction and did not
-    would understate the leak rate."""
-    import pytest
+def test_redact_escalates_and_masks_what_the_model_found():
+    """The escalation is a real outbound call, and its answer is applied."""
+    with capture() as sink:
+        result = redact(
+            "Account 1234-5678 is under Sarah Whitfield",
+            names=["Devin Sullivan"],
+            transport=capturing_transport('{"spans": ["Sarah Whitfield"]}'),
+        )
 
-    with pytest.raises(NotImplementedError):
-        redact("Email sam@example.com", model="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B")
+    assert result.escalated is True
+    assert "Sarah Whitfield" not in result.text
+    assert "1234-5678" not in result.text
+
+    [request] = sink.requests
+    assert request.kind == "redact_call"
+    # The escalation carries the *locally redacted* text: the account is
+    # already a placeholder by the time it goes out. That ordering is the
+    # whole argument for allowing the call at all.
+    assert "1234-5678" not in request.payload
+    assert "[ACCOUNT_1]" in request.payload
+
+
+def test_an_unparseable_escalation_answer_is_not_a_clean_bill_of_health():
+    """The parser reports what it found, and nothing when it understood
+    nothing — the caller learns which through `escalated`, not through a
+    silent success."""
+    assert parse_residual_spans("I could not do that") == []
+    assert parse_residual_spans("") == []
+    assert parse_residual_spans('{"spans": ["[NAME_1]", ""]}') == []
+    assert parse_residual_spans('{"spans": ["Sarah"]}') == ["Sarah"]
 
 
 def test_a_name_does_not_run_past_the_end_of_its_line():

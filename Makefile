@@ -5,8 +5,13 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-PY := $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
+# VENV has to be defined before PY: `:=` expands immediately, so a PY
+# defined first sees an empty VENV, falls through the wildcard to
+# `/bin/python`, and every target runs outside the virtualenv. That
+# failure is invisible until a target imports a dependency — `make demo`
+# works on the system interpreter, `make leak-test` does not.
 VENV := .venv
+PY := $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 SANDBOX := sandbox
 EVAL := eval
 

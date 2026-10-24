@@ -2,9 +2,10 @@
 
 Phase 2 — Person A.
 
-Three modules, three jobs:
+Four modules, four jobs:
 
     redact.py           remove personal details from a payload
+    egress.py           the seam every outbound request crosses
     injection_guard.py  decide whether a request should proceed at all
     audit_log.py        normalise OpenShell's audit events into our trail
 

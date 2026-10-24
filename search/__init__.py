@@ -12,6 +12,6 @@ does see them — which is why the middleware, not this client, is the
 control. This client is the in-process half of the defence.
 """
 
-from search.tavily_client import SearchResult, TavilyClient, TavilyError
+from search.tavily_client import SearchResult, TavilyClient, TavilyError, build_query
 
-__all__ = ["SearchResult", "TavilyClient", "TavilyError"]
+__all__ = ["SearchResult", "TavilyClient", "TavilyError", "build_query"]
