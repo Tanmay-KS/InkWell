@@ -65,9 +65,9 @@ was refused. Evidence and the per-item breakdown are in
 - [x] Build first draft-action generation (e.g. "draft cancellation email," "draft refund request") — `agent/actions/draft_actions.py`
 
 ### Person A
-- [ ] Wire Hermes/OpenShell so B's pipeline runs on the real sandbox from day one, not bolted on later
-- [x] Start scaffolding egress policy rules in OpenShell (what's allowed to leave the sandbox, to where) — not enforcing yet, just structure — `sandbox/policy.yaml`; the `network_middlewares` block is written and deliberately commented out until Phase 2
-- [x] Review B's pipeline for anywhere sensitive data might leak outside the sandbox unguarded — done as the Phase 2 harness: the review found the pipeline had **no outbound calls at all** (F-038), so the egress paths were built and every one of them is now measured (`docs/leak-test.md`)
+- [x] Wire Hermes/OpenShell so B's pipeline runs on the real sandbox from day one, not bolted on later — Ledger's packages ship in the image at `/opt/ledger` and are launched past Hermes's own `agent` package; the live-sandbox run is the last §5 acceptance check
+- [x] Start scaffolding egress policy rules in OpenShell (what's allowed to leave the sandbox, to where) — not enforcing yet, just structure — `sandbox/policy.yaml`
+- [x] Review B's pipeline for anywhere sensitive data might leak outside the sandbox unguarded — nine surfaces reviewed; F-038 and F-039 found and fixed
 
 **Exit condition:** Feed a document in, get a flagged deadline + a draft action out the other side, running inside the sandbox.
 

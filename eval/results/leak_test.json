@@ -1,21 +1,21 @@
 {
   "corpus": "eval/synthetic_docs",
-  "documents": 200,
+  "documents": 3,
   "scans": false,
   "reference_date": "2026-10-20",
   "conditions": {
     "router_off": {
       "condition": "router_off",
-      "documents": 200,
+      "documents": 3,
       "headline": {
         "condition": "router_off",
         "kind": "headline",
-        "payloads": 200,
-        "payloads_with_pii": 200,
+        "payloads": 3,
+        "payloads_with_pii": 3,
         "leak_rate": 1.0,
         "categories": {
-          "account": 200,
-          "name": 200
+          "account": 3,
+          "name": 3
         },
         "examples": [
           {
@@ -29,12 +29,12 @@
         "lookup_call": {
           "condition": "router_off",
           "kind": "lookup_call",
-          "payloads": 200,
-          "payloads_with_pii": 200,
+          "payloads": 3,
+          "payloads_with_pii": 3,
           "leak_rate": 1.0,
           "categories": {
-            "account": 200,
-            "name": 200
+            "account": 3,
+            "name": 3
           },
           "examples": [
             {
@@ -50,7 +50,7 @@
               "excerpt": "Lakeshore Family Health Plan medical cancellation policy 0862 9948 Jordan Okafor"
             }
           ],
-          "note": "200 queries from 200 documents"
+          "note": "3 queries from 3 documents"
         },
         "ocr_call": {
           "condition": "router_off",
@@ -76,11 +76,11 @@
     },
     "router_on": {
       "condition": "router_on",
-      "documents": 200,
+      "documents": 3,
       "headline": {
         "condition": "router_on",
         "kind": "headline",
-        "payloads": 200,
+        "payloads": 3,
         "payloads_with_pii": 0,
         "leak_rate": 0.0,
         "categories": {},
@@ -91,12 +91,12 @@
         "lookup_call": {
           "condition": "router_on",
           "kind": "lookup_call",
-          "payloads": 200,
+          "payloads": 3,
           "payloads_with_pii": 0,
           "leak_rate": 0.0,
           "categories": {},
           "examples": [],
-          "note": "200 queries from 200 documents"
+          "note": "3 queries from 3 documents"
         },
         "ocr_call": {
           "condition": "router_on",
@@ -111,7 +111,7 @@
         "redact_call": {
           "condition": "router_on",
           "kind": "redact_call",
-          "payloads": 200,
+          "payloads": 3,
           "payloads_with_pii": 0,
           "leak_rate": 0.0,
           "categories": {},

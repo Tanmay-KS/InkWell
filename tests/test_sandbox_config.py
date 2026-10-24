@@ -354,3 +354,79 @@ def test_verifier_can_target_a_named_gateway():
         "the selected gateway must be passed through to the CLI"
     )
 
+
+# --- the pipeline harness ---------------------------------------------------
+
+
+def test_pipeline_harness_is_valid_bash():
+    import subprocess
+
+    result = subprocess.run(
+        ["bash", "-n", str(SANDBOX / "run_pipeline.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_pipeline_harness_uploads_without_git_ignore():
+    """The synthetic corpus is gitignored.
+
+    A git-filtered upload silently skips ignored files, so the document
+    would never arrive and the harness would fail for a reason that has
+    nothing to do with the pipeline.
+    """
+    text = (SANDBOX / "run_pipeline.sh").read_text(encoding="utf-8")
+    assert "--no-git-ignore" in text, (
+        "the upload must not be filtered by .gitignore — the corpus is ignored"
+    )
+
+
+def test_pipeline_harness_documents_its_entry_point_contract():
+    """Person B codes against the harness, so the contract has to be in it.
+
+    The pipeline is invoked as a command with one argument and prints one
+    JSON object. Without that written down, "run it in the sandbox" is not
+    actionable.
+    """
+    text = (SANDBOX / "run_pipeline.sh").read_text(encoding="utf-8")
+    assert "LEDGER_PIPELINE_CMD" in text, (
+        "the entry point must be overridable, so the harness works before the"
+        " pipeline exists"
+    )
+    for key in ("deadline", "action", "extraction", "redaction", "egress"):
+        assert f'"{key}"' in text, f"the documented JSON contract must include {key}"
+
+
+def test_pipeline_harness_runs_inside_the_sandbox():
+    """The whole point of the harness.
+
+    The pipeline must be executed by the sandbox, not on the host — the
+    credential placeholder, the closed filesystem and the three-host
+    allowlist only exist inside.
+    """
+    text = (SANDBOX / "run_pipeline.sh").read_text(encoding="utf-8")
+    assert "sandbox exec" in text, "the pipeline must be run via sandbox exec"
+    assert "sandbox upload" in text, "the document must be uploaded into the sandbox"
+
+
+def test_the_plumbing_check_accepts_a_reply_without_prose():
+    """F-040: a reasoning model can answer with `content: null`.
+
+    The probe once read `message.get("content", "").strip()`. `get` applies
+    its default only when the key is *missing*, so a JSON `null` arrived as
+    `None`, `.strip()` raised, and the enclosing `except` reported a
+    successful call as "the sandbox cannot reach Token Factory" — the most
+    misleading failure the harness can produce.
+
+    A parsed response is the success condition. Empty prose is not a
+    network fault.
+    """
+    text = (SANDBOX / "run_pipeline.sh").read_text(encoding="utf-8")
+
+    assert '.get("content", "")' not in text, "the null-content bug, reintroduced"
+    assert '(message.get("content") or "")' in text, "content may be null"
+    assert '"MODEL-OK (no prose' in text, "empty content must still be a success"
+    assert '"NoChoices"' in text, "no completion at all is the real failure"
+

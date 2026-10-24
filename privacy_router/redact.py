@@ -54,6 +54,7 @@ __all__ = [
     "local_redact",
     "parse_residual_spans",
     "redact",
+    "redacted_text",
 ]
 
 
@@ -331,6 +332,32 @@ class RedactionMap:
         """
         prefix = f"[{category.value.upper()}_"
         return [original for placeholder, original in self.values.items() if placeholder.startswith(prefix)]
+
+    def value(self, placeholder: str) -> str | None:
+        """The original value for one placeholder, or None if unknown.
+
+        A single lookup, for the caller that knows which placeholder it
+        wants. `by_category` and `names` answer the "which ones" question;
+        this answers the "what is this one" question.
+        """
+        return self.values.get(placeholder)
+
+    def __len__(self) -> int:
+        return len(self.values)
+
+    @classmethod
+    def from_result(cls, result: RedactionResult) -> RedactionMap:
+        """Build a map from a redaction result.
+
+        `redacted_text()` is the usual way to get one, because it does the
+        redaction and the mapping together. This is for the caller who
+        already holds a `RedactionResult` — from `local_redact()`, say — and
+        needs the map without redoing the work.
+
+        The same original value keeps the same placeholder, so a value
+        mentioned twice in a document resolves to the same text twice.
+        """
+        return cls({r.placeholder: r.original for r in result.redactions})
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"RedactionMap({len(self.values)} placeholders, values withheld)"
