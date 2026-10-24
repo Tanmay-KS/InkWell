@@ -75,14 +75,33 @@ harness has stopped exercising the path.
 
 **It measures the router, not the gateway.** In the sandbox, "router ON"
 is the presence of the `network_middlewares` entry in
-`sandbox/policy.yaml`, applied by the OpenShell supervisor. That leg needs
-the gateway host and has not been run. What this test measures is the
-redaction layer that middleware invokes — the same
+`sandbox/policy.yaml`, applied by the OpenShell supervisor. The middleware
+wrapper now exists in `sandbox/middleware/ledger-router/`, and
+`privacy_router.injection_guard` is the same policy the middleware calls;
+the live gateway leg is still the one that has not run here. What this test
+measures is the redaction layer that middleware invokes — the same
 `privacy_router.redact`.
 
 So the honest claim today is *"the router's coverage is 100%"*, not *"the
 sandbox enforced 100%"*. The second requires the gateway run. The number
 in the video should carry that qualifier.
+
+The live leg, once the gateway is reachable:
+
+```bash
+bash sandbox/router_off.sh       # base policy = the OFF condition
+# run the corpus through sandbox/run_pipeline.sh, capture the outbound query
+bash sandbox/router_on.sh        # generated policy + middleware = the ON condition
+# run the same corpus again
+bash sandbox/verify_phase2.sh    # contract, egress, audit, injection demo
+```
+
+The outbound query is captured at the gateway, not at
+`privacy_router/egress.py`, so it measures what the supervisor actually
+allowed. `sandbox/audit_tail.py` prints the decision trail (never the
+payload); `privacy_router.audit_log.from_ocsf` normalises the runtime's
+OCSF 4002/4001/2004 events to the same shape. The procedure and the
+rollback are in [`phase2-runbook.md`](phase2-runbook.md).
 
 **It does not measure what a prompt injection could send.** That is a
 different path — the agent being talked into making a request nobody

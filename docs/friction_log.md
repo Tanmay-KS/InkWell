@@ -496,6 +496,84 @@ NoChoices`. The budget went from 8 to 64 tokens so the line usually shows
 prose, but nothing depends on it. Regression test:
 `test_the_plumbing_check_accepts_a_reply_without_prose`.
 
+### F-041 · A registered middleware can stop the gateway from starting
+**Owner:** Person A · **Phase:** 2 · **Status:** worked around
+The gateway calls every service in `[[openshell.supervisor.middleware]]` at
+startup and exits if `Describe` does not answer. The Phase 2 block was
+already in `sandbox/gateway.toml`, commented out with a note saying not to
+enable it before the service existed. The obvious "just uncomment it"
+change would make every clone that does not run a router unable to start
+the gateway — a repository-level denial of service.
+**Cost if unresolved:** the two-minute setup in the README turns into a
+debugging session about a service the reader has never heard of, and the
+Phase 0/1 checks cannot run at all.
+**Detection:** reading the upstream startup path while wiring the
+registration; the existing `test_gateway_middleware_is_not_registered_before_phase_2`
+already pinned the base state.
+**Fix:** the base `gateway.toml` and `policy.yaml` stay inactive.
+`sandbox/gateway_config.py` generates the enabled TOML from the installed
+one, `router_register.sh` probes the service before generating anything,
+preflights the result, backs up the installed file, and restores it if the
+gateway does not answer after the restart. `router_unregister.sh` is the
+reverse. Tests: `tests/test_gateway_config.py`.
+
+### F-042 · A refused policy leaves the sandbox fail-closed
+**Owner:** Person A · **Phase:** 2 · **Status:** worked around
+The gateway's default `policy_validation_failure_mode` is `fail_closed`:
+after a rejected `policy set`, the sandbox has no working egress until a
+valid policy loads. `policy set --wait` returns nonzero, but the convenient
+error path — print the error and stop — leaves the user with a sandbox
+that cannot reach Token Factory or Tavily and no obvious way back.
+**Cost if unresolved:** a failed Phase 2 demo takes the Phase 0/1 pipeline
+down with it, and the fix ("apply the base policy again") is exactly the
+thing the operator is least likely to remember under deadline pressure.
+**Detection:** reading the gateway policy validation path; `router_on.sh`
+was written around it.
+**Fix:** `sandbox/router_on.sh` captures the failure and immediately
+re-applies `sandbox/policy.yaml` with `--wait`, then prints the three
+likely causes (unregistered middleware, unreachable endpoint, invalid
+config). The base policy is a known-good file, not a reconstructed one.
+
+### F-043 · The live Phase 2 gateway leg cannot run from this client
+**Owner:** Person A · **Phase:** 2 · **Status:** open — blocked
+`openshell status` on this machine fails with `invalid peer certificate:
+BadSignature`; there is no Docker daemon, and `host.openshell.internal`
+does not resolve. `sandbox/verify.sh` reports 2 required failures and 9
+skips. This is F-030 again, now on the Phase 2 path: the middleware can be
+built, unit-tested, and exercised against a real local gRPC server, but the
+gateway cannot be asked to register it or apply the policy.
+**Cost if unresolved:** the Phase 2 exit condition — live egress proof and
+the on-screen injection block — stays open, and the honest claim remains
+"the router's coverage is 100%, the sandbox enforcement is pending".
+**Detection:** `openshell status`, `bash sandbox/verify.sh`, and
+`sandbox/verify_phase2.sh` on 2026-10-24.
+**Fix / next step:** run the live procedure in
+`docs/phase2-runbook.md` on the gateway host, where the CLI holds the
+matching client bundle and Docker is available. The offline pieces are
+already green: middleware RPC self-test, guard/audit tests, generated
+policy/gateway preflight, egress probe and demo against a fake `openshell`
+client.
+
+### F-044 · The registration cap was smaller than the service's contract
+**Owner:** Person A · **Phase:** 2 · **Status:** fixed
+The commented registration block carried `max_payload_bytes = 262144`
+(256 KiB) and `timeout = "500ms"`, while the service advertises 4 MiB and
+its config defaults to 1500 ms. A document image sent to the OCR model is
+the one body that can exceed 256 KiB; the gateway would have rejected it
+before the middleware saw it, and the failure would look like an OCR
+problem.
+**Cost if unresolved:** the image path silently stops working, and the
+Phase 2 claim ("the middleware sees every allowed request") is false for
+exactly the largest payloads.
+**Detection:** comparing the registration block with
+`ledger_router.__main__`'s `--max-payload-bytes` default and
+`RouterConfig.timeout_ms`.
+**Fix:** the block now uses `max_payload_bytes = 4194304` and
+`timeout = "1500ms"`, matching the service. `probe.py` prints the
+advertised cap, and `router_register.sh` will not install a config that
+fails preflight. Regression test:
+`test_enable_uncomments_only_the_registration_block`.
+
 ### Pre-registered risks, now closed
 
 | Ref | Was | Now |
@@ -503,7 +581,7 @@ prose, but nothing depends on it. Regression test:
 | F-002 | Model ID casing is inconsistent across Nebius's own docs | **Confirmed and worse than expected** — see F-017 and F-018. Every ID is now read from the live catalog. |
 | F-007 | Rate limits will bite during the leak test | **Not yet hit.** A 20-document, 5-model benchmark (100 calls) ran without a throttle. The 200-document, two-condition leak test is 10× that — still to be proven. |
 
-_(F-001…F-040 above are the Phase 0 and Phase 1 record. Later phases append here.)_
+_(F-001…F-044 above are the Phase 0, Phase 1 and Phase 2 record. Later phases append here.)_
 
 ---
 

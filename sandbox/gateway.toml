@@ -136,8 +136,8 @@ enabled = true
 # name = "ledger-router"
 # grpc_endpoint = "http://host.openshell.internal:50051"
 # allow_insecure_transport = true
-# max_payload_bytes = 262144
-# timeout = "500ms"
+# max_payload_bytes = 4194304
+# timeout = "1500ms"
 #
 # `allow_insecure_transport` permits a plaintext http:// endpoint with no peer
 # authentication. It is for local development only. For anything else, set
