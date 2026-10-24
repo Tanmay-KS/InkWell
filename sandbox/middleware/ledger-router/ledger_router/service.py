@@ -33,6 +33,7 @@ from ledger_router.config import RouterConfig
 from privacy_router.audit_log import AuditEvent, AuditLog, now_iso
 from privacy_router.egress import TAVILY_HOST, TOKEN_FACTORY_HOST, http_transport
 from privacy_router.injection_guard import Decision, evaluate_request
+from privacy_router.redact import RedactionError
 
 # The audit vocabulary is past tense, matching the OCSF normaliser and the
 # docs: "router.allowed", "router.redacted", "router.denied". The guard's
@@ -249,13 +250,18 @@ class LedgerRouterServicer(pb_grpc.SupervisorMiddlewareServicer):
             )
         except Exception as exc:
             LOG.warning("body processing failed (%s)", type(exc).__name__)
+            # A RedactionError means the model-assisted check was requested
+            # and did not complete. That is a privacy failure, not merely an
+            # internal error: deny, and never forward the unredacted body.
+            escalation_failed = isinstance(exc, RedactionError) or config.escalate
+            reason_code = (
+                REASON_ESCALATION_FAILED if escalation_failed else REASON_INTERNAL_ERROR
+            )
             self._audit(
                 config,
                 request=request,
                 decision=Decision.DENY,
-                reason_code=REASON_ESCALATION_FAILED
-                if config.escalate
-                else REASON_INTERNAL_ERROR,
+                reason_code=reason_code,
                 detail="body processing failed",
                 categories=[],
                 duration_ms=_elapsed_ms(started),
@@ -263,9 +269,7 @@ class LedgerRouterServicer(pb_grpc.SupervisorMiddlewareServicer):
             )
             return pb.HttpRequestResult(
                 decision=pb.DECISION_DENY,
-                reason_code=_safe_reason_code(
-                    REASON_ESCALATION_FAILED if config.escalate else REASON_INTERNAL_ERROR
-                ),
+                reason_code=_safe_reason_code(reason_code),
                 reason="the router could not inspect the request body",
             )
 
@@ -506,14 +510,13 @@ def serve(
     pb_grpc.add_SupervisorMiddlewareServicer_to_server(servicer, server)
 
     try:
-        from grpc_health.v1 import health, health_pb2_grpc
+        from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 
         health_servicer = health.HealthServicer()
         health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
-        health_servicer.set("", health.HEALTH_SERVING)
-        health_servicer.set(
-            "openshell.middleware.v1.SupervisorMiddleware", health.HEALTH_SERVING
-        )
+        serving = health_pb2.HealthCheckResponse.SERVING
+        health_servicer.set("", serving)
+        health_servicer.set("openshell.middleware.v1.SupervisorMiddleware", serving)
     except ImportError:  # pragma: no cover - optional dependency
         LOG.info("grpc health checking is not installed")
 

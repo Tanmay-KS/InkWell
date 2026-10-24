@@ -23,6 +23,13 @@ model-only, the claim would be "personal details reach a third-party model
 before they are removed" — which is a much weaker claim than the one we
 want to make, and arguably not a privacy win at all.
 
+When the model-assisted pass is requested, the call carries the
+**locally-redacted text**, not the original. A valid `{"spans": []}` answer
+is a successful "nothing remains" result. An empty, malformed, or
+unusable answer, a transport failure, or a span that cannot be applied
+raises `RedactionError`; the middleware denies the request rather than
+forwarding text whose full privacy check is uncertain.
+
 What we can honestly claim, with the architecture below, is: *personal
 details never reach a Super/Ultra tier or a third-party service*. The Nano
 redaction call is reported as a separate line item in the leak test, not
@@ -47,11 +54,14 @@ from privacy_router.egress import OutboundRequest, Transport, http_transport
 __all__ = [
     "Category",
     "Redaction",
+    "RedactionError",
     "RedactionMap",
     "RedactionResult",
+    "ResidualParse",
     "contains_personal_detail",
     "find_spans",
     "local_redact",
+    "parse_residual_response",
     "parse_residual_spans",
     "redact",
     "redacted_text",
@@ -264,7 +274,16 @@ class RedactionResult:
     text: str
     redactions: list[Redaction] = field(default_factory=list)
     escalated: bool = False
-    """True when the model-assisted pass was needed for any span."""
+    """True when a model-assisted pass was attempted."""
+
+    residual_checked: bool = False
+    """True only when the model returned a usable residual-detection answer.
+
+    `escalated` says a call happened; this says the answer was understood
+    and applied. A result with `escalated=True` and
+    `residual_checked=False` is incomplete, and callers must not treat its
+    text as safe to send externally.
+    """
 
     @property
     def categories(self) -> set[Category]:
@@ -272,6 +291,52 @@ class RedactionResult:
 
     def placeholders(self) -> list[str]:
         return [r.placeholder for r in self.redactions]
+
+
+@dataclass(frozen=True, slots=True)
+class ResidualParse:
+    """The structured outcome of parsing a residual-detection answer.
+
+    `error` is `None` only when the answer is a JSON object with a `spans`
+    list. An explicit `{"spans": []}` is a successful "nothing remains"
+    answer; it is not a parse failure. An empty, malformed, or unusable
+    answer carries a stable `error` code instead, so a privacy decision
+    never has to infer safety from a bare empty list.
+    """
+
+    spans: list[str] = field(default_factory=list)
+    error: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+
+class RedactionError(RuntimeError):
+    """Model-assisted redaction could not establish that text is clean.
+
+    `reason` is a stable machine-readable code. `result` is the best
+    partial result available: local redactions, plus any model spans that
+    were applied before the uncertainty was detected. The result is useful
+    for diagnostics, but its text must **not** be sent externally unless
+    the caller explicitly accepts the uncertainty.
+
+    The exception intentionally does not embed the transport error message
+    or the model answer. Either can contain the text the router is trying
+    to protect.
+    """
+
+    def __init__(
+        self,
+        reason: str,
+        *,
+        result: RedactionResult | None = None,
+        cause_type: str | None = None,
+    ) -> None:
+        self.reason = reason
+        self.result = result
+        self.cause_type = cause_type
+        super().__init__(f"model-assisted redaction could not be completed ({reason})")
 
 
 @dataclass(slots=True)
@@ -548,60 +613,129 @@ Rules:
 Return {"spans": []} when nothing personal remains."""
 
 _PLACEHOLDER = re.compile(r"^\[[A-Z]+_\d+\]$")
+_PLACEHOLDER_TOKEN = re.compile(r"\[[A-Z]+_\d+\]")
 
 
-def parse_residual_spans(answer: str) -> list[str]:
-    """The spans the escalation found, from the model's JSON answer.
+def parse_residual_response(answer: str) -> ResidualParse:
+    """Parse a residual-detection answer with an explicit success/failure.
 
-    An unparseable answer is not an error here. The escalation is a
-    best-effort second pass: if the model returns prose instead of JSON,
-    the local pass has still run and the caller is no worse off. What
-    would be wrong is treating "I could not parse the answer" as "there
-    was nothing there", so the caller is told which happened through
-    `RedactionResult.escalated` and the returned spans.
+    The contract is deliberately narrow:
+
+    * ``{"spans": []}`` is a valid answer meaning "nothing remains".
+    * A JSON object with a non-empty string list is valid; the spans are
+      deduplicated and trimmed.
+    * Empty text, invalid JSON, a non-object, a missing/non-list ``spans``
+      field, a non-string item, a placeholder-only list, or an oversized
+      span is an error. A privacy decision must not treat those as "clean".
+
+    The returned `ResidualParse.error` is a stable reason code, never the
+    model's answer, so it is safe to put in a log or an exception.
     """
-    if not answer or not answer.strip():
-        return []
-    start = answer.find("{")
-    end = answer.rfind("}")
-    if start == -1 or end < start:
-        return []
+    if not isinstance(answer, str):
+        return ResidualParse(error="unexpected_response")
+    if not answer.strip():
+        return ResidualParse(error="empty_response")
+
     try:
-        data = json.loads(answer[start : end + 1])
+        data = json.loads(answer)
     except json.JSONDecodeError:
-        return []
-    raw = data.get("spans") if isinstance(data, dict) else None
+        # Some models wrap the JSON in prose. Extract the outermost object,
+        # but only after the whole-answer parse failed.
+        start = answer.find("{")
+        end = answer.rfind("}")
+        if start == -1 or end < start:
+            return ResidualParse(error="malformed_response")
+        try:
+            data = json.loads(answer[start : end + 1])
+        except json.JSONDecodeError:
+            return ResidualParse(error="malformed_response")
+
+    if not isinstance(data, dict) or "spans" not in data:
+        return ResidualParse(error="unexpected_response")
+    raw = data.get("spans")
     if not isinstance(raw, list):
-        return []
+        return ResidualParse(error="unexpected_response")
 
     spans: list[str] = []
     for item in raw:
         if not isinstance(item, str):
-            continue
+            return ResidualParse(error="unexpected_response")
         span = item.strip()
         if not span or _PLACEHOLDER.match(span):
             continue
         # A span that is longer than a paragraph is the model answering a
         # different question. Masking it would destroy the payload.
         if len(span) > 200:
-            continue
+            return ResidualParse(error="unusable_span")
         if span not in spans:
             spans.append(span)
-    return spans
+
+    # `{"spans": []}` is the explicit "nothing remains" answer. A
+    # non-empty list that contains no usable span is not the same thing:
+    # the model returned something, but we cannot use it to establish that
+    # the text is clean.
+    if raw and not spans:
+        return ResidualParse(error="no_usable_spans")
+    return ResidualParse(spans=spans)
+
+
+def parse_residual_spans(answer: str) -> list[str]:
+    """Lenient compatibility wrapper around `parse_residual_response`.
+
+    This preserves the old public helper for callers that only want the
+    spans, but it deliberately erases the distinction between a valid
+    empty answer and a failed one. A caller making a privacy decision must
+    use `parse_residual_response` and treat `not ok` as failure.
+    """
+    parsed = parse_residual_response(answer)
+    return list(parsed.spans) if parsed.ok else []
+
+
+def _attempted(local: RedactionResult) -> RedactionResult:
+    """The partial result to attach to a failed escalation.
+
+    The text is the locally-redacted text, never the original. It is safe
+    to inspect, but not safe to send: the residual check did not complete.
+    """
+    return RedactionResult(
+        text=local.text,
+        redactions=list(local.redactions),
+        escalated=True,
+        residual_checked=False,
+    )
 
 
 def _apply_residual(
     text: str, spans: Iterable[str], existing: list[Redaction]
-) -> tuple[str, list[Redaction]]:
-    """Mask the spans the local pass missed, continuing its numbering."""
+) -> tuple[str, list[Redaction], list[str]]:
+    """Mask the spans the local pass missed, continuing its numbering.
+
+    Returns the rewritten text, the applied redactions, and any spans that
+    could not be applied. Unapplied spans are a failure: the model named
+    something we cannot locate, so we cannot conclude the text is clean.
+    """
     used = {r.placeholder for r in existing}
     counter = sum(1 for r in existing if r.category is Category.OTHER)
     added: list[Redaction] = []
+    unapplied: list[str] = []
+    applied_originals: list[str] = []
 
     # Longest first: masking "Sullivan" before "Devin Sullivan" would turn
     # the longer span into "Devin [OTHER_1]" and lose that they are one name.
     for span in sorted(set(spans), key=len, reverse=True):
-        if not span or span not in text:
+        if not span:
+            continue
+        if any(span in token for token in _PLACEHOLDER_TOKEN.findall(text)):
+            # Never rewrite inside an existing placeholder. A model that
+            # returns "NAME" must not turn "[NAME_1]" into "[[OTHER_1]_1]".
+            unapplied.append(span)
+            continue
+        if span not in text:
+            # A shorter span that is contained in a longer span we already
+            # applied is covered by that redaction, not a failure.
+            if any(span in original for original in applied_originals):
+                continue
+            unapplied.append(span)
             continue
         counter += 1
         placeholder = f"[OTHER_{counter}]"
@@ -611,6 +745,7 @@ def _apply_residual(
         used.add(placeholder)
         start = text.find(span)
         text = text.replace(span, placeholder)
+        applied_originals.append(span)
         added.append(
             Redaction(
                 category=Category.OTHER,
@@ -621,7 +756,7 @@ def _apply_residual(
             )
         )
 
-    return text, added
+    return text, added, unapplied
 
 
 def redact(
@@ -654,15 +789,31 @@ def redact(
         names: Names known to be personal — the household's names.
 
     Returns:
-        A `RedactionResult` whose `escalated` flag says whether a model
-        call was made, and whose `redactions` include the spans the model
-        found as well as the ones the local pass found.
+        A `RedactionResult` whose `escalated` flag records that the model
+        was asked, and whose `residual_checked` flag records that a usable
+        answer was received. The redactions include local spans and the
+        spans the model found.
+
+    Raises:
+        RedactionError: The model-assisted pass was requested but could
+            not produce a usable answer, or named a span that could not be
+            applied. `RedactionError.result` carries the local/partial
+            redactions for diagnostics; callers must deny egress rather
+            than forwarding that text.
     """
     local = local_redact(text, names=names)
     if model is None and transport is None:
         return local
 
-    send = transport or http_transport()
+    try:
+        send = transport or http_transport()
+    except Exception as exc:  # pragma: no cover - transport construction is cheap
+        raise RedactionError(
+            "transport_error",
+            result=_attempted(local),
+            cause_type=type(exc).__name__,
+        ) from None
+
     request = OutboundRequest(
         kind="redact_call",
         payload=local.text,
@@ -670,14 +821,41 @@ def redact(
         model=model or os.environ.get("LEDGER_MODEL_REDACT", ""),
         detail="residual personal-detail detection",
     )
-    answer = send(request)
+    try:
+        answer = send(request)
+    except Exception as exc:
+        # Do not include the transport's message: an HTTP error body can
+        # contain the prompt or the response, either of which may include
+        # the text this pass exists to protect.
+        raise RedactionError(
+            "transport_error",
+            result=_attempted(local),
+            cause_type=type(exc).__name__,
+        ) from None
 
-    masked, added = _apply_residual(local.text, parse_residual_spans(answer), local.redactions)
-    return RedactionResult(
+    parsed = parse_residual_response(answer)
+    if not parsed.ok:
+        raise RedactionError(
+            parsed.error or "unexpected_response",
+            result=_attempted(local),
+        )
+
+    masked, added, unapplied = _apply_residual(
+        local.text, parsed.spans, local.redactions
+    )
+    result = RedactionResult(
         text=masked,
         redactions=[*local.redactions, *added],
         escalated=True,
+        residual_checked=True,
     )
+    if unapplied:
+        # The model identified something it could not place. The part we
+        # could apply is preserved in `result`, but the complete check is
+        # uncertain, so this is still a failure.
+        result.residual_checked = False
+        raise RedactionError("unapplied_spans", result=result)
+    return result
 
 
 def contains_personal_detail(text: str, *, names: Iterable[str] = ()) -> set[Category]:

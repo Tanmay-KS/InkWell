@@ -307,3 +307,97 @@ def test_every_decision_is_audited(router):
     events = [json.loads(line) for line in audit.read_text(encoding="utf-8").splitlines()]
     assert [event["decision"] for event in events] == ["allow", "redact"]
     assert all(event["event_type"].startswith("router.") for event in events)
+
+
+def test_escalation_transport_failure_denies_and_does_not_forward(router, monkeypatch):
+    stub, audit, _ = router
+
+    def factory(*args, **kwargs):
+        def send(request):
+            raise RuntimeError("model unavailable")
+
+        return send
+
+    monkeypatch.setattr("ledger_router.service.http_transport", factory)
+
+    result = evaluate(
+        stub,
+        host=TAVILY,
+        path="/search",
+        body={"query": "Email sam@example.com about Jordan's policy."},
+        config=config_dict(audit, escalate=True),
+    )
+
+    assert result.decision == pb.DECISION_DENY
+    assert result.reason_code == "escalation_failed"
+    assert not result.has_body
+    event = json.loads(audit.read_text(encoding="utf-8").splitlines()[0])
+    assert event["event_type"] == "router.denied"
+    assert event["decision"] == "deny"
+    assert "sam@example.com" not in json.dumps(event)
+    assert "Jordan" not in json.dumps(event)
+
+
+def test_malformed_escalation_answer_denies_instead_of_forwarding(router, monkeypatch):
+    stub, audit, _ = router
+
+    def factory(*args, **kwargs):
+        return lambda request: "not JSON"
+
+    monkeypatch.setattr("ledger_router.service.http_transport", factory)
+
+    result = evaluate(
+        stub,
+        host=TAVILY,
+        path="/search",
+        body={"query": "Email sam@example.com about Jordan's policy."},
+        config=config_dict(audit, escalate=True),
+    )
+
+    assert result.decision == pb.DECISION_DENY
+    assert result.reason_code == "escalation_failed"
+    assert not result.has_body
+
+
+def test_nonmatching_escalation_span_denies_instead_of_forwarding(router, monkeypatch):
+    stub, audit, _ = router
+
+    def factory(*args, **kwargs):
+        return lambda request: '{"spans": ["not in the query"]}'
+
+    monkeypatch.setattr("ledger_router.service.http_transport", factory)
+
+    result = evaluate(
+        stub,
+        host=TAVILY,
+        path="/search",
+        body={"query": "Email sam@example.com about Jordan's policy."},
+        config=config_dict(audit, escalate=True),
+    )
+
+    assert result.decision == pb.DECISION_DENY
+    assert result.reason_code == "escalation_failed"
+    assert not result.has_body
+
+
+def test_valid_empty_escalation_answer_forwards_the_redacted_body(router, monkeypatch):
+    stub, audit, _ = router
+
+    def factory(*args, **kwargs):
+        return lambda request: '{"spans": []}'
+
+    monkeypatch.setattr("ledger_router.service.http_transport", factory)
+
+    result = evaluate(
+        stub,
+        host=TAVILY,
+        path="/search",
+        body={"query": "Email sam@example.com about the policy."},
+        config=config_dict(audit, escalate=True),
+    )
+
+    assert result.decision == pb.DECISION_ALLOW
+    assert result.has_body
+    forwarded = json.loads(result.body)
+    assert "sam@example.com" not in forwarded["query"]
+    assert "[EMAIL_1]" in forwarded["query"]

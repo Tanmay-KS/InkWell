@@ -167,14 +167,24 @@ def test_redact_escalates_and_masks_what_the_model_found():
     assert "[ACCOUNT_1]" in request.payload
 
 
-def test_an_unparseable_escalation_answer_is_not_a_clean_bill_of_health():
-    """The parser reports what it found, and nothing when it understood
-    nothing — the caller learns which through `escalated`, not through a
-    silent success."""
+def test_the_lenient_parser_is_not_a_privacy_decision():
+    """`parse_residual_spans` preserves the old list-only API.
+
+    It deliberately erases the difference between a valid empty answer and
+    an unparseable one, so `redact()` uses `parse_residual_response` and
+    raises `RedactionError` instead of treating a parse failure as clean.
+    """
+    from privacy_router.redact import parse_residual_response
+
     assert parse_residual_spans("I could not do that") == []
     assert parse_residual_spans("") == []
     assert parse_residual_spans('{"spans": ["[NAME_1]", ""]}') == []
     assert parse_residual_spans('{"spans": ["Sarah"]}') == ["Sarah"]
+
+    assert parse_residual_response("I could not do that").ok is False
+    assert parse_residual_response("").ok is False
+    assert parse_residual_response('{"spans": ["[NAME_1]", ""]}').ok is False
+    assert parse_residual_response('{"spans": []}').ok is True
 
 
 def test_a_name_does_not_run_past_the_end_of_its_line():
