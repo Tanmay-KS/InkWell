@@ -412,7 +412,9 @@ def parse_document(
     try:
         raw_text, warnings = _extract_local(source, media_type)
     except Exception as exc:
-        raw_text, warnings = "", [f"local extraction failed: {exc}"]
+        # Report the failure type only; exception messages may contain
+        # document contents or other sensitive information.
+        raw_text, warnings = "", [f"extraction failed: {type(exc).__name__}"]
 
     document.warnings.extend(warnings)
 

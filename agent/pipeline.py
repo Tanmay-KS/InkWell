@@ -36,8 +36,8 @@ from agent.actions.draft_actions import ActionKind, DraftAction, draft_action
 from agent.deadlines.flag_deadlines import Deadline, flag_deadlines
 from agent.ingestion.parse_documents import Document, parse_document
 from agent.memory.hermes_memory import HouseholdItem, HouseholdMemory, TrackedState
-from privacy_router.redact import redacted_text
 from privacy_router.egress import Transport
+from privacy_router.redact import redacted_text
 
 # The organisation a notice is from. Two shapes, in order of confidence:
 # "…registration with the City Business Licensing Office" and the
@@ -329,13 +329,19 @@ def process_document(
                 f"could not read the household picture ({type(exc).__name__})"
             )
 
-    document = parse_document(
-        path,
-        model=os.environ.get("LEDGER_MODEL_OCR", "") or None,
-        transport=transport,
-        household_names=names,
-        redact=redact,
-    )
+    try:
+        document = parse_document(
+            path,
+            model=os.environ.get("LEDGER_MODEL_OCR", "") or None,
+            transport=transport,
+            household_names=names,
+            redact=redact,
+        )
+    except Exception as exc:
+        # Never expose exception messages: they may contain document data.
+        result.warnings.append(f"extraction failed: {type(exc).__name__}")
+        return result
+
     result.document = document
     result.warnings.extend(document.warnings)
 
