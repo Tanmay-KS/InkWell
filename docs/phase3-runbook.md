@@ -161,20 +161,97 @@ the schedule runs.
 
 ## 3. Memory-with-updates accuracy — `make memory-eval`
 
-The eval asks questions whose underlying fact changed ("I cancelled that
-plan in March") and scores three things separately:
+### What it measures
 
-* the **current** answer after a supersession;
-* the **superseded** answer at a point in time before the change;
-* **abstention** on a subject that was never stated.
+Thirty scenarios, each a sequence of statements about a household fact
+and a question whose answer depends on which statement is current. Every
+scenario is isolated in its own SQLite store, so the statements are the
+whole history the system has.
 
-Scoring is deterministic (`eval/scoring.py` semantics), so a rerun is
-comparable. The artifact is `eval/results/memory_eval.json`.
+Three answer types, because they fail differently:
 
-This number is not published here. A smoke run with a handful of scenarios
-is a working harness, not a measurement — see `eval/scenarios/` for the
-current scenario set, and only quote the score once the set is large enough
-for a per-category rate to mean something.
+* **current** — the fact after a supersession ("is the plan active?");
+* **superseded** — the fact *at a past date* ("what was it before the
+  cancellation?");
+* **never stated** — abstention on a subject the household never
+  mentioned.
+
+The `never_stated` query is not short-circuited. The evaluation asks the
+store for the subject and scores the answer it gets; a subject that was
+never recorded returns nothing, and a subject that *was* recorded would
+fail. A short-circuit that returns "" without asking would score 100%
+without testing anything, which is exactly the kind of number this eval
+exists to avoid.
+
+### The current measurement
+
+`make memory-eval` on 2026-10-28, 30 scenarios across 8 categories:
+
+| Question type | Ledger | Update-blind baseline |
+|---|---:|---:|
+| current fact after a supersession | **100.0%** | 15.8% |
+| the superseded fact, at a point in time | **100.0%** | 83.3% |
+| abstention on a never-stated subject | **100.0%** | 100.0% |
+| **overall** | **100.0%** | **43.3%** |
+
+| Category | Scenarios | Accuracy |
+|---|---:|---:|
+| status | 8 | 100% |
+| amount | 5 | 100% |
+| renewal_date | 5 | 100% |
+| holder | 3 | 100% |
+| contact | 3 | 100% |
+| preference | 3 | 100% |
+| confidence | 2 | 100% |
+| restatement | 1 | 100% |
+
+The baseline is what most memory demos ship: keep the first value you were
+told and never revise it. It scores 15.8% on the current-fact questions —
+it remembers *a* value, just not the right one — and 83.3% on the
+superseded questions, because the first value happens to be the historical
+one there. Overall 43.3% against 100%.
+
+The full per-scenario record, including both baselines, is in
+`eval/results/memory_eval.json`.
+
+### What the score is not
+
+It is **deterministic SQLite fact supersession**, not model paraphrase
+quality. The number says the memory layer supersedes, preserves history,
+refuses to overturn a high-confidence fact with a low-confidence note, and
+does not invent a fact that was never stated. It does not say a language
+model reading those facts would answer equally well.
+
+It is also not a claim that every update shape is covered. Same-day
+updates collapse to the day's final value by design (the append-only event
+log keeps the individual actions), and a statement dated before the
+current fact is refused rather than reordered. Neither is in this scenario
+set; both are documented limits of the tracker, not silent passes.
+
+### Adding a scenario
+
+Append to `eval/scenarios/memory_updates.json`:
+
+```json
+{
+  "scenario_id": "unique-id",
+  "statements": [
+    {"subject": "gym", "kind": "subscription_status", "value": "active", "valid_from": "2026-01-01"},
+    {"subject": "gym", "kind": "subscription_status", "value": "cancelled", "valid_from": "2026-03-14"}
+  ],
+  "question": "What is the gym status now?",
+  "expected": "cancelled",
+  "answer_type": "current",
+  "metadata": {"subject": "gym", "kind": "subscription_status", "as_of": "2026-10-20", "category": "status"}
+}
+```
+
+`valid_from` is when the *fact* became true, not the date the fact
+describes. Values are compared as strings, so keep the format (amounts as
+`"162.40"`, dates as ISO) in both `value` and `expected`. Duplicate
+scenario ids are an error. `tests/test_memory_updates_eval.py` runs the
+canonical set, so a tracker regression fails the suite rather than quietly
+lowering the published number.
 
 ---
 

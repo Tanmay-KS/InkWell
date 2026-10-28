@@ -1,0 +1,360 @@
+{
+  "method": "deterministic SQLite fact supersession; no model call",
+  "scenario_count": 30,
+  "scores": {
+    "accuracy_current": 1.0,
+    "accuracy_superseded": 1.0,
+    "accuracy_never_stated": 1.0,
+    "accuracy_overall": 1.0
+  },
+  "by_category": {
+    "amount": {
+      "scenarios": 5,
+      "correct": 5,
+      "accuracy": 1.0
+    },
+    "confidence": {
+      "scenarios": 2,
+      "correct": 2,
+      "accuracy": 1.0
+    },
+    "contact": {
+      "scenarios": 3,
+      "correct": 3,
+      "accuracy": 1.0
+    },
+    "holder": {
+      "scenarios": 3,
+      "correct": 3,
+      "accuracy": 1.0
+    },
+    "preference": {
+      "scenarios": 3,
+      "correct": 3,
+      "accuracy": 1.0
+    },
+    "renewal_date": {
+      "scenarios": 5,
+      "correct": 5,
+      "accuracy": 1.0
+    },
+    "restatement": {
+      "scenarios": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    "status": {
+      "scenarios": 8,
+      "correct": 8,
+      "accuracy": 1.0
+    }
+  },
+  "results": [
+    {
+      "scenario_id": "status-reinstated-current",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "active",
+      "expected": "active",
+      "category": "status",
+      "notes": ""
+    },
+    {
+      "scenario_id": "status-reinstated-superseded",
+      "answer_type": "superseded",
+      "correct": true,
+      "abstained": false,
+      "answer": "cancelled",
+      "expected": "cancelled",
+      "category": "status",
+      "notes": ""
+    },
+    {
+      "scenario_id": "status-cancelled-current",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "cancelled",
+      "expected": "cancelled",
+      "category": "status",
+      "notes": ""
+    },
+    {
+      "scenario_id": "status-cancelled-superseded",
+      "answer_type": "superseded",
+      "correct": true,
+      "abstained": false,
+      "answer": "active",
+      "expected": "active",
+      "category": "status",
+      "notes": ""
+    },
+    {
+      "scenario_id": "status-paused",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "paused",
+      "expected": "paused",
+      "category": "status",
+      "notes": ""
+    },
+    {
+      "scenario_id": "status-trial-ended",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "cancelled",
+      "expected": "cancelled",
+      "category": "status",
+      "notes": ""
+    },
+    {
+      "scenario_id": "status-trial-superseded",
+      "answer_type": "superseded",
+      "correct": true,
+      "abstained": false,
+      "answer": "active",
+      "expected": "active",
+      "category": "status",
+      "notes": ""
+    },
+    {
+      "scenario_id": "status-never-stated",
+      "answer_type": "never_stated",
+      "correct": true,
+      "abstained": true,
+      "answer": "",
+      "expected": "",
+      "category": "status",
+      "notes": ""
+    },
+    {
+      "scenario_id": "amount-premium-increase-current",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "162.40",
+      "expected": "162.40",
+      "category": "amount",
+      "notes": ""
+    },
+    {
+      "scenario_id": "amount-premium-increase-superseded",
+      "answer_type": "superseded",
+      "correct": true,
+      "abstained": false,
+      "answer": "148.95",
+      "expected": "148.95",
+      "category": "amount",
+      "notes": ""
+    },
+    {
+      "scenario_id": "amount-gym-price-drop",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "39.00",
+      "expected": "39.00",
+      "category": "amount",
+      "notes": ""
+    },
+    {
+      "scenario_id": "amount-energy-bill",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "145.50",
+      "expected": "145.50",
+      "category": "amount",
+      "notes": ""
+    },
+    {
+      "scenario_id": "amount-never-stated",
+      "answer_type": "never_stated",
+      "correct": true,
+      "abstained": true,
+      "answer": "",
+      "expected": "",
+      "category": "amount",
+      "notes": ""
+    },
+    {
+      "scenario_id": "renewal-moved-later-current",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "2026-12-01",
+      "expected": "2026-12-01",
+      "category": "renewal_date",
+      "notes": ""
+    },
+    {
+      "scenario_id": "renewal-moved-later-superseded",
+      "answer_type": "superseded",
+      "correct": true,
+      "abstained": false,
+      "answer": "2026-11-15",
+      "expected": "2026-11-15",
+      "category": "renewal_date",
+      "notes": ""
+    },
+    {
+      "scenario_id": "renewal-moved-earlier",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "2027-01-15",
+      "expected": "2027-01-15",
+      "category": "renewal_date",
+      "notes": ""
+    },
+    {
+      "scenario_id": "renewal-corrected",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "2027-05-24",
+      "expected": "2027-05-24",
+      "category": "renewal_date",
+      "notes": ""
+    },
+    {
+      "scenario_id": "renewal-never-stated",
+      "answer_type": "never_stated",
+      "correct": true,
+      "abstained": true,
+      "answer": "",
+      "expected": "",
+      "category": "renewal_date",
+      "notes": ""
+    },
+    {
+      "scenario_id": "holder-changed-current",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "Morgan Sullivan",
+      "expected": "Morgan Sullivan",
+      "category": "holder",
+      "notes": ""
+    },
+    {
+      "scenario_id": "holder-changed-superseded",
+      "answer_type": "superseded",
+      "correct": true,
+      "abstained": false,
+      "answer": "Devin Sullivan",
+      "expected": "Devin Sullivan",
+      "category": "holder",
+      "notes": ""
+    },
+    {
+      "scenario_id": "holder-gym",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "Morgan Sullivan",
+      "expected": "Morgan Sullivan",
+      "category": "holder",
+      "notes": ""
+    },
+    {
+      "scenario_id": "contact-email-changed",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "d.sullivan@example.com",
+      "expected": "d.sullivan@example.com",
+      "category": "contact",
+      "notes": ""
+    },
+    {
+      "scenario_id": "contact-phone-changed",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "+1-503-555-0199",
+      "expected": "+1-503-555-0199",
+      "category": "contact",
+      "notes": ""
+    },
+    {
+      "scenario_id": "contact-never-stated",
+      "answer_type": "never_stated",
+      "correct": true,
+      "abstained": true,
+      "answer": "",
+      "expected": "",
+      "category": "contact",
+      "notes": ""
+    },
+    {
+      "scenario_id": "preference-channel-changed",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "sms",
+      "expected": "sms",
+      "category": "preference",
+      "notes": ""
+    },
+    {
+      "scenario_id": "preference-billing-changed",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "paperless",
+      "expected": "paperless",
+      "category": "preference",
+      "notes": ""
+    },
+    {
+      "scenario_id": "preference-never-stated",
+      "answer_type": "never_stated",
+      "correct": true,
+      "abstained": true,
+      "answer": "",
+      "expected": "",
+      "category": "preference",
+      "notes": ""
+    },
+    {
+      "scenario_id": "confidence-low-ignored",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "active",
+      "expected": "active",
+      "category": "confidence",
+      "notes": ""
+    },
+    {
+      "scenario_id": "confidence-high-applied",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "cancelled",
+      "expected": "cancelled",
+      "category": "confidence",
+      "notes": ""
+    },
+    {
+      "scenario_id": "restatement-same-value",
+      "answer_type": "current",
+      "correct": true,
+      "abstained": false,
+      "answer": "active",
+      "expected": "active",
+      "category": "restatement",
+      "notes": ""
+    }
+  ],
+  "update_blind_baseline": {
+    "accuracy_current": 0.15789473684210525,
+    "accuracy_superseded": 0.8333333333333334,
+    "accuracy_never_stated": 1.0,
+    "accuracy_overall": 0.43333333333333335
+  }
+}

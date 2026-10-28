@@ -9,7 +9,7 @@ sandbox with a declarative egress policy, and a privacy router strips your
 personal details from anything that leaves, so the expensive models and
 third-party search engines never see them.
 
-> **Status: Phase 1 built; Phase 2 router implemented; live gateway proof pending.**
+> **Status: Phases 0–3 built; live gateway and serverless-job proofs pending.**
 > The stack is de-risked and the decisions are recorded. The Phase 0 exit
 > condition was met by hand on 2026-10-21; the automated verifier has not
 > yet produced a green run, and two Phase 0 benchmark runs disagree about
@@ -17,7 +17,10 @@ third-party search engines never see them.
 > end, but the sandbox leg of its exit condition is outstanding. The Phase 2
 > middleware, guard, audit trail and injection demo are implemented and
 > pass the offline suite; the live gateway leg is blocked by the client
-> certificate and missing Docker daemon recorded in F-030/F-043. See
+> certificate and missing Docker daemon recorded in F-030/F-043. Phase 3
+> has all three numbers — leak 100% → 0%, memory 100% vs a 43.3% baseline,
+> and the per-tier cost/latency table — but the Nebius Serverless Job is
+> implemented, not yet observed firing on a scheduler. See
 > [`docs/phase0-runbook.md`](docs/phase0-runbook.md) for the infra side,
 > [`docs/ocr-decision.md`](docs/ocr-decision.md) for the model decision
 > and the privacy architecture,
@@ -169,7 +172,7 @@ procedure, rollback, and the current blocker.
 |---|---|---|---|
 | 1 | Personal details do not leak out of the agent | `eval/leak_test.py` — **100% → 0%** on 200 documents, see [`docs/leak-test.md`](docs/leak-test.md) | 2 |
 | 2 | A prompt-injected agent cannot exfiltrate your data, and the attempt is on the record | `sandbox/middleware/ledger-router/`, `privacy_router/injection_guard.py`, `demo/injection/`, `sandbox/verify_phase2.sh` | 2 |
-| 3 | The agent's memory is right when the facts change, not just when they are recalled | `eval/memory_updates_eval.py` | 3 |
+| 3 | The agent's memory is right when the facts change, not just when they are recalled | `eval/memory_updates_eval.py` — **100% on 30 scenarios** against a 43.3% update-blind baseline, see [`docs/results.md`](docs/results.md) | 3 |
 
 Plus a cost/latency table across three model tiers
 (`eval/cost_latency_bench.py`): **Nano is the cheapest and the slowest** —

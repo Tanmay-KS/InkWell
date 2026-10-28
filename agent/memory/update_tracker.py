@@ -28,8 +28,9 @@ current, and scores the agent against the expected current value.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from enum import StrEnum
 
 
@@ -78,7 +79,7 @@ class Fact:
         """Whether this fact was true at a given date."""
         if when < self.valid_from:
             return False
-        return self.valid_to is None or when < self.valid_to
+        return self.valid_to is None or when <= self.valid_to
 
 
 class UpdateTracker:
@@ -102,11 +103,73 @@ class UpdateTracker:
         it is a restatement, and recording it as a new version would make
         the history noisy and the evaluation meaningless.
         """
-        raise NotImplementedError("Phase 3 — see IMPLEMENTATION.md")
+        if not fact.subject.strip() or not fact.value.strip():
+            raise ValueError("fact subject and value must not be empty")
+        if not 0 <= fact.confidence <= 1:
+            raise ValueError("fact confidence must be between 0 and 1")
+        conn = self._connection()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            rows = conn.execute(
+                "SELECT * FROM fact WHERE subject = ? AND kind = ? ORDER BY valid_from",
+                (fact.subject, fact.kind.value),
+            ).fetchall()
+            facts = [_row_to_fact(row) for row in rows]
+            same_day = next((row for row in facts if row.valid_from == fact.valid_from), None)
+            if same_day:
+                if same_day.value == fact.value:
+                    conn.commit()
+                    return same_day
+                if not same_day.is_current:
+                    raise ValueError("cannot revise a superseded fact for the same date")
+                # Date precision cannot order two changes made on one day.
+                # Keep the day's final value here; status-change events retain
+                # the individual actions in the append-only event log.
+                conn.execute(
+                    "UPDATE fact SET value = ?, source = ?, confidence = ?, metadata = ? "
+                    "WHERE subject = ? AND kind = ? AND valid_from = ?",
+                    (fact.value, fact.source, fact.confidence,
+                     json.dumps(fact.metadata, sort_keys=True), fact.subject,
+                     fact.kind.value, fact.valid_from.isoformat()),
+                )
+                conn.commit()
+                return fact
+            current = next((row for row in reversed(facts) if row.is_current), None)
+            if current and current.value == fact.value:
+                conn.commit()
+                return current
+            if current and fact.valid_from < current.valid_from:
+                raise ValueError("cannot insert a fact before the current fact")
+            if current and fact.confidence < current.confidence:
+                conn.commit()
+                return current
+            if current:
+                conn.execute(
+                    "UPDATE fact SET valid_to = ? WHERE subject = ? AND kind = ? AND valid_from = ?",
+                    ((fact.valid_from - timedelta(days=1)).isoformat(), fact.subject,
+                     fact.kind.value, current.valid_from.isoformat()),
+                )
+            conn.execute(
+                "INSERT INTO fact(subject, kind, value, valid_from, valid_to, source, confidence, metadata) "
+                "VALUES (?, ?, ?, ?, NULL, ?, ?, ?)",
+                (fact.subject, fact.kind.value, fact.value, fact.valid_from.isoformat(),
+                 fact.source, fact.confidence, json.dumps(fact.metadata, sort_keys=True)),
+            )
+            conn.commit()
+            return fact
+        except Exception:
+            conn.rollback()
+            raise
 
     def current(self, subject: str, kind: FactKind, *, when: date | None = None) -> Fact | None:
         """The fact that was true at a given date (default: today)."""
-        raise NotImplementedError("Phase 3 — see IMPLEMENTATION.md")
+        when = when or date.today()
+        row = self._connection().execute(
+            "SELECT * FROM fact WHERE subject = ? AND kind = ? AND valid_from <= ? "
+            "AND (valid_to IS NULL OR valid_to >= ?) ORDER BY valid_from DESC LIMIT 1",
+            (subject, kind.value, when.isoformat(), when.isoformat()),
+        ).fetchone()
+        return _row_to_fact(row) if row else None
 
     def history(self, subject: str, kind: FactKind) -> list[Fact]:
         """Every version of a fact, oldest first.
@@ -116,4 +179,32 @@ class UpdateTracker:
         changed twice should have two prior versions with non-overlapping
         windows.
         """
-        raise NotImplementedError("Phase 3 — see IMPLEMENTATION.md")
+        rows = self._connection().execute(
+            "SELECT * FROM fact WHERE subject = ? AND kind = ? ORDER BY valid_from",
+            (subject, kind.value),
+        ).fetchall()
+        return [_row_to_fact(row) for row in rows]
+
+    def _connection(self):
+        if self._memory is None:
+            raise ValueError("UpdateTracker requires a HouseholdMemory instance")
+        conn = self._memory.connect()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS fact (
+                subject TEXT NOT NULL, kind TEXT NOT NULL, value TEXT NOT NULL,
+                valid_from TEXT NOT NULL, valid_to TEXT, source TEXT,
+                confidence REAL NOT NULL, metadata TEXT NOT NULL DEFAULT '{}',
+                PRIMARY KEY (subject, kind, valid_from)
+            )
+        """)
+        return conn
+
+
+def _row_to_fact(row) -> Fact:
+    return Fact(
+        subject=row["subject"], kind=FactKind(row["kind"]), value=row["value"],
+        valid_from=date.fromisoformat(row["valid_from"]),
+        valid_to=date.fromisoformat(row["valid_to"]) if row["valid_to"] else None,
+        source=row["source"], confidence=float(row["confidence"]),
+        metadata=json.loads(row["metadata"] or "{}"),
+    )

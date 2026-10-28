@@ -108,8 +108,10 @@ in `docs/phase2-runbook.md`. The exit condition is not closed until
 **Goal:** Turn the three proofs into reportable numbers for the video.
 
 ### Person B
-- [ ] Build memory-with-updates eval: test questions where underlying facts changed (e.g. "I cancelled that plan in March")
-- [ ] Score accuracy, since most demos only test simple recall — this is meant to stand out
+- [x] Build memory-with-updates eval: test questions where underlying facts changed (e.g. "I cancelled that plan in March")
+  - `make memory-eval` — 30 isolated scenarios across 8 categories (status, amount, renewal_date, holder, contact, preference, confidence, restatement). The `never_stated` type queries the store instead of short-circuiting to "", so abstention is actually tested. `eval/scenarios/memory_updates.json`, `tests/test_memory_updates_eval.py`.
+- [x] Score accuracy, since most demos only test simple recall — this is meant to stand out
+  - Ledger **100.0%** overall (30/30) against an update-blind baseline of **43.3%**; on current facts after a supersession the baseline gets **15.8%**. Per-category and per-answer-type tables in `docs/phase3-runbook.md` §3. Deterministic SQLite supersession, no model call.
 
 ### Person A
 - [ ] Verify Nebius Serverless Jobs background deadline monitoring is actually running live (not just scheduled)
@@ -118,8 +120,8 @@ in `docs/phase2-runbook.md`. The exit condition is not closed until
   - `make bench` — 60 measured calls over four request shapes, live catalog model IDs and live pricing, `eval/results/cost_latency.json` and `docs/phase3-runbook.md` §1. Headline: Nano is cheapest and *slowest* (p95 18.4 s vs 6.9 s for Super); Super costs ~6.9× Nano per call because of its reasoning trace.
 
 ### Joint
-- [ ] Compile the three results (leak rate, memory accuracy, cost/latency table) into video-ready visuals
-  - `make results` compiles `docs/results.md` and the SVGs from the artifacts, and refuses to draw a number whose artifact is missing or a smoke run. Leak and cost/latency render today; memory stays **NOT READY** until the scenario set reaches 20 (the packer says so on the page rather than charting a harness check).
+- [x] Compile the three results (leak rate, memory accuracy, cost/latency table) into video-ready visuals
+  - `make results` compiles `docs/results.md` and four SVGs from the artifacts, and refuses to draw a number whose artifact is missing or a smoke run. All three are READY: leak 100% → 0% on 200 documents, memory 100% vs 43.3% baseline on 30 scenarios, cost/latency across the three tiers.
 
 **Exit condition:** 3 numbers/charts ready to drop into the video.
 
