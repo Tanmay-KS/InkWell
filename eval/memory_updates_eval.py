@@ -54,7 +54,7 @@ import argparse
 import json
 import sys
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -295,6 +295,7 @@ def main(argv: list[str] | None = None) -> int:
     results = run_eval(scenarios)
     report = {
         "method": "deterministic SQLite fact supersession; no model call",
+        "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "scenario_count": len(results),
         "scores": score(results),
         "by_category": score_by_category(results),

@@ -1,5 +1,6 @@
 {
   "method": "deterministic SQLite fact supersession; no model call",
+  "measured_at": "2026-10-28T17:33:08+00:00",
   "scenario_count": 30,
   "scores": {
     "accuracy_current": 1.0,
