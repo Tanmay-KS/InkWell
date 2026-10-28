@@ -187,5 +187,9 @@ model. The router handles personal data, which no existing layer touches.
 - [ ] Does Hermes's `auxiliary.vision` slot point at the OCR model, or does
       the ingestion pipeline call the model directly? The pipeline should
       call it directly — the auxiliary slot is for ad-hoc image analysis.
-- [ ] Message-passing: is the Telegram gateway the primary interface, with
-      the web view as the demo URL? The plan says both.
+- [x] Message-passing: is the Telegram gateway the primary interface, with
+      the web view as the demo URL? **Decision (Phase 4):** the chat handler
+      is the primary interface and the web view is a loopback-only demo
+      (`make demo-web`), not a hosted URL. The demo has no authentication
+      and reads a fictional database; publishing it would put the household
+      sidecar behind no access control. See `docs/demo.md`.

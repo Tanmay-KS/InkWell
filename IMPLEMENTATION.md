@@ -132,18 +132,21 @@ in `docs/phase2-runbook.md`. The exit condition is not closed until
 **Goal:** Make the project submittable by a stranger.
 
 ### Person B
-- [ ] Polish the chat interface (Telegram/Slack) and simple web view
-- [ ] Test demo URL fully logged-out, fix any auth-wall issues
+- [x] Polish the chat interface (Telegram/Slack) and simple web view — `interface/bot/handlers.py`, `interface/web/server.py`, `make demo-web`; 35 interface tests
+- [x] Test the demo fully logged-out, fix any auth-wall issues — local demo needs no login or credentials; no hosted URL by design (loopback-only, see `docs/demo.md`)
 
 ### Person A
-- [ ] Write README: highlight Nemotron + Token Factory usage, setup steps, architecture overview
-- [ ] Write up the friction log into the feedback section required by the rules
-- [ ] Add open-source license to repo
+- [x] Write README: highlight Nemotron + Token Factory usage, setup steps, architecture overview — `README.md`
+- [x] Write up the friction log into the feedback section required by the rules — `docs/feedback.md` (full record in `docs/friction_log.md`)
+- [x] Add open-source license to repo — Apache-2.0, `LICENSE`
 
 ### Joint
-- [ ] Cross-review each other's output (A reviews B's UI/demo, B reviews A's README/docs) before EOD
+- [x] Cross-review each other's output before EOD — `docs/packaging-review.md` (8 interface findings, 6 docs findings, all fixed)
 
 **Exit condition:** A stranger could open the repo and demo URL and understand it in 5 minutes.
+**Status:** met locally (`make demo-web`); no public demo URL exists because the
+server is loopback-only and the household database has no authentication.
+See `docs/demo.md` and the residual risks in `docs/packaging-review.md`.
 
 ---
 

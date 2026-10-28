@@ -9,7 +9,7 @@ sandbox with a declarative egress policy, and a privacy router strips your
 personal details from anything that leaves, so the expensive models and
 third-party search engines never see them.
 
-> **Status: Phases 0–3 built; live gateway and serverless-job proofs pending.**
+> **Status: Phases 0–4 built; live gateway and serverless-job proofs pending.**
 > The stack is de-risked and the decisions are recorded. The Phase 0 exit
 > condition was met by hand on 2026-10-21; the automated verifier has not
 > yet produced a green run, and two Phase 0 benchmark runs disagree about
@@ -20,15 +20,43 @@ third-party search engines never see them.
 > certificate and missing Docker daemon recorded in F-030/F-043. Phase 3
 > has all three numbers — leak 100% → 0%, memory 100% vs a 43.3% baseline,
 > and the per-tier cost/latency table — but the Nebius Serverless Job is
-> implemented, not yet observed firing on a scheduler. See
-> [`docs/phase0-runbook.md`](docs/phase0-runbook.md) for the infra side,
-> [`docs/ocr-decision.md`](docs/ocr-decision.md) for the model decision
-> and the privacy architecture,
+> implemented, not yet observed firing on a scheduler. Phase 4 packages
+> the result: a loopback web view with a fictional demo, the friction log
+> distilled into [`docs/feedback.md`](docs/feedback.md), and a recorded
+> cross-review in [`docs/packaging-review.md`](docs/packaging-review.md).
+> See [`docs/phase0-runbook.md`](docs/phase0-runbook.md) for the infra
+> side, [`docs/ocr-decision.md`](docs/ocr-decision.md) for the model
+> decision and the privacy architecture,
 > [`docs/leak-test.md`](docs/leak-test.md) for the leak measurement,
 > [`docs/phase2-runbook.md`](docs/phase2-runbook.md) for the live router
 > procedure, [`docs/phase3-runbook.md`](docs/phase3-runbook.md) for the
-> evaluation numbers and the deadline job, and
+> evaluation numbers and the deadline job,
+> [`docs/demo.md`](docs/demo.md) for the five-minute tour, and
 > [`IMPLEMENTATION.md`](IMPLEMENTATION.md) for the full plan.
+
+## Try it in five minutes
+
+```bash
+make demo-web
+# Ledger local interface: http://127.0.0.1:8765
+```
+
+Open <http://127.0.0.1:8765>. The header says **Demo · fictional data**.
+The demo uses a temporary database seeded with four invented items, so it
+never reads or writes the real household sidecar. Cancel an item, watch it
+leave *Coming up*, reactivate it, upload a notice, and review the draft
+Ledger prepared without sending.
+
+```bash
+make demo-web   # fictional data, temporary database, loopback only
+make web        # the real household database, loopback only
+```
+
+The interface binds to `127.0.0.1`, refuses non-loopback `Host` headers and
+rejects cross-origin requests. There is no hosted demo URL: exposing this
+server would put the household database behind no authentication. The
+tour, including what the demo does and does not prove, is in
+[`docs/demo.md`](docs/demo.md).
 
 ### Phase 0 decisions
 
@@ -316,9 +344,11 @@ ledger/
 │
 ├── search/                       Tavily, routed through the router
 ├── jobs/                         Nebius Serverless Jobs — deadline monitoring
-├── interface/                    Telegram/Slack bot + web view
+├── interface/                    chat handlers + loopback web view
+│   ├── bot/handlers.py           a renewal message becomes an item
+│   └── web/                      server.py, index.html, app.js
 ├── eval/                         the three proofs + the synthetic corpus
-└── docs/                         runbook, friction log, architecture
+└── docs/                         runbooks, friction log, feedback, architecture
 ```
 
 Ownership: `sandbox/`, `privacy_router/`, `jobs/`, `search/` are Person A
@@ -371,5 +401,11 @@ comparable across runs.
 ## Licence
 
 Apache-2.0 — see [`LICENSE`](LICENSE).
+
+## Feedback
+
+The written submission is [`docs/feedback.md`](docs/feedback.md). The full
+dated record is [`docs/friction_log.md`](docs/friction_log.md),
+F-001 to F-050.
 
 <!-- The friction log, in full, is required in the final submission. -->

@@ -621,6 +621,50 @@ with the warning.
 **Fix:** the package re-exports lazily through `__getattr__`, so the module
 is not imported until someone asks for the name.
 
+### F-048 · The documented `/cancel` command did nothing
+**Owner:** Person B · **Phase:** 4 · **Status:** fixed
+`/help` advertised `/cancel ITEM_ID`, but the generic "cancel" keyword check
+ran first and sent the text to the natural-language parser, whose patterns
+did not allow a leading slash. The parser returned no intent, execution
+fell through to the item lookup, and the bot answered with the item's
+current status instead of recording the change. The dedicated slash-command
+branch below it was unreachable.
+**Cost if unresolved:** the one command a reviewer is most likely to try
+silently does nothing, which reads as "the memory feature is broken".
+**Detection:** writing the first interface test.
+**Fix:** slash commands are parsed before the keyword checks; the parser
+strips the slash and accepts an optional `YYYY-MM-DD` effective date.
+`test_slash_command_cancel_records_the_change` is the regression.
+
+### F-049 · A fresh item displayed as "new"
+**Owner:** Person B · **Phase:** 4 · **Status:** fixed
+The chat reply and the web list used `TrackedState` — the item's lifecycle
+(`new`, `acknowledged`, `handled`, `dismissed`) — as the subscription status.
+An item that had never been cancelled therefore showed `new`, which looks
+like an error rather than "active".
+**Cost if unresolved:** every item in the demo has the wrong status until
+someone changes it, and the first thing a reviewer sees is a state label
+that does not mean what they think.
+**Detection:** the first demo run.
+**Fix:** display the current status fact, else `active` (or `dismissed`
+when the lifecycle is dismissed). The lifecycle and the subscription status
+stay separate; both are still stored.
+
+### F-050 · The plan asked for a demo URL, and the safe demo is local
+**Owner:** Joint · **Phase:** 4 · **Status:** worked around
+The Phase 4 exit condition says "repo and demo URL", but the interface is a
+loopback-only server over the household database with no authentication
+layer. Exposing it to get a URL would put the sidecar behind no access
+control — a privacy regression in the one project where that is the whole
+point.
+**Cost if unresolved:** either no demo URL, or a URL that contradicts the
+privacy claim.
+**Detection:** reading `serve()`'s host guard against the exit condition.
+**Fix:** `make demo-web` runs the real interface against an isolated,
+temporary, fictional database and needs no credentials; `docs/demo.md`
+states the boundary and why there is no hosted URL. The demo is still
+"fully logged-out" because there is no login at all.
+
 ### Pre-registered risks, now closed
 
 | Ref | Was | Now |
@@ -628,7 +672,8 @@ is not imported until someone asks for the name.
 | F-002 | Model ID casing is inconsistent across Nebius's own docs | **Confirmed and worse than expected** — see F-017 and F-018. Every ID is now read from the live catalog. |
 | F-007 | Rate limits will bite during the leak test | **Not yet hit.** A 20-document, 5-model benchmark (100 calls) ran without a throttle. The 200-document, two-condition leak test is 10× that — still to be proven. |
 
-_(F-001…F-047 above are the Phase 0, Phase 1, Phase 2 and Phase 3 record. Later phases append here.)_
+_(F-001…F-050 above are the Phase 0, Phase 1, Phase 2, Phase 3 and Phase 4
+record. Later phases append here.)_
 
 ---
 

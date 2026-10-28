@@ -244,6 +244,16 @@ job-dry-run: ## Phase 3 — deadline monitor without notifying or recording
 job-status: ## Phase 3 — is the deadline-monitor schedule actually firing?
 	$(PY) -m jobs.deadline_monitor --status
 
+# --- Phase 4: the interface -------------------------------------------------
+
+.PHONY: web
+web: ## Run the local web view against the household database (loopback only)
+	$(PY) -m interface.web.server
+
+.PHONY: demo-web
+demo-web: ## Run the web view with isolated fictional demo data
+	$(PY) -m interface.web.server --demo
+
 .PHONY: results
 results: ## Phase 3 — compile the three numbers into docs/results.md + charts
 	$(PY) $(EVAL)/results_pack.py
