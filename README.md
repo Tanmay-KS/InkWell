@@ -23,7 +23,9 @@ third-party search engines never see them.
 > and the privacy architecture,
 > [`docs/leak-test.md`](docs/leak-test.md) for the leak measurement,
 > [`docs/phase2-runbook.md`](docs/phase2-runbook.md) for the live router
-> procedure, and [`IMPLEMENTATION.md`](IMPLEMENTATION.md) for the full plan.
+> procedure, [`docs/phase3-runbook.md`](docs/phase3-runbook.md) for the
+> evaluation numbers and the deadline job, and
+> [`IMPLEMENTATION.md`](IMPLEMENTATION.md) for the full plan.
 
 ### Phase 0 decisions
 
@@ -170,7 +172,10 @@ procedure, rollback, and the current blocker.
 | 3 | The agent's memory is right when the facts change, not just when they are recalled | `eval/memory_updates_eval.py` | 3 |
 
 Plus a cost/latency table across three model tiers
-(`eval/cost_latency_bench.py`).
+(`eval/cost_latency_bench.py`): **Nano is the cheapest and the slowest** —
+p95 18.4 s against 6.9 s for Super — and Super costs ~6.9× Nano per call
+because it reasons before it answers. The compiled numbers and charts are
+in [`docs/results.md`](docs/results.md).
 
 ---
 

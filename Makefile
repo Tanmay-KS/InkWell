@@ -226,6 +226,28 @@ memory-eval: ## Phase 3 — memory-with-updates accuracy
 bench: ## Phase 3 — per-tier cost and latency
 	$(PY) $(EVAL)/cost_latency_bench.py
 
+# The benchmark spends money, so the dry run is the default way to check
+# that the catalog still resolves the three tiers.
+.PHONY: bench-dry-run
+bench-dry-run: ## Phase 3 — resolve tiers and prices without calling a model
+	$(PY) $(EVAL)/cost_latency_bench.py --dry-run
+
+.PHONY: job
+job: ## Phase 3 — run the deadline monitor once
+	$(PY) -m jobs.deadline_monitor
+
+.PHONY: job-dry-run
+job-dry-run: ## Phase 3 — deadline monitor without notifying or recording
+	$(PY) -m jobs.deadline_monitor --dry-run
+
+.PHONY: job-status
+job-status: ## Phase 3 — is the deadline-monitor schedule actually firing?
+	$(PY) -m jobs.deadline_monitor --status
+
+.PHONY: results
+results: ## Phase 3 — compile the three numbers into docs/results.md + charts
+	$(PY) $(EVAL)/results_pack.py
+
 .PHONY: clean
 clean: ## Remove caches and build artifacts
 	rm -rf .pytest_cache .ruff_cache .mypy_cache

@@ -38,6 +38,10 @@ eval/results/*
 # The leak test is the headline number and it is 4 KB. It is the evidence
 # for the video's central claim, so it is kept like the Phase 0 results.
 !eval/results/leak_test.json
+# The Phase 3 cost/latency table is the third number in the video, and it
+# is small. It carries the catalog it was measured against, which is what
+# makes the rates auditable later.
+!eval/results/cost_latency.json
 video/recordings/
 *.mp4
 

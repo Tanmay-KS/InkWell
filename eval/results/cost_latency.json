@@ -1,0 +1,191 @@
+{
+  "measured_at": "2026-10-28T16:57:14+00:00",
+  "endpoint": "https://api.tokenfactory.nebius.com/v1",
+  "catalog_models": 30,
+  "pricing_source": "live Token Factory catalog (pricing.prompt/pricing.completion)",
+  "repeats": 5,
+  "retries": 1,
+  "max_completion_tokens": 4096,
+  "prompts": [
+    {
+      "prompt_id": "transcribe",
+      "why": "document reading, after local redaction",
+      "system": "Transcribe the document exactly. Output only its text.",
+      "user": "PROVIDER: [PROVIDER_1]\nREFERENCE: [ACCOUNT_1]\nNOTICE DATE: 2026-02-26\nYour plan renews on 2027-03-07. The annual amount is [AMOUNT_1].\nTo cancel before renewal, notify us by 2027-02-21."
+    },
+    {
+      "prompt_id": "deadline_extract",
+      "why": "deadline extraction when the deterministic pass is unsure",
+      "system": "You extract obligations from household documents. Return JSON with provider, renewal_date, amount, and the exact evidence line for each field. Never invent a value.",
+      "user": "Document:\nPROVIDER: [PROVIDER_1]\nREFERENCE: [ACCOUNT_1]\nYour plan renews on 2027-03-07. The annual amount is [AMOUNT_1].\nTo cancel before renewal, notify us by 2027-02-21."
+    },
+    {
+      "prompt_id": "action_draft",
+      "why": "drafting the letter the user sends themselves",
+      "system": "You draft short, polite household correspondence. Use only the facts supplied. Never invent a number, a date, or a name.",
+      "user": "Draft a cancellation email to [PROVIDER_1] for [ACCOUNT_1], asking to cancel before the renewal on 2027-03-07. Mention the notice date of 2026-02-26."
+    },
+    {
+      "prompt_id": "memory_update",
+      "why": "memory update when the statement is free text",
+      "system": "You turn a statement from the user into one structured fact. Return JSON with keys subject, kind, value, valid_from. If the statement is not an update, return an empty object.",
+      "user": "The user said: \"I cancelled the gym membership in March.\" Today is 2026-10-20. The subject is gym and the kind is subscription_status."
+    }
+  ],
+  "tiers": [
+    {
+      "tier": "Nano",
+      "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+      "input_per_million_usd": 0.06,
+      "output_per_million_usd": 0.24,
+      "calls": 20,
+      "errors": 0,
+      "retries": 0,
+      "error_messages": [],
+      "prompt_tokens": 2090,
+      "completion_tokens": 8043,
+      "mean_latency_ms": 10212.0,
+      "p95_latency_ms": 18432.1,
+      "cost_usd": 0.00205572,
+      "cost_per_call_usd": 0.00010279,
+      "cost_per_1k_calls_usd": 0.1028,
+      "by_prompt": {
+        "transcribe": {
+          "calls": 5,
+          "errors": 0,
+          "prompt_tokens": 555,
+          "completion_tokens": 1295,
+          "mean_latency_ms": 10140.0,
+          "p95_latency_ms": 14764.7
+        },
+        "deadline_extract": {
+          "calls": 5,
+          "errors": 0,
+          "prompt_tokens": 585,
+          "completion_tokens": 3590,
+          "mean_latency_ms": 17023.7,
+          "p95_latency_ms": 31770.9
+        },
+        "action_draft": {
+          "calls": 5,
+          "errors": 0,
+          "prompt_tokens": 490,
+          "completion_tokens": 1398,
+          "mean_latency_ms": 7129.8,
+          "p95_latency_ms": 9622.9
+        },
+        "memory_update": {
+          "calls": 5,
+          "errors": 0,
+          "prompt_tokens": 460,
+          "completion_tokens": 1760,
+          "mean_latency_ms": 6554.4,
+          "p95_latency_ms": 7989.1
+        }
+      }
+    },
+    {
+      "tier": "Super",
+      "model": "nvidia/Nemotron-3.5-Super-VL",
+      "input_per_million_usd": 0.3,
+      "output_per_million_usd": 0.9,
+      "calls": 20,
+      "errors": 0,
+      "retries": 0,
+      "error_messages": [],
+      "prompt_tokens": 2090,
+      "completion_tokens": 14939,
+      "mean_latency_ms": 3543.9,
+      "p95_latency_ms": 6945.4,
+      "cost_usd": 0.0140721,
+      "cost_per_call_usd": 0.00070361,
+      "cost_per_1k_calls_usd": 0.7036,
+      "by_prompt": {
+        "transcribe": {
+          "calls": 5,
+          "errors": 0,
+          "prompt_tokens": 555,
+          "completion_tokens": 1070,
+          "mean_latency_ms": 2212.2,
+          "p95_latency_ms": 2504.5
+        },
+        "deadline_extract": {
+          "calls": 5,
+          "errors": 0,
+          "prompt_tokens": 585,
+          "completion_tokens": 7624,
+          "mean_latency_ms": 6270.2,
+          "p95_latency_ms": 9423.9
+        },
+        "action_draft": {
+          "calls": 5,
+          "errors": 0,
+          "prompt_tokens": 490,
+          "completion_tokens": 3670,
+          "mean_latency_ms": 3030.0,
+          "p95_latency_ms": 3277.6
+        },
+        "memory_update": {
+          "calls": 5,
+          "errors": 0,
+          "prompt_tokens": 460,
+          "completion_tokens": 2575,
+          "mean_latency_ms": 2663.2,
+          "p95_latency_ms": 2867.2
+        }
+      }
+    },
+    {
+      "tier": "Ultra",
+      "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+      "input_per_million_usd": 1.0,
+      "output_per_million_usd": 3.0,
+      "calls": 20,
+      "errors": 0,
+      "retries": 0,
+      "error_messages": [],
+      "prompt_tokens": 2090,
+      "completion_tokens": 6361,
+      "mean_latency_ms": 3843.7,
+      "p95_latency_ms": 6529.7,
+      "cost_usd": 0.021173,
+      "cost_per_call_usd": 0.00105865,
+      "cost_per_1k_calls_usd": 1.0587,
+      "by_prompt": {
+        "transcribe": {
+          "calls": 5,
+          "errors": 0,
+          "prompt_tokens": 555,
+          "completion_tokens": 613,
+          "mean_latency_ms": 3057.2,
+          "p95_latency_ms": 6854.5
+        },
+        "deadline_extract": {
+          "calls": 5,
+          "errors": 0,
+          "prompt_tokens": 585,
+          "completion_tokens": 3170,
+          "mean_latency_ms": 5267.4,
+          "p95_latency_ms": 6529.7
+        },
+        "action_draft": {
+          "calls": 5,
+          "errors": 0,
+          "prompt_tokens": 490,
+          "completion_tokens": 1271,
+          "mean_latency_ms": 3187.9,
+          "p95_latency_ms": 4296.1
+        },
+        "memory_update": {
+          "calls": 5,
+          "errors": 0,
+          "prompt_tokens": 460,
+          "completion_tokens": 1307,
+          "mean_latency_ms": 3862.2,
+          "p95_latency_ms": 4538.1
+        }
+      }
+    }
+  ],
+  "total_cost_usd": 0.03730082
+}

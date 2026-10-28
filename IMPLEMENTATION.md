@@ -113,10 +113,13 @@ in `docs/phase2-runbook.md`. The exit condition is not closed until
 
 ### Person A
 - [ ] Verify Nebius Serverless Jobs background deadline monitoring is actually running live (not just scheduled)
-- [ ] Benchmark cost and latency per Nemotron tier (Nano / Super / Ultra) across a representative set of calls
+  - The job is implemented and tested (`jobs/deadline_monitor.py`, `tests/test_deadline_monitor.py`), with `--status` as the liveness check and a run record as the evidence. **Live verification is blocked on this host:** no `nebius` CLI, no service-account credentials, and no Serverless Job spec. The checkbox stays open until `--status` exits 0 on a host where the schedule runs — see `docs/phase3-runbook.md` §2.
+- [x] Benchmark cost and latency per Nemotron tier (Nano / Super / Ultra) across a representative set of calls
+  - `make bench` — 60 measured calls over four request shapes, live catalog model IDs and live pricing, `eval/results/cost_latency.json` and `docs/phase3-runbook.md` §1. Headline: Nano is cheapest and *slowest* (p95 18.4 s vs 6.9 s for Super); Super costs ~6.9× Nano per call because of its reasoning trace.
 
 ### Joint
 - [ ] Compile the three results (leak rate, memory accuracy, cost/latency table) into video-ready visuals
+  - `make results` compiles `docs/results.md` and the SVGs from the artifacts, and refuses to draw a number whose artifact is missing or a smoke run. Leak and cost/latency render today; memory stays **NOT READY** until the scenario set reaches 20 (the packer says so on the page rather than charting a harness check).
 
 **Exit condition:** 3 numbers/charts ready to drop into the video.
 
