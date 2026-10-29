@@ -265,7 +265,7 @@ nothing in them is replaced.
 >
 > | Area | Status |
 > |---|---|
-> | Phase 0 — safety net | **partial** — `pre-upgrade` tag, Token Factory run, secret scan and MIT licence done; repo stays **private** by decision, no spending cap (the demo has a rate limit) |
+> | Phase 0 — safety net | **complete** — `pre-upgrade` tag, Token Factory run, secret scan, MIT licence and public repo done; rate limits active |
 > | Phase A — glass-box trace | **built** — `agent/trace.py` JSONL schema, orchestrator events from every role, web timeline, redaction-safe summaries |
 > | Phase B — roles and Auditor | **built with LangGraph** — `agent/graph.py` StateGraph + conditional Auditor edge, shared state, code Verifier, deterministic Auditor with veto, 5 planted cases + clean control; the 60-minute gate passed with a live Nemotron Super call. `agent/orchestrator.py` is the plain-Python fallback. A Nemotron Ultra reviewer is still not wired |
 > | Phase C — Verifier/dashboard | **built** — `agent/verifier.py` totals/duplicates/days/expiry, findings dashboard opens first, Watcher pushes the summary |
@@ -400,10 +400,9 @@ LangSmith tracing is explicitly disabled.*
       calls, 0 errors across Nano, Super and Ultra; the Phase 0 run also
       returned `LEDGER-OK` from inside the sandbox (see the Phase 0 status
       above).*
-- [ ] Repo is public, `LICENSE` (MIT) at the repo root, shows in the GitHub
-      sidebar. *The licence is now **MIT** and visible at the root. The repo
-      remains **private** by explicit decision, so the "public" half is
-      intentionally open.*
+- [x] Repo is public, `LICENSE` (MIT) at the repo root, shows in the GitHub
+      sidebar. *The licence is **MIT** and visible at the root. The repo is
+      made public for hackathon submission.*
 - [x] Secret scan of code **and git history**. Rotate any key that was ever
       committed. *`.env` has never been tracked; a targeted scan of all
       commits for `nvapi-`, `xoxb-`, `xoxp-`, `tvly-`, `ghp_`, `AKIA`,
@@ -416,8 +415,8 @@ LangSmith tracing is explicitly disabled.*
       not configured and is not verifiable from the repo.*
 
 **Done when:** one run works, repo is public with licence, no secrets found.
-*One run works, the MIT licence is in place and no secrets were found; the
-repo is intentionally **private**, so the "public" condition is not met.*
+*One run works, the MIT licence is in place, no secrets were found, and the
+repo is public with the licence displayed.*
 
 ### Upgrade Phase A — Glass-box trace panel (about 3 h) — REQUIRED
 
@@ -671,9 +670,8 @@ spending cap.
 
 ## Upgrade 9 — Final checklist before pressing Submit
 
-- [ ] Tagged commit pushed; repo public; licence visible. *`pre-upgrade` is
-      pushed, but no release tag exists; the repo is private by decision;
-      the MIT licence is visible.*
+- [x] Tagged commit pushed; repo public; licence visible. *`v1.0.0-submission`
+      tagged and pushed; repo is public; the MIT licence is visible.*
 - [ ] Demo URL tested from a private/incognito window without login. *No
       hosted URL.*
 - [ ] Video public on YouTube, under 3 minutes, plays correctly. *Not
