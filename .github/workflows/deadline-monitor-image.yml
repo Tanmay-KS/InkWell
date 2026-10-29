@@ -1,0 +1,179 @@
+name: Deadline monitor image
+
+# P0: every relevant push and pull request builds the real image on a hosted
+# Linux runner, then checks the image contents and runs the entrypoint. The
+# development container has no Docker daemon, so this is the authoritative
+# build validation.
+#
+# P1: publishing is a separate job that only runs for a push to main and only
+# after the build-and-smoke job succeeds. Pushes to leon, pull requests, and
+# manual runs are build-only.
+
+on:
+  push:
+    branches: [main, leon]
+    paths:
+      - "jobs/**"
+      - "agent/__init__.py"
+      - "agent/memory/**"
+      - ".dockerignore"
+      - ".github/workflows/deadline-monitor-image.yml"
+  pull_request:
+    paths:
+      - "jobs/**"
+      - "agent/__init__.py"
+      - "agent/memory/**"
+      - ".dockerignore"
+      - ".github/workflows/deadline-monitor-image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deadline-monitor-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ledger-deadline-monitor
+
+jobs:
+  build:
+    name: Build and smoke-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # The decoys make the ignore rules observable. If .dockerignore ever
+      # stops excluding a credential path, the image-content check fails even
+      # though the Dockerfile does not currently copy the repository root.
+      - name: Plant decoy secrets in the build context
+        run: |
+          set -eu
+          printf 'LEDGER_CI_SENTINEL=do-not-copy-this-value\n' > .env
+          printf '%s\n' \
+            '-----BEGIN PRIVATE KEY-----' \
+            'do-not-copy-this-value' \
+            '-----END PRIVATE KEY-----' > ci-decoy.pem
+          mkdir -p .openshell sandbox/local
+          printf 'do-not-copy-this-value\n' > .openshell/credentials.json
+          printf 'do-not-copy-this-value\n' > sandbox/local/secret
+
+      - name: Build image without publishing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: jobs/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check image contents and runtime user
+        run: |
+          set -eu
+          docker run --rm --entrypoint sh "${IMAGE_NAME}:ci" -c '
+            set -eu
+            test ! -e /app/.env
+            test ! -e /app/ci-decoy.pem
+            test ! -e /app/.openshell
+            test ! -e /app/sandbox
+            test ! -e /app/privacy_router
+            test ! -e /app/agent/ingestion
+            test ! -e /app/agent/deadlines
+            test ! -e /app/tests
+            test ! -e /app/docs
+            test ! -e /app/eval
+            test ! -e /app/.git
+            test ! -e /app/.venv
+            if grep -R "do-not-copy-this-value" /app; then
+              echo "decoy secret found in image" >&2
+              exit 1
+            fi
+            if find /app -name "__pycache__" -o -name "*.pyc" | grep -q .; then
+              echo "host byte-code found in image" >&2
+              exit 1
+            fi
+            test "$(id -u)" = "10000"
+            test "$(id -g)" = "10000"
+          '
+
+      - name: Check image environment for secret-like names
+        run: |
+          set -eu
+          docker image inspect --format '{{json .Config.Env}}' "${IMAGE_NAME}:ci" > /tmp/image-env.json
+          if grep -Eiq '(API_KEY|SECRET|PASSWORD|TOKEN)=' /tmp/image-env.json; then
+            echo "image environment contains a secret-like variable" >&2
+            exit 1
+          fi
+
+      - name: Run entrypoint help
+        run: docker run --rm "${IMAGE_NAME}:ci" --help
+
+      - name: Run dry-run smoke test as UID/GID 10000
+        run: |
+          set -eu
+          docker run --rm \
+            --tmpfs /data:uid=10000,gid=10000,mode=700 \
+            "${IMAGE_NAME}:ci" \
+            --dry-run --today 2026-10-20 \
+            --memory-db /data/ledger_memory.db \
+            --state-path /data/state/job_state.json
+
+  publish:
+    name: Publish to GHCR
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Compute lowercase image name
+        id: image
+        run: |
+          set -eu
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "name=ghcr.io/${owner}/ledger-deadline-monitor" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: jobs/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

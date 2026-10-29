@@ -1,8 +1,49 @@
-# The build context is the repository root. The image only needs agent/,
-# privacy_router/ and sandbox/ledger_runner.py, so keep host byte-code and
-# virtualenvs out: a stale __pycache__ from the host's Python must never be
-# copied into /opt/ledger, where the image's interpreter would find it.
+# Shared by jobs/Dockerfile and sandbox/Dockerfile.hermes. Both build from the
+# repository root. Keep host byte-code, virtualenvs, local credentials, and
+# host-only state out of the context: a stale __pycache__ from the host's
+# Python must never be copied into an image, and a local .env must never be
+# available to a future COPY.
 .git
 .venv
+.venv*
+**/.venv*
 **/__pycache__
 **/*.pyc
+
+# --- Local credentials and host state -------------------------------------
+# .env is the developer's real secret file. The current Dockerfiles do not
+# copy it, but excluding it here makes that a property of the build context,
+# not a property of today's COPY lines.
+.env
+.env.*
+**/.env
+**/.env.*
+.openshell/
+**/.openshell/
+sandbox/local/
+sandbox/host-bootstrap.sh
+*.local.toml
+**/*.local.toml
+openshell.db
+**/openshell.db
+tls/
+**/tls/
+*.pem
+**/*.pem
+*.key
+**/*.key
+*.crt
+**/*.crt
+*.p12
+**/*.p12
+*.pfx
+**/*.pfx
+credentials.json
+**/credentials.json
+
+# --- Caches and build metadata --------------------------------------------
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+**/*.egg-info/
+node_modules/

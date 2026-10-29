@@ -42,7 +42,13 @@ from pathlib import Path
 from typing import Any
 
 from agent.memory.hermes_memory import HouseholdItem, HouseholdMemory, TrackedState
-from jobs.notifier import Notifier, command_notifier, stdout_notifier
+from jobs.notifier import (
+    Notifier,
+    command_notifier,
+    stdout_notifier,
+    telegram_notifier,
+    webhook_notifier,
+)
 
 __all__ = ["JobConfig", "main", "run_once"]
 
@@ -255,14 +261,17 @@ def run_once(
             if callable(extra_notifier):
                 send = extra_notifier
         if send is None and config.notify:
-            send = (
-                command_notifier(
+            if config.notification_command:
+                send = command_notifier(
                     config.notification_command,
                     timeout=config.notification_timeout_seconds,
                 )
-                if config.notification_command
-                else stdout_notifier()
-            )
+            elif os.environ.get("TELEGRAM_BOT_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID"):
+                send = telegram_notifier()
+            elif os.environ.get("LEDGER_WEBHOOK_URL") or os.environ.get("SLACK_WEBHOOK_URL"):
+                send = webhook_notifier()
+            else:
+                send = stdout_notifier()
 
         summaries: list[dict[str, Any]] = []
         notified_count = 0
@@ -360,6 +369,26 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         default=None,
         help="maximum seconds for one command-notifier attempt",
     )
+    parser.add_argument(
+        "--notify-telegram",
+        action="store_true",
+        help="send notifications via Telegram bot",
+    )
+    parser.add_argument(
+        "--telegram-bot-token",
+        default=None,
+        help="Telegram bot token (default: $TELEGRAM_BOT_TOKEN)",
+    )
+    parser.add_argument(
+        "--telegram-chat-id",
+        default=None,
+        help="Telegram chat ID (default: $TELEGRAM_CHAT_ID)",
+    )
+    parser.add_argument(
+        "--webhook-url",
+        default=None,
+        help="Webhook URL (default: $LEDGER_WEBHOOK_URL or $SLACK_WEBHOOK_URL)",
+    )
     notify = parser.add_mutually_exclusive_group()
     notify.add_argument(
         "--notify",
@@ -439,14 +468,31 @@ def main(argv: list[str] | None = None) -> int:
     notifier: Notifier | None = None
     if config.notify:
         try:
-            notifier = (
-                command_notifier(
+            if config.notification_command:
+                notifier = command_notifier(
                     config.notification_command,
                     timeout=config.notification_timeout_seconds,
                 )
-                if config.notification_command
-                else stdout_notifier()
-            )
+            elif (
+                args.notify_telegram
+                or os.environ.get("LEDGER_NOTIFY_CHANNEL") == "telegram"
+                or (
+                    (args.telegram_bot_token or os.environ.get("TELEGRAM_BOT_TOKEN"))
+                    and (args.telegram_chat_id or os.environ.get("TELEGRAM_CHAT_ID"))
+                )
+            ):
+                notifier = telegram_notifier(
+                    bot_token=args.telegram_bot_token,
+                    chat_id=args.telegram_chat_id,
+                )
+            elif (
+                args.webhook_url
+                or os.environ.get("LEDGER_WEBHOOK_URL")
+                or os.environ.get("SLACK_WEBHOOK_URL")
+            ):
+                notifier = webhook_notifier(url=args.webhook_url)
+            else:
+                notifier = stdout_notifier()
         except Exception as exc:
             print(
                 f"ledger: invalid notifier configuration ({type(exc).__name__})",

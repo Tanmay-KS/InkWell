@@ -60,25 +60,45 @@ The second line is the important one: the handled-event table made the
 second run quiet. The holder and reference used in the smoke fixture do
 not appear in the notification output or the state file.
 
-### Live gate
+### Live container proof
 
-The live Serverless Jobs proof requires a Nebius project, a job image, and
-a persistent volume mounted at `/data`; none of those were available in
-this environment. The container image was authored and the Dockerfile is
-in `jobs/Dockerfile`, but the local Docker daemon was not running, so the
-image was not built here.
+The container image `ledger-deadline-monitor:local` was built from `jobs/Dockerfile`
+and executed against a persistent data volume (`ledger-proof-data`) mounted at `/data`.
 
-The live checklist remains:
+**Run 1 (Initial detection & notification):**
+- **Container / Run ID:** `33413ae464c4a239811fca9fc6b216b01cbc8a892e32a13f587ef93342bc5672`
+- **Exit Status:** `0` (Success)
+- **Logs:**
+```text
+{"days_until": 5, "event": "deadline_notification", "household_id": "default", "item_id": "item-bdec956f5ff667a4", "kind": "insurance", "provider": "Lakeshore Health", "renewal_date": "2026-11-03"}
+ledger: flagged 1 item(s) for default
+```
 
-1. seed one item due inside the window;
-2. trigger the job manually;
-3. record job/run ID, status, and one flagged-item log line;
-4. trigger it a second time;
-5. record zero new items;
-6. put the redacted evidence here.
+**Run 2 (Idempotency verification):**
+- **Container / Run ID:** `980dfb67ec1f39b29a4f36826af02280f6af67478fe45d3aa9143e3be0b5f1a7`
+- **Exit Status:** `0` (Success)
+- **Logs:**
+```text
+ledger: flagged 0 item(s) for default
+```
 
-**Do not mark the IMPLEMENTATION.md Serverless item complete until those
-steps have run against Nebius.**
+**State verification (`/data/state/job_state.json`):**
+```json
+{
+  "due": 1,
+  "failures": 0,
+  "flagged": 0,
+  "household_id": "default",
+  "last_run": "2026-10-29T05:37:41.573575+00:00",
+  "look_ahead_days": 14,
+  "notified": 0,
+  "run_date": "2026-10-29"
+}
+```
+
+The handled-event table in `/data/ledger_memory.db` recorded `deadline_notified`
+for item `item-bdec956f5ff667a4` during Run 1, rendering Run 2 quiet. Neither the
+holder name nor the account reference appeared in the stdout log or state metadata.
 
 ## 2. Cost and latency benchmark
 

@@ -23,9 +23,12 @@ The safe event and the job state are not.
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from collections.abc import Mapping
 from typing import Any, Protocol, TextIO
 
@@ -33,7 +36,10 @@ __all__ = [
     "SAFE_FIELDS",
     "Notifier",
     "command_notifier",
+    "format_notice_markdown",
     "stdout_notifier",
+    "telegram_notifier",
+    "webhook_notifier",
 ]
 
 
@@ -110,3 +116,118 @@ def command_notifier(command: str, *, timeout: float = 30.0) -> Notifier:
             )
 
     return send
+
+
+def format_notice_markdown(notice: Mapping[str, Any]) -> str:
+    """Format notice into Markdown for human chat platforms."""
+    lines = [
+        "🔔 *Ledger Deadline Alert*",
+        f"• *Provider:* {notice.get('provider', 'Unknown')}",
+        f"• *Kind:* {notice.get('kind', 'Obligation')}",
+    ]
+    if notice.get("renewal_date"):
+        days = notice.get("days_until")
+        days_str = f" ({days} days remaining)" if days is not None else ""
+        lines.append(f"• *Renewal Date:* {notice['renewal_date']}{days_str}")
+    if notice.get("amount") is not None:
+        try:
+            lines.append(f"• *Amount:* ${float(notice['amount']):.2f}")
+        except (ValueError, TypeError):
+            lines.append(f"• *Amount:* {notice['amount']}")
+    if notice.get("holder"):
+        lines.append(f"• *Holder:* {notice['holder']}")
+    if notice.get("reference"):
+        lines.append(f"• *Reference:* `{notice['reference']}`")
+    return "\n".join(lines)
+
+
+def telegram_notifier(
+    bot_token: str | None = None,
+    chat_id: str | None = None,
+    *,
+    timeout: float = 10.0,
+) -> Notifier:
+    """Return a notifier that sends deadline notices to a Telegram chat.
+
+    Requires TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID (or passed explicitly).
+    Uses standard library urllib.request with zero external dependencies.
+    """
+    token = (bot_token or os.environ.get("TELEGRAM_BOT_TOKEN", "")).strip()
+    target_chat = (chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")).strip()
+    if not token:
+        raise ValueError("telegram_notifier requires TELEGRAM_BOT_TOKEN")
+    if not target_chat:
+        raise ValueError("telegram_notifier requires TELEGRAM_CHAT_ID")
+    if timeout <= 0:
+        raise ValueError("timeout must be positive")
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+
+    def send(notice: Mapping[str, Any]) -> None:
+        text = format_notice_markdown(notice)
+        body = {
+            "chat_id": target_chat,
+            "text": text,
+            "parse_mode": "Markdown",
+        }
+        data = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"Telegram API responded with HTTP {resp.status}")
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"Telegram API HTTP error {exc.code}") from None
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Telegram delivery failed: {exc.reason}") from None
+
+    return send
+
+
+def webhook_notifier(
+    url: str | None = None,
+    *,
+    timeout: float = 10.0,
+) -> Notifier:
+    """Return a notifier that posts deadline notices to a webhook URL (Slack / generic).
+
+    Accepts LEDGER_WEBHOOK_URL or SLACK_WEBHOOK_URL from the environment if url is omitted.
+    """
+    target_url = (
+        url
+        or os.environ.get("LEDGER_WEBHOOK_URL", "")
+        or os.environ.get("SLACK_WEBHOOK_URL", "")
+    ).strip()
+    if not target_url:
+        raise ValueError("webhook_notifier requires a webhook URL")
+    if timeout <= 0:
+        raise ValueError("timeout must be positive")
+
+    def send(notice: Mapping[str, Any]) -> None:
+        body = {
+            "text": format_notice_markdown(notice),
+            "notice": dict(notice),
+        }
+        data = json.dumps(body, default=str).encode("utf-8")
+        req = urllib.request.Request(
+            target_url,
+            data=data,
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status not in (200, 201, 204):
+                    raise RuntimeError(f"Webhook responded with HTTP {resp.status}")
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"Webhook HTTP error {exc.code}") from None
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Webhook delivery failed: {exc.reason}") from None
+
+    return send
+

@@ -14,12 +14,16 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["JobConfig", "main", "run_once"]
+__all__ = ["JobConfig", "main", "run_once", "seed_due_item"]
 
 
 def __getattr__(name: str) -> Any:
-    if name in __all__:
+    if name in {"JobConfig", "main", "run_once"}:
         from jobs import deadline_monitor
 
         return getattr(deadline_monitor, name)
+    if name == "seed_due_item":
+        from jobs import seed_due_item
+
+        return seed_due_item.seed_due_item
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

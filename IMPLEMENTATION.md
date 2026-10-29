@@ -112,7 +112,7 @@ in `docs/phase2-runbook.md`. The exit condition is not closed until
 - [ ] Score accuracy, since most demos only test simple recall — this is meant to stand out
 
 ### Person A
-- [ ] Verify Nebius Serverless Jobs background deadline monitoring is actually running live (not just scheduled)
+- [x] Verify Nebius Serverless Jobs background deadline monitoring is actually running live (not just scheduled)
 - [x] Benchmark cost and latency per Nemotron tier (Nano / Super / Ultra) across a representative set of calls — see [`docs/phase3-results.md`](docs/phase3-results.md)
 
 ### Joint
