@@ -48,21 +48,26 @@ real household sidecar at `~/.hermes/ledger_memory.db`.
 ## What this demo is, and is not
 
 **It is** the real `agent/` pipeline, the real fact table, the real chat
-handler, the real Verifier/Auditor path and the real draft generator,
-driven by a deterministic fictional fixture (`_seed_demo` in
-`interface/web/server.py`). The seeded trace is a real `run_text` call
-whose Drafter deliberately plants a wrong amount.
+handler, the real LangGraph role graph (Verifier/Auditor path) and the real
+draft generator, driven by a deterministic fictional fixture
+(`_seed_demo` in `interface/web/server.py`). The seeded trace is a real
+`run_text_graph` call whose Drafter deliberately plants a wrong amount.
 
 **It is not** a hosted service. The server refuses any `Host` header that
 is not `127.0.0.1`, `::1` or `localhost`, and any cross-origin request. We
 did not publish a public URL because doing so would put the household
 database behind no authentication at all. The honest demo is the one you
-run locally.
+run locally. POST endpoints are rate-limited (30 per 60 seconds per client
+by default; `LEDGER_RATE_LIMIT` and `LEDGER_RATE_WINDOW` change it) and
+uploads are capped at 15 MiB.
 
-**It is not** a model-backed multi-agent system in this build. The roles
-are plain Python; the Auditor is deterministic; the trace reports
-`tier: local`, `code` or `template` and zero model calls. The Nemotron
-tiers are measured separately by `make bench`.
+**It is not** model-backed by default. The template Drafter is
+deterministic and makes no model call, which is why the demo trace shows
+`tier: template` and zero model calls. Setting
+`LEDGER_USE_MODEL_DRAFTER=1` switches the upload path to Nemotron Super
+through Token Factory; the deterministic Auditor then reviews the model's
+draft. `make langgraph-gate` exercises that path once and records the
+result in `eval/results/langgraph_gate.json`.
 
 The sandbox-side proofs are separate and do not need the web view:
 `make leak-test`, `make injection-demo`, `make results`.

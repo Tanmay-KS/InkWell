@@ -21,6 +21,7 @@ from agent.memory.hermes_memory import HouseholdMemory
 from interface.web.server import (
     MAX_UPLOAD,
     LedgerHandler,
+    RateLimiter,
     _seed_demo,
     serve,
 )
@@ -311,3 +312,37 @@ def test_an_invalid_content_length_is_a_client_error(web):
     response.read()
     conn.close()
     assert response.status == 400
+
+
+# --- rate limiting ---------------------------------------------------------
+
+
+def test_the_limiter_allows_then_refuses_then_recovers():
+    limiter = RateLimiter(limit=2, window_seconds=0.2)
+
+    assert limiter.check("client") == (True, 0)
+    assert limiter.check("client") == (True, 0)
+    allowed, retry_after = limiter.check("client")
+    assert allowed is False
+    assert retry_after >= 1
+    # A different client has its own window.
+    assert limiter.check("other")[0] is True
+
+    import time
+
+    time.sleep(0.25)
+    assert limiter.check("client")[0] is True
+
+
+def test_a_post_endpoint_returns_429_with_a_retry_after(web):
+    web.rate_limiter = RateLimiter(limit=2, window_seconds=60)  # type: ignore[attr-defined]
+
+    for _ in range(2):
+        status, _, _ = _json(web, "POST", "/api/chat", {"text": "What's coming up?"})
+        assert status == 200
+
+    status, headers, data = _json(web, "POST", "/api/chat", {"text": "again"})
+    assert status == 429
+    assert int(headers["Retry-After"]) >= 1
+    assert "too many requests" in data["error"]
+

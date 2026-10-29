@@ -25,10 +25,11 @@ third-party search engines never see them.
 > web view with a fictional demo, the friction log distilled into
 > [`docs/feedback.md`](docs/feedback.md), and a recorded cross-review in
 > [`docs/packaging-review.md`](docs/packaging-review.md). The upgrade
-> adds a glass-box trace, plain-Python roles, a code Verifier, a
-> rule-based Auditor with a bounded revision loop, and a findings-first
-> dashboard; it is **not** a LangGraph pipeline and the Auditor is
-> deterministic code, not a Nemotron Ultra call. See
+> adds a glass-box trace, a **LangGraph role graph** (with a plain-Python
+> fallback), a code Verifier, a rule-based Auditor with a bounded
+> revision loop, a findings-first dashboard, and an opt-in Nemotron Super
+> Drafter. The Auditor is deterministic code, not a Nemotron Ultra call:
+> the model can draft, but it cannot approve its own work. See
 > [`docs/phase0-runbook.md`](docs/phase0-runbook.md) for the infra side,
 > [`docs/ocr-decision.md`](docs/ocr-decision.md) for the model decision
 > and the privacy architecture,
@@ -112,25 +113,38 @@ document's lines, at 1.3s a page, with no egress at all.
 
 ### The glass-box upgrade — roles, Verifier, Auditor
 
-The upgrade plan's framework gate is time-boxed, and this build takes the
-documented fallback: **plain Python roles with the same shared state and
-the same conditional Auditor edge**. There is no LangGraph or CrewAI
-dependency, and the trace says `tier: local`, `code` or `template` because
-that is what actually ran.
+The upgrade uses **LangGraph** for the role graph. The plan's gate was
+time-boxed to 60 minutes; the graph compiled, ran, and called a real
+Nemotron Super model, so the framework path is what the web view uses.
+The plain-Python orchestrator is kept as the documented fallback and as
+the reference implementation the tests compare against.
 
 ```
-Redactor ──► Extractor ──► Verifier ──► Researcher ──► Drafter ──► Auditor
- (local)      (local)       (code)        (optional)    (template)      │
-                                                             reject ◄───┘
-                                                                │
-                                                  revise (max 2) ──► approve
-                                                                │
-                                                     needs_human_review
+START ──► Redactor ──► Extractor ──► Verifier ──► Researcher ──► Drafter
+            (local)      (local)       (code)       (optional)     │
+                                                                   ▼
+                                                               Auditor (code)
+                                                                   │
+                                    reject ──► Drafter (max 2) ◄───┤
+                                                                   │ approve
+                                                                   ▼
+                                                                  END
 ```
 
-* **Shared state** (`agent/orchestrator.py`) is the plan's object:
-  `{doc_id, redacted_text, extracted_fields, verified_facts,
-  research_notes, draft, audit_result, retries, status}`.
+* **Graph** (`agent/graph.py`) is a `StateGraph` with the shared state and
+  a conditional edge from the Auditor back to the Drafter. The revision
+  is deterministic, so a second round cannot introduce a new
+  hallucination.
+* **Fallback** (`agent/orchestrator.py`) is plain Python with the same
+  state object and edges, for when the framework is unavailable.
+* **Model client** (`agent/model.py`) calls Token Factory only. It
+  resolves `LEDGER_MODEL_*` IDs pinned by `make pin-models` and raises if
+  the key or ID is missing — there is no fallback provider.
+* **Drafter** is a template by default. `LEDGER_USE_MODEL_DRAFTER=1` (or
+  `--model-drafter` on the CLI) asks Nemotron Super for the letter using
+  the **redacted** notice; the real reference is restored from the
+  redaction map inside the sandbox. The deterministic Auditor then checks
+  the model's output exactly as it checks the template.
 * **Verifier** (`agent/verifier.py`) is arithmetic and date subtraction:
   line items sum to the total, duplicate charges (same vendor and amount,
   nearby dates), days remaining, and a 14-day expiry flag.
@@ -143,18 +157,21 @@ Redactor ──► Extractor ──► Verifier ──► Researcher ──► D
 * **Trace** (`agent/trace.py`) writes one JSON line per step to memory and
   optionally to a JSONL file. Summaries are redacted before they are
   stored, and egress is recorded as `none`, `allowed:<host>` or
-  `blocked:<host>`. The web view reads the same events.
+  `blocked:<host>`. The web view reads the same events. LangSmith tracing
+  is disabled explicitly; `langsmith` is only a transitive dependency.
 
 The user still approves every outbound action: `RunState.status == "ok"`
 means an approved draft is ready for a human, not that anything was sent.
 
 The demo's trace is a real run over fictional data with a planted wrong
 amount, so the rejection and the revision are visible in the UI. The same
-path is measured by `make auditor-eval`:
+path is measured by `make auditor-eval`, and the framework gate by
+`make langgraph-gate`:
 
 ```bash
-make auditor-eval   # 5 planted errors, catch rate, false approves
-make results        # recompile docs/results.md with all four numbers
+make auditor-eval     # 5 planted errors, catch rate, false approves
+make langgraph-gate   # compile the graph + one real Nemotron Super call
+make results          # recompile docs/results.md with all four numbers
 ```
 
 ### Phase 2 — the leak test
@@ -395,7 +412,9 @@ ledger/
 │   ├── memory/                   hermes_memory.py, update_tracker.py
 │   ├── deadlines/                flag_deadlines.py
 │   ├── actions/                  draft_actions.py
-│   ├── orchestrator.py           plain-Python roles, shared state, retry cap
+│   ├── orchestrator.py           plain-Python fallback roles + RunState
+│   ├── graph.py                  LangGraph StateGraph, conditional Auditor edge
+│   ├── model.py                  Token Factory-only chat client
 │   ├── verifier.py               totals, duplicates, days remaining
 │   ├── auditor.py                deterministic veto + bounded revision
 │   └── trace.py                  JSONL glass-box event log
@@ -462,20 +481,23 @@ comparable across runs.
 - **The agent's state lives in a named Docker volume, not a bind mount.**
   Hermes's WAL-mode SQLite can be silently corrupted by bind mounts that
   cross a VM boundary. See the friction log (F-008).
-- **The upgrade path is plain Python, not LangGraph.** The framework gate
-  was time-boxed; the fallback kept the same state object and the same
-  conditional Auditor edge. The Auditor and Verifier are deterministic
-  code — no model call, no third-party tracing — and the trace says so.
+- **The upgrade path is LangGraph with a plain-Python fallback.** The
+  framework gate passed: the graph compiles, runs the roles, and calls a
+  real Nemotron Super model (`make langgraph-gate`). The Auditor and
+  Verifier remain deterministic code — no model approves its own work —
+  and third-party tracing is disabled.
 - **The demo is loopback-only and there is no hosted URL.** Exposing it
   would put the household database behind no authentication. The repo is
-  private and Apache-2.0; the upgrade plan's public + MIT items and a
-  spending cap are still open.
+  private and MIT-licensed; the public repo and spending-cap items are
+  still open. POST endpoints are rate-limited (30 requests per 60 seconds
+  per client by default, `LEDGER_RATE_LIMIT` / `LEDGER_RATE_WINDOW`), and
+  the upload cap is 15 MiB.
 
 ---
 
 ## Licence
 
-Apache-2.0 — see [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](LICENSE).
 
 ## Feedback
 

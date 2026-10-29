@@ -131,14 +131,16 @@ the document's serialisable form.
 ## The role graph (glass-box upgrade)
 
 The upgrade wraps the data flow in explicit roles with a shared state
-object. It is **plain Python** — no LangGraph or CrewAI dependency — and
-the Auditor/Verifier are deterministic code:
+object. The primary implementation is a **LangGraph `StateGraph`**
+(`agent/graph.py`); `agent/orchestrator.py` keeps the same roles and edges
+in plain Python as the documented fallback. The Auditor and Verifier are
+deterministic code in both paths:
 
 ```
 Trigger: upload OR Watcher (Serverless Job)
                     │
                     ▼
-        ORCHESTRATOR (code, no LLM) — state + retry cap
+        LANGGRAPH StateGraph — shared state + retry cap
                     │
    ┌────────────────┼───────────────────────────────┐
    ▼                ▼               ▼               ▼
@@ -148,7 +150,7 @@ strips PII      amounts, dates  sums, dates,    redacted queries)
 FIRST                           duplicates
                     │
                     ▼
-                 Drafter (template)
+          Drafter (template, or Nemotron Super opt-in)
                     │
                     ▼
         AUDITOR (deterministic) — veto, not a supervisor
@@ -164,6 +166,13 @@ The shared state is:
  research_notes, draft, audit_result, retries, status}
 ```
 
+`agent/model.py` is the only model client. It calls Token Factory with a
+pinned `LEDGER_MODEL_*` ID and raises rather than falling back to another
+provider. The model Drafter reads the redacted notice and resolves the
+real reference from the redaction map inside the sandbox; the
+deterministic Auditor then reviews the result. LangSmith tracing is
+disabled before LangGraph is imported.
+
 `agent/trace.py` records every handoff as one JSON line, with the agent,
 tier, model, latency, token counts, redacted summaries, egress and status.
 The web timeline renders the same events. There is no third-party tracing
@@ -174,6 +183,10 @@ factual assertion has a Verifier fact or source span, personal detail does
 not exceed what the letter needs, and there is no promised outcome or
 legal-advice phrasing. Two rejections is the cap; then the run stops at
 `needs_human_review`.
+
+The framework gate is reproducible with `make langgraph-gate`: it compiles
+the graph, makes one real Nemotron Super call, and writes
+`eval/results/langgraph_gate.json`.
 
 ---
 

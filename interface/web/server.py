@@ -5,20 +5,82 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
+import time
+from collections import deque
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from agent.actions.draft_actions import ActionKind, draft_action
+from agent.graph import run_document_graph, run_text_graph
 from agent.memory.hermes_memory import HouseholdItem, HouseholdMemory, TrackedState
-from agent.orchestrator import run_document, run_text
 from agent.verifier import inventory_findings
 from interface.bot.handlers import BotMessage, LedgerBot
 
 ROOT = Path(__file__).resolve().parent
 MAX_UPLOAD = 15 * 1024 * 1024
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+DEFAULT_RATE_LIMIT = 30
+DEFAULT_RATE_WINDOW = 60.0
+
+# Model drafting is opt-in. The demo is deterministic by default; set
+# LEDGER_USE_MODEL_DRAFTER=1 to route the Drafter through Nemotron Super.
+USE_MODEL_DRAFTER = os.environ.get("LEDGER_USE_MODEL_DRAFTER", "").strip() in {
+    "1",
+    "true",
+    "yes",
+}
+
+
+class RateLimiter:
+    """A small per-client sliding-window limiter for POST endpoints.
+
+    The demo is loopback-only, but a runaway page or a script can still
+    spend model budget or fill the temporary database. The limit is
+    deliberately simple and local: no shared state, no dependency.
+    """
+
+    def __init__(self, limit: int = DEFAULT_RATE_LIMIT, window_seconds: float = DEFAULT_RATE_WINDOW):
+        if limit < 1:
+            raise ValueError("rate limit must be at least 1")
+        self.limit = limit
+        if window_seconds <= 0:
+            raise ValueError("rate window must be positive")
+        self.window_seconds = float(window_seconds)
+        self._events: dict[str, deque[float]] = {}
+        self._lock = threading.Lock()
+
+    @classmethod
+    def from_env(cls) -> RateLimiter:
+        try:
+            limit = int(os.environ.get("LEDGER_RATE_LIMIT", DEFAULT_RATE_LIMIT))
+        except ValueError:
+            limit = DEFAULT_RATE_LIMIT
+        try:
+            window = float(os.environ.get("LEDGER_RATE_WINDOW", DEFAULT_RATE_WINDOW))
+        except ValueError:
+            window = DEFAULT_RATE_WINDOW
+        return cls(limit=limit, window_seconds=window)
+
+    def check(self, key: str) -> tuple[bool, int]:
+        """Return `(allowed, retry_after_seconds)`.
+
+        `retry_after` is 0 when the request is allowed.
+        """
+        now = time.monotonic()
+        cutoff = now - self.window_seconds
+        with self._lock:
+            events = self._events.setdefault(key, deque())
+            while events and events[0] <= cutoff:
+                events.popleft()
+            if len(events) >= self.limit:
+                retry_after = max(1, int(self.window_seconds - (now - events[0])) + 1)
+                return False, retry_after
+            events.append(now)
+            return True, 0
+
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
@@ -107,7 +169,7 @@ def _demo_trace_state():
             draft.body = draft.body.replace(correct, f"{float(facts.stated_total) + 36:.2f}")
         return draft
 
-    return run_text(
+    return run_text_graph(
         DEMO_NOTICE,
         action_kind=ActionKind.REFUND,
         drafter=plant_wrong_amount,
@@ -153,6 +215,31 @@ class LedgerHandler(BaseHTTPRequestHandler):
                 return False
         return True
 
+    def _limiter(self) -> RateLimiter:
+        limiter = getattr(self.server, "rate_limiter", None)
+        if limiter is None:
+            limiter = RateLimiter.from_env()
+            self.server.rate_limiter = limiter  # type: ignore[attr-defined]
+        return limiter
+
+    def _rate_limited(self) -> bool:
+        allowed, retry_after = self._limiter().check(self.client_address[0])
+        if allowed:
+            return False
+        payload = json.dumps(
+            {"error": "too many requests; wait and try again"}
+        ).encode("utf-8")
+        self.send_response(429)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Retry-After", str(retry_after))
+        self.send_header("Cache-Control", "no-store")
+        for name, value in SECURITY_HEADERS.items():
+            self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(payload)
+        return True
+
     def do_GET(self) -> None:
         if not self._local_request():
             return
@@ -195,6 +282,8 @@ class LedgerHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         if not self._local_request():
+            return
+        if self._rate_limited():
             return
         path = urlparse(self.path).path
         try:
@@ -242,7 +331,17 @@ class LedgerHandler(BaseHTTPRequestHandler):
                     tmp.write(body)
                     temp_path = Path(tmp.name)
                 try:
-                    state = run_document(temp_path, memory=self.memory)
+                    graph_options: dict[str, object] = {}
+                    if USE_MODEL_DRAFTER:
+                        from agent.model import NebiusClient
+
+                        graph_options = {
+                            "use_model_drafter": True,
+                            "model_client": NebiusClient(),
+                        }
+                    state = run_document_graph(
+                        temp_path, memory=self.memory, **graph_options
+                    )
                 except Exception as exc:  # a bad upload must not kill the server
                     return self._send_json(
                         {"error": f"could not read that document ({type(exc).__name__})"}, 422

@@ -6,10 +6,10 @@
 **Roles:** Person A = Infra/Privacy lead · Person B = Agent/Product lead
 
 > **Upgrade Phase (Oct 29):** the additive glass-box multi-agent plan is at
-> the end of this file, and it is now implemented. Checked boxes there mean
-> the repository contains the evidence; unchecked boxes are open submission
-> work (public repo, MIT licence, spending cap, hosted demo, video,
-> Devpost) or the framework gate that was intentionally not run.
+> the end of this file, and it is now implemented with LangGraph as the
+> primary role graph and plain Python as the fallback. Checked boxes there
+> mean the repository contains the evidence; unchecked boxes are open
+> submission work (public repo, spending cap, hosted demo, video, Devpost).
 
 ---
 
@@ -144,7 +144,7 @@ in `docs/phase2-runbook.md`. The exit condition is not closed until
 ### Person A
 - [x] Write README: highlight Nemotron + Token Factory usage, setup steps, architecture overview — `README.md`
 - [x] Write up the friction log into the feedback section required by the rules — `docs/feedback.md` (full record in `docs/friction_log.md`)
-- [x] Add open-source license to repo — Apache-2.0, `LICENSE`
+- [x] Add open-source license to repo — MIT, `LICENSE`
 
 ### Joint
 - [x] Cross-review each other's output before EOD — `docs/packaging-review.md` (8 interface findings, 6 docs findings, all fixed)
@@ -265,12 +265,12 @@ nothing in them is replaced.
 >
 > | Area | Status |
 > |---|---|
-> | Phase 0 — safety net | **partial** — `pre-upgrade` tag, Token Factory run and secret scan done; repo is private, licence is Apache-2.0 (not MIT), no spending cap |
+> | Phase 0 — safety net | **partial** — `pre-upgrade` tag, Token Factory run, secret scan and MIT licence done; repo stays **private** by decision, no spending cap (the demo has a rate limit) |
 > | Phase A — glass-box trace | **built** — `agent/trace.py` JSONL schema, orchestrator events from every role, web timeline, redaction-safe summaries |
-> | Phase B — roles and Auditor | **built with the plain-Python fallback** — `agent/orchestrator.py`, shared state, code Verifier, deterministic Auditor with veto, 5 planted cases + clean control; a Nemotron Ultra reviewer is not wired |
+> | Phase B — roles and Auditor | **built with LangGraph** — `agent/graph.py` StateGraph + conditional Auditor edge, shared state, code Verifier, deterministic Auditor with veto, 5 planted cases + clean control; the 60-minute gate passed with a live Nemotron Super call. `agent/orchestrator.py` is the plain-Python fallback. A Nemotron Ultra reviewer is still not wired |
 > | Phase C — Verifier/dashboard | **built** — `agent/verifier.py` totals/duplicates/days/expiry, findings dashboard opens first, Watcher pushes the summary |
 > | Phase D — four evals | **4 of 4 measured** — leak, memory, tier cost/latency and Auditor catch rate (5/5, 0 false approves) |
-> | Phase E — submission package | **partial** — README, local demo banner/notice and feedback exist; no hosted URL, public repo, MIT licence, video, or Devpost submission |
+> | Phase E — submission package | **partial** — README, MIT licence, rate limits, local demo banner/notice and feedback exist; no hosted URL, public repo, video, or Devpost submission |
 >
 > **Checked boxes below mean "already true in this repository", with the
 > evidence path given. Unchecked boxes are open work.** Do not describe a
@@ -353,31 +353,37 @@ Skip AutoGen (maintenance mode).
 
 **Gate (60 minutes max):**
 
-- [ ] Build a 3-node toy graph: Drafter → Auditor → conditional edge (back
+- [x] Build a 3-node toy graph: Drafter → Auditor → conditional edge (back
       to Drafter or End), calling a Token Factory Nemotron model.
-      *Not run. No LangGraph/CrewAI dependency is installed; the
-      deterministic path was chosen instead of spending the gate budget on
-      a framework install.*
-- [ ] If it works within 60 minutes → use LangGraph for the pipeline.
-      *Not applicable: the gate was not run.*
+      *`agent/graph.py` compiles a six-node `StateGraph` with the
+      conditional Auditor edge. `make langgraph-gate` made a live Nemotron
+      Super call (308 prompt / 1,414 completion tokens, 5.2 s), the
+      Auditor approved, and the artifact is
+      `eval/results/langgraph_gate.json`.*
+- [x] If it works within 60 minutes → use LangGraph for the pipeline.
+      *It worked, so the web upload and the seeded demo trace run through
+      `agent/graph.py`. The plain-Python `agent/orchestrator.py` is kept as
+      the fallback and is exercised by its own tests.*
 - [x] If not → plain Python with the same node/edge structure. Do not keep
-      fighting the framework. *`agent/orchestrator.py` is plain Python with
-      the shared state object and a conditional Auditor edge; it is the
-      documented fallback, not a LangGraph pipeline.*
+      fighting the framework. *Retained as the fallback path.*
 
-*Status: the fallback is built and tested. The trace and README say
-"plain Python", never "LangGraph".*
+*Status: LangGraph is the primary path; the gate passed with a real
+model call. The Auditor and Verifier are still deterministic code, and
+LangSmith tracing is explicitly disabled.*
 
 **Framework hygiene (before recording the video):**
 
 - [x] All model calls point at Token Factory (no default-provider fallback).
       *Benchmarks and OCR resolve through the pinned catalog in
-      `eval/tokenfactory.py`; `DEFAULT_BASE_URL` is
-      `https://api.tokenfactory.nebius.com/v1` and no alternate provider is
-      configured. The upgrade role graph itself makes no model call.*
-- [x] Third-party tracing/telemetry disabled. *No LangSmith, CrewAI or
-      AutoGen packages are declared in `pyproject.toml`; the trace is
-      `agent/trace.py` and stays local.*
+      `eval/tokenfactory.py`; the graph's client is `agent/model.py`, which
+      reads the pinned `LEDGER_MODEL_*` IDs, uses
+      `https://api.tokenfactory.nebius.com/v1`, and raises if the key or ID
+      is missing. There is no alternate provider.*
+- [x] Third-party tracing/telemetry disabled. *`agent/graph.py` sets
+      `LANGSMITH_TRACING` and `LANGCHAIN_TRACING*` to `false` before
+      importing LangGraph. `langsmith` arrives transitively through
+      `langchain-core` but no key is read and the project's trace is
+      `agent/trace.py`.*
 - [x] Hermes stays in place for memory, skills, scheduling.
       *`agent/memory/hermes_memory.py`, the messaging gateway and
       `jobs/deadline_monitor.py` are the plan of record.*
@@ -395,20 +401,23 @@ Skip AutoGen (maintenance mode).
       returned `LEDGER-OK` from inside the sandbox (see the Phase 0 status
       above).*
 - [ ] Repo is public, `LICENSE` (MIT) at the repo root, shows in the GitHub
-      sidebar. *The repo is currently **private** and the licence is
-      **Apache-2.0**, not MIT (`gh repo view` reports `visibility: PRIVATE`,
-      `licenseInfo.key: apache-2.0`).*
+      sidebar. *The licence is now **MIT** and visible at the root. The repo
+      remains **private** by explicit decision, so the "public" half is
+      intentionally open.*
 - [x] Secret scan of code **and git history**. Rotate any key that was ever
       committed. *`.env` has never been tracked; a targeted scan of all
       commits for `nvapi-`, `xoxb-`, `xoxp-`, `tvly-`, `ghp_`, `AKIA`,
       `sk-proj-` and `sk-ant-` found no live credential. No rotation was
       needed. Run a dedicated scanner (for example `gitleaks`) before the
-      repository is made public.*
-- [ ] Set a spending cap and rate limit on the demo keys. *Not configured in
-      the repo and not verifiable from it.*
+      repository is ever made public.*
+- [ ] Set a spending cap and rate limit on the demo keys. *Rate limiting is
+      implemented in `interface/web/server.py` (30 POSTs per 60 s per
+      client by default). A hard spending cap on the provider keys is still
+      not configured and is not verifiable from the repo.*
 
 **Done when:** one run works, repo is public with licence, no secrets found.
-*Two of three are true; the repo is not public and the licence is not MIT.*
+*One run works, the MIT licence is in place and no secrets were found; the
+repo is intentionally **private**, so the "public" condition is not met.*
 
 ### Upgrade Phase A — Glass-box trace panel (about 3 h) — REQUIRED
 
@@ -484,12 +493,12 @@ this repo uses `eval/`, not `evals/`):
 - [x] Extra: draft carries unexpected personal data.
 - [x] Clean control: an unmodified template draft must be approved.
 
-*Status: built with the **plain-Python fallback**. `agent/orchestrator.py`
-holds the shared state and the conditional Auditor edge;
-`agent/auditor.py` is deterministic code with a veto; `agent/verifier.py`
-supplies the facts. There is no LangGraph/CrewAI dependency and no Nemotron
-Ultra reviewer — the trace and README say "plain Python" and
-"deterministic Auditor". A model-backed Auditor remains future work.*
+*Status: built with **LangGraph** (`agent/graph.py`): shared state,
+conditional Auditor edge, and a live Nemotron Super Drafter path measured
+by `make langgraph-gate`. `agent/orchestrator.py` keeps the same roles and
+edges in plain Python as the fallback. `agent/auditor.py` is deterministic
+code with a veto and `agent/verifier.py` supplies the facts. The Auditor is
+**not** a Nemotron Ultra call; a model-backed reviewer remains future work.*
 
 **Done when:** the Auditor rejects all 3 cases, the Drafter revises, the
 second pass is approved, and both rounds show in the trace. **Met:**
@@ -567,9 +576,9 @@ metrics. Report the true sample size.
       *`README.md` covers the problem, stack, four claims, setup, demo,
       limits and the plain-Python/Auditor honesty note; the full diagram is
       in `docs/architecture.md`.*
-- [ ] `LICENSE` (MIT) visible at root; no secrets in code or history.
-      *A root `LICENSE` exists and is visible, but it is Apache-2.0, not
-      MIT. No secrets were found (see the Phase 0 scan).*
+- [x] `LICENSE` (MIT) visible at root; no secrets in code or history.
+      *MIT is at the root and `pyproject.toml` declares it. No secrets were
+      found (see the Phase 0 scan).*
 - [ ] Short "What was updated during the hackathon" note if the project
       pre-existed. *Not written.*
 
@@ -583,8 +592,9 @@ metrics. Report the true sample size.
       the header "Demo · fictional data".*
 - [ ] Uploads auto-delete; rate limit and size cap on; spending cap on keys.
       *Demo uploads are written to a temporary file and deleted, the demo
-      database is temporary, and the upload cap is 15 MiB. There is no rate
-      limit and no spending cap.*
+      database is temporary, the upload cap is 15 MiB, and POST endpoints
+      are rate-limited (30 per 60 s per client by default). A provider-side
+      spending cap is still missing.*
 - [x] Notice: outputs are information, not legal or financial advice. *The
       privacy note under the upload form and the demo notes carry it.*
 
@@ -633,11 +643,14 @@ the video itself is the open item.*
 - The agent drafts; the user approves and sends. No outcome promises.
 - Check dependency and model licences against the chosen licence.
 
-*Current compliance:* the README describes the build as plain-Python roles
-with a deterministic Auditor and code Verifier, scopes the leak claim to the
-router's coverage rather than sandbox enforcement, labels every number as a
-synthetic test-set result, and states that Ledger never sends. The licence
-mismatch in Upgrade Phase E is the open item.
+*Current compliance:* the README describes the build as a **LangGraph role
+graph** with a plain-Python fallback, a deterministic Auditor and a code
+Verifier, scopes the leak claim to the router's coverage rather than
+sandbox enforcement, labels every number as a synthetic test-set result,
+and states that Ledger never sends. The model Drafter uses Token Factory
+only and its output is still checked by the deterministic Auditor. The
+open items are the intentionally private repo and the missing provider-side
+spending cap.
 
 ## Upgrade 7 — Risks and fallbacks
 
@@ -659,8 +672,8 @@ mismatch in Upgrade Phase E is the open item.
 ## Upgrade 9 — Final checklist before pressing Submit
 
 - [ ] Tagged commit pushed; repo public; licence visible. *`pre-upgrade` is
-      pushed, but no release tag exists; repo private; Apache-2.0 licence
-      visible.*
+      pushed, but no release tag exists; the repo is private by decision;
+      the MIT licence is visible.*
 - [ ] Demo URL tested from a private/incognito window without login. *No
       hosted URL.*
 - [ ] Video public on YouTube, under 3 minutes, plays correctly. *Not
@@ -678,13 +691,16 @@ mismatch in Upgrade Phase E is the open item.
 
 ## Upgrade integration note
 
-**Implemented.** The three first files were added exactly as suggested: an
-orchestrator/state module (`agent/orchestrator.py`), a trace writer that
-feeds the web timeline (`agent/trace.py`), and a code-based Verifier
-(`agent/verifier.py`). The deterministic Auditor (`agent/auditor.py`) is the
-fourth. Nothing in Phases 0–5 was removed; the upgrade is additive.
+**Implemented.** The role graph is `agent/graph.py` (LangGraph
+`StateGraph`, conditional Auditor edge), the trace writer that feeds the
+web timeline is `agent/trace.py`, and the code-based Verifier is
+`agent/verifier.py`. The deterministic Auditor (`agent/auditor.py`) and the
+Token Factory-only model client (`agent/model.py`) complete the set.
+`agent/orchestrator.py` keeps the same roles in plain Python as the
+documented fallback. Nothing in Phases 0–5 was removed; the upgrade is
+additive.
 
-What remains open is submission work, not implementation: make the repo
-public and decide the licence, set a spending cap, record the video, and
-submit to Devpost. The live gateway and live Serverless Job observations are
-still blocked on this host.
+What remains open is submission work, not implementation: the repo stays
+private by decision, a provider-side spending cap is missing, and the
+video/Devpost submission is not done. The live gateway and live Serverless
+Job observations are still blocked on this host.

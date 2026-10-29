@@ -4,10 +4,11 @@ version = "0.1.0"
 description = "Privacy-routed personal agent for deadlines, renewals, and entitlements"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+license = { text = "MIT" }
 
 dependencies = [
     "httpx>=0.27",
+    "langgraph>=1.0",
     "pydantic>=2.7",
     "python-dotenv>=1.0",
 ]

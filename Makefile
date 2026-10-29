@@ -226,6 +226,10 @@ memory-eval: ## Phase 3 — memory-with-updates accuracy
 auditor-eval: ## Upgrade Phase D — Auditor catch rate over planted cases
 	$(PY) $(EVAL)/auditor_eval.py
 
+.PHONY: langgraph-gate
+langgraph-gate: ## Upgrade Phase B — compile the graph and make one real Nemotron call
+	$(PY) $(EVAL)/langgraph_gate.py
+
 .PHONY: bench
 bench: ## Phase 3 — per-tier cost and latency
 	$(PY) $(EVAL)/cost_latency_bench.py

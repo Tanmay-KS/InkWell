@@ -1,19 +1,21 @@
 """Orchestrator: plain-Python roles with the plan's state and edges.
 
-Upgrade Phase B.
+Upgrade Phase B — the documented fallback.
 
-The framework gate in the upgrade plan is time-boxed. This build uses the
-documented fallback — **plain Python functions with the same shared state
-and the same conditional Auditor edge**:
+The primary role graph is `agent/graph.py` (LangGraph). This module keeps
+the same roles, the same shared state and the same conditional Auditor
+edge in plain Python, so the pipeline still runs if the framework is
+unavailable and so the tests have a second, independent implementation to
+compare against:
 
     Redactor -> Extractor -> Verifier -> Researcher -> Drafter -> Auditor
                                                   ^                |
                                                   +--- reject ------+
                                                        (max 2)
 
-That is a real choice, not a missing dependency hidden behind a label:
-there is no LangGraph or CrewAI import anywhere in this file, and the
-README says so.
+There is no LangGraph or CrewAI import anywhere in this file. That is the
+point of a fallback: it must not depend on the thing it is falling back
+from.
 
 The state object is the one the plan names:
 

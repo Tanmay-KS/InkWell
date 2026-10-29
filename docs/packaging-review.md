@@ -67,7 +67,8 @@ privacy regression in a project whose main claim is privacy. The README and
 ### Checks that passed
 
 - `LICENSE` is the full Apache-2.0 text and `pyproject.toml` declares
-  `Apache-2.0`.
+  `Apache-2.0`. *(Changed to MIT on 2026-10-29; the review above is the
+  Phase 4 record.)*
 - Every model ID in the README comes from the pinned catalog; the models
   table matches `docs/model-catalog.md`.
 - The three claims each link to their evidence, and each evidence artifact
@@ -118,5 +119,5 @@ gateway host and is signposted from the status block.
 - [x] Person B: README and docs reviewed; B1–B6 fixed.
 - [x] Joint: the five-minute path works with no credentials.
 - [x] `ruff` clean, full test suite green.
-- [x] Apache-2.0 licence present and referenced.
+- [x] Apache-2.0 licence present and referenced. *(Now MIT; see `LICENSE`.)*
 - [x] Feedback section written and linked.
