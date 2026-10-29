@@ -6,8 +6,10 @@
 **Roles:** Person A = Infra/Privacy lead · Person B = Agent/Product lead
 
 > **Upgrade Phase (Oct 29):** the additive glass-box multi-agent plan is at
-> the end of this file. Its checked boxes are an evidence-based gap analysis
-> of what already exists — the upgrade itself is not implemented.
+> the end of this file, and it is now implemented. Checked boxes there mean
+> the repository contains the evidence; unchecked boxes are open submission
+> work (public repo, MIT licence, spending cap, hosted demo, video,
+> Devpost) or the framework gate that was intentionally not run.
 
 ---
 
@@ -257,22 +259,22 @@ Phase 1 → Phase 2 is the one hard dependency: the router needs a working pipel
 **Relationship to the plan above:** additive. Phases 0–5 stay as built;
 nothing in them is replaced.
 
-> **Status at integration (2026-10-29).** This section is the plan plus an
-> honest gap analysis, not a claim that the upgrade is built.
+> **Status at integration (2026-10-29, updated after the build).** The
+> glass-box upgrade is implemented in the code; the boxes below are checked
+> only where the repository contains the evidence.
 >
 > | Area | Status |
 > |---|---|
-> | Phase 0 — safety net | **partial** — Token Factory run and secret scan done; repo is private, licence is Apache-2.0 (not MIT), no spending cap |
-> | Phase A — glass-box trace | **not started** — no trace module or timeline UI |
-> | Phase B — roles and Auditor | **not started** — no orchestrator, role contracts, or planted cases |
-> | Phase C — Verifier/dashboard | **not started** — the existing deadline job computes days-until, but there is no Verifier or findings dashboard |
-> | Phase D — four evals | **3 of 4 measured** — leak, memory and tier cost/latency exist; Auditor catch rate does not |
-> | Phase E — submission package | **partial** — README, feedback and local demo exist; no public demo URL, video, or Devpost submission |
+> | Phase 0 — safety net | **partial** — `pre-upgrade` tag, Token Factory run and secret scan done; repo is private, licence is Apache-2.0 (not MIT), no spending cap |
+> | Phase A — glass-box trace | **built** — `agent/trace.py` JSONL schema, orchestrator events from every role, web timeline, redaction-safe summaries |
+> | Phase B — roles and Auditor | **built with the plain-Python fallback** — `agent/orchestrator.py`, shared state, code Verifier, deterministic Auditor with veto, 5 planted cases + clean control; a Nemotron Ultra reviewer is not wired |
+> | Phase C — Verifier/dashboard | **built** — `agent/verifier.py` totals/duplicates/days/expiry, findings dashboard opens first, Watcher pushes the summary |
+> | Phase D — four evals | **4 of 4 measured** — leak, memory, tier cost/latency and Auditor catch rate (5/5, 0 false approves) |
+> | Phase E — submission package | **partial** — README, local demo banner/notice and feedback exist; no hosted URL, public repo, MIT licence, video, or Devpost submission |
 >
 > **Checked boxes below mean "already true in this repository", with the
-> evidence path given. Unchecked boxes are open work.** The upgrade is not
-> reflected in the code yet; do not describe it as built in the video or
-> README until the corresponding box is checked.
+> evidence path given. Unchecked boxes are open work.** Do not describe a
+> feature as built if its box is unchecked.
 
 ## Upgrade 0 — Goal
 
@@ -353,24 +355,29 @@ Skip AutoGen (maintenance mode).
 
 - [ ] Build a 3-node toy graph: Drafter → Auditor → conditional edge (back
       to Drafter or End), calling a Token Factory Nemotron model.
+      *Not run. No LangGraph/CrewAI dependency is installed; the
+      deterministic path was chosen instead of spending the gate budget on
+      a framework install.*
 - [ ] If it works within 60 minutes → use LangGraph for the pipeline.
-- [ ] If not → plain Python with the same node/edge structure. Do not keep
-      fighting the framework.
+      *Not applicable: the gate was not run.*
+- [x] If not → plain Python with the same node/edge structure. Do not keep
+      fighting the framework. *`agent/orchestrator.py` is plain Python with
+      the shared state object and a conditional Auditor edge; it is the
+      documented fallback, not a LangGraph pipeline.*
 
-*Status: not started. No LangGraph/CrewAI dependency is installed, and no
-multi-agent graph exists. The existing pipeline is deterministic plain
-Python, which is a valid fallback shape but is not this graph yet.*
+*Status: the fallback is built and tested. The trace and README say
+"plain Python", never "LangGraph".*
 
 **Framework hygiene (before recording the video):**
 
 - [x] All model calls point at Token Factory (no default-provider fallback).
-      *Existing benchmarks and OCR resolve through the pinned catalog in
+      *Benchmarks and OCR resolve through the pinned catalog in
       `eval/tokenfactory.py`; `DEFAULT_BASE_URL` is
       `https://api.tokenfactory.nebius.com/v1` and no alternate provider is
-      configured. Re-verify after the graph lands.*
+      configured. The upgrade role graph itself makes no model call.*
 - [x] Third-party tracing/telemetry disabled. *No LangSmith, CrewAI or
-      AutoGen packages are declared in `pyproject.toml`; logs stay local.
-      Re-check when a framework is added.*
+      AutoGen packages are declared in `pyproject.toml`; the trace is
+      `agent/trace.py` and stays local.*
 - [x] Hermes stays in place for memory, skills, scheduling.
       *`agent/memory/hermes_memory.py`, the messaging gateway and
       `jobs/deadline_monitor.py` are the plan of record.*
@@ -379,8 +386,9 @@ Python, which is a valid fallback shape but is not this graph yet.*
 
 ### Upgrade Phase 0 — Safety net (30 min)
 
-- [ ] Tag `pre-upgrade` in git. *No tag exists; the pre-upgrade commit is
-      `8c262e4`.*
+- [x] Tag `pre-upgrade` in git. *Annotated tag `pre-upgrade` points at
+      `ffd4621`, the commit that integrated this plan and the last state
+      before the upgrade code landed.*
 - [x] Confirm one end-to-end run works on Token Factory with a Nemotron
       model. *`eval/results/cost_latency.json`, measured 2026-10-28: 60
       calls, 0 errors across Nano, Super and Ultra; the Phase 0 run also
@@ -421,14 +429,22 @@ Python, which is a valid fallback shape but is not this graph yet.*
 **UI:** a timeline view (one row per step) that updates live, with a badge
 for the tier and a red/green badge for egress.
 
-- [ ] Log events from every existing stage.
-- [ ] Timeline panel in the web view.
-- [ ] Confirm the trace never shows raw personal data.
+- [x] Log events from every existing stage. *`agent/trace.py` defines the
+      schema and `agent/orchestrator.py` records Redactor, Extractor,
+      Verifier, Researcher, Drafter, Auditor and Human approval. The
+      researcher step records `skipped` when no callable is supplied; it is
+      not faked as a model call.*
+- [x] Timeline panel in the web view. *`/api/trace` plus the timeline in
+      `interface/web/app.js`; each row shows tier, latency, egress and
+      status badges. The demo seeds a real run with a planted rejection.*
+- [x] Confirm the trace never shows raw personal data. *Summaries are run
+      through `local_redact` inside `TraceEvent.__post_init__`, so a caller
+      cannot store an unredacted summary. `tests/test_upgrade_agents.py`
+      asserts the email and policy number do not appear in the demo trace.*
 
-*Status: not started. There is no trace module, event schema, or timeline
-panel. The audit JSONL in `privacy_router/audit_log.py` records security
-decisions for outbound requests; it is not a per-run agent trace and does
-not feed the UI.*
+*Status: built and tested. The audit JSONL in
+`privacy_router/audit_log.py` still records outbound security decisions;
+it is separate from this per-run trace.*
 
 **Done when:** a run shows 5+ steps with tier, latency, and egress status,
 readable in a screenshot.
@@ -458,20 +474,28 @@ Shared state passed between nodes:
 4. No promised outcomes ("you will get a refund") and no legal-advice
    phrasing.
 
-**Planted-error test cases** (synthetic, saved in `evals/auditor_cases/`):
+**Planted-error test cases** (synthetic, saved in `eval/auditor_cases/` —
+this repo uses `eval/`, not `evals/`):
 
-- [ ] Case 1: draft states a wrong amount.
-- [ ] Case 2: draft contains an uncited claim.
-- [ ] Case 3: draft promises an outcome.
+- [x] Case 1: draft states a wrong amount.
+- [x] Case 2: draft contains an uncited claim.
+- [x] Case 3: draft promises an outcome.
+- [x] Extra: draft states a wrong date.
+- [x] Extra: draft carries unexpected personal data.
+- [x] Clean control: an unmodified template draft must be approved.
 
-*Status: not started. The existing pipeline has a deterministic redactor,
-a local extractor and template-based drafter (`privacy_router/redact.py`,
-`agent/ingestion/`, `agent/actions/draft_actions.py`), but there is no
-orchestrator, shared state object, Researcher, or Auditor. No
-`evals/auditor_cases/` directory exists.*
+*Status: built with the **plain-Python fallback**. `agent/orchestrator.py`
+holds the shared state and the conditional Auditor edge;
+`agent/auditor.py` is deterministic code with a veto; `agent/verifier.py`
+supplies the facts. There is no LangGraph/CrewAI dependency and no Nemotron
+Ultra reviewer — the trace and README say "plain Python" and
+"deterministic Auditor". A model-backed Auditor remains future work.*
 
 **Done when:** the Auditor rejects all 3 cases, the Drafter revises, the
-second pass is approved, and both rounds show in the trace.
+second pass is approved, and both rounds show in the trace. **Met:**
+`make auditor-eval` reports 5 planted cases, 5 rejected on the first pass,
+0 false approves, 0 false rejects, 5 approved after a deterministic
+revision, with both Auditor rounds in the trace.
 **Cut line:** if the framework gate fails, use plain Python. Do not drop the
 Auditor.
 
@@ -479,24 +503,28 @@ Auditor.
 
 **Verifier checks (plain code):**
 
-- [ ] Line items sum to the stated total.
-- [ ] Duplicate charge detection (same vendor, amount, near dates).
-- [ ] Days remaining to a deadline or refund window.
-- [ ] Upcoming-expiry flag (for example within 14 days).
+- [x] Line items sum to the stated total. *A `Total:`/`Amount due:` line is
+      treated as the stated total, not as another line item.*
+- [x] Duplicate charge detection (same vendor, amount, near dates).
+      *`find_duplicate_charges` with a 7-day default window.*
+- [x] Days remaining to a deadline or refund window.
+- [x] Upcoming-expiry flag (for example within 14 days).
 
 **Proactive-first demo:**
 
-- [ ] The Nebius Serverless Job (Watcher) runs the Verifier on stored
+- [x] The Nebius Serverless Job (Watcher) runs the Verifier on stored
       documents and pushes a summary ("2 deadlines this week, 1 likely
-      duplicate charge").
-- [ ] The web view opens on a **findings dashboard**; chat is secondary.
+      duplicate charge"). *`jobs/deadline_monitor.py` computes
+      `inventory_findings`, writes it to job state, and pushes an
+      idempotent summary when duplicates exist. Tested in
+      `tests/test_deadline_monitor.py`. The job is still not observed
+      firing on a live scheduler — see Phase 3.*
+- [x] The web view opens on a **findings dashboard**; chat is secondary.
 
-*Status: not started as specified. `jobs/deadline_monitor.py` already
-computes `days_until` and notifies on upcoming deadlines (tested in
-`tests/test_deadline_monitor.py`), so the days-remaining logic has a
-foundation. It does not run a Verifier, detect duplicate charges, or push a
-findings summary, and the web view still opens on the household list. Live
-scheduler verification is also still blocked (see Phase 3).*
+*Status: built. `agent/verifier.py` supplies the checks, the demo fixture
+contains a deliberate duplicate charge, and the page renders findings above
+the household list. Live scheduler verification is still blocked (no
+`nebius` CLI/credentials on this host).*
 
 **Done when:** the demo starts from a pushed finding, not a typed prompt.
 **Cut line:** skip dashboard polish; keep a plain list of findings.
@@ -509,23 +537,24 @@ All data is **synthetic**. Say so everywhere the numbers appear.
 |---|---|---|---|
 | Leak test | 50 docs with fake PII | Sensitive items found in outbound queries, with and without the router | **done — 200 docs** |
 | Memory with updates | 20 questions, including changed facts | Accuracy (for example "cancelled in March") | **done — 30 scenarios** |
-| Auditor catch rate | the 3 planted cases + any extras | Rejected / total, false-approve count | **not measured** |
+| Auditor catch rate | the 3 planted cases + any extras | Rejected / total, false-approve count | **done — 5 planted + clean control** |
 | Tier cost and latency | one table | Avg latency and token use per tier (Nano, Super, Ultra) | **done — 60 calls** |
 
-- [x] Save scripts in `evals/` and results in `evals/results.md`.
-      *Existing layout is `eval/` (scripts) plus `docs/results.md` and the
-      committed JSON in `eval/results/`. The substance is present; the
-      directory name and output path differ from this plan.*
+- [x] Save scripts in `eval/` and results in the report.
+      *Scripts are in `eval/` (including `eval/auditor_eval.py` and
+      `eval/auditor_cases/`); the committed JSON is in `eval/results/` and
+      the report is `docs/results.md`. The plan's `evals/results.md` path
+      is not used; the substance and the four tables are present.*
 - [x] Put the headline numbers in the README. *Leak 100% → 0%, memory
-      100% vs a 43.3% baseline, and the tier table are in the README and
-      `docs/results.md`.*
+      100% vs a 43.3% baseline, the tier table and the 5/5 Auditor catch
+      rate are in the README and `docs/results.md`, all labelled synthetic.*
 
-*Status: three of the four metrics exist at or above the minimum sample
-size. There is no `evals/results.md` and no Auditor catch-rate table, so the
-phase's "Done when" is **not met**. Do not present the upgrade as having
-four measured numbers.*
+*Status: all four metrics are measured at or above the minimum sample
+size. The report path differs from the plan (`docs/results.md`, not
+`evals/results.md`).*
 
-**Done when:** `evals/results.md` exists with all four tables.
+**Done when:** the report exists with all four tables. **Met** at
+`docs/results.md` (`make results`).
 **Cut line:** reduce sizes (even 25 docs is acceptable) but keep all four
 metrics. Report the true sample size.
 
@@ -535,8 +564,9 @@ metrics. Report the true sample size.
 
 - [x] README: problem, architecture diagram, Nemotron and Token Factory use
       called out clearly, eval numbers, how to run, known limits.
-      *`README.md` covers the problem, stack, three claims, setup, demo and
-      limits; the full diagram is in `docs/architecture.md`.*
+      *`README.md` covers the problem, stack, four claims, setup, demo,
+      limits and the plain-Python/Auditor honesty note; the full diagram is
+      in `docs/architecture.md`.*
 - [ ] `LICENSE` (MIT) visible at root; no secrets in code or history.
       *A root `LICENSE` exists and is visible, but it is Apache-2.0, not
       MIT. No secrets were found (see the Phase 0 scan).*
@@ -548,15 +578,15 @@ metrics. Report the true sample size.
 - [ ] Works without login. *There is no hosted URL. The local
       `make demo-web` view has no login and needs no credentials, but it is
       loopback-only by design; see `docs/demo.md`.*
-- [ ] Banner: "Synthetic documents only. Do not upload real personal data."
-      *The local header says "Demo · fictional data"; the required banner is
-      not present.*
+- [x] Banner: "Synthetic documents only. Do not upload real personal data."
+      *The local view shows exactly that banner above the upload panel, plus
+      the header "Demo · fictional data".*
 - [ ] Uploads auto-delete; rate limit and size cap on; spending cap on keys.
       *Demo uploads are written to a temporary file and deleted, the demo
       database is temporary, and the upload cap is 15 MiB. There is no rate
       limit and no spending cap.*
-- [ ] Notice: outputs are information, not legal or financial advice. *Not
-      present.*
+- [x] Notice: outputs are information, not legal or financial advice. *The
+      privacy note under the upload form and the demo notes carry it.*
 
 **Devpost form**
 
@@ -583,9 +613,10 @@ metrics. Report the true sample size.
 Record a backup take. Keep one fully pre-seeded run ready in case the live
 service fails.
 
-*Status: no script or recording exists yet. The current product walkthrough
-and the privacy/cost evidence in `docs/results.md` can supply the 1:50–2:50
-segment, but the trace/Auditor segment depends on Phases A and B.*
+*Status: the script above is the intended recording plan; no recording
+exists. The product walkthrough, findings dashboard, trace/Auditor segment
+and the privacy/cost evidence in `docs/results.md` are all available now;
+the video itself is the open item.*
 
 ## Upgrade 6 — Honesty and legal guardrails
 
@@ -602,10 +633,11 @@ segment, but the trace/Auditor segment depends on Phases A and B.*
 - The agent drafts; the user approves and sends. No outcome promises.
 - Check dependency and model licences against the chosen licence.
 
-*Current compliance:* the README already scopes the leak claim to the
-router's coverage rather than sandbox enforcement, labels the corpus as
-synthetic, and states that Ledger never sends. The licence mismatch in
-Upgrade Phase E is the open item.
+*Current compliance:* the README describes the build as plain-Python roles
+with a deterministic Auditor and code Verifier, scopes the leak claim to the
+router's coverage rather than sandbox enforcement, labels every number as a
+synthetic test-set result, and states that Ledger never sends. The licence
+mismatch in Upgrade Phase E is the open item.
 
 ## Upgrade 7 — Risks and fallbacks
 
@@ -626,15 +658,16 @@ Upgrade Phase E is the open item.
 
 ## Upgrade 9 — Final checklist before pressing Submit
 
-- [ ] Tagged commit pushed; repo public; licence visible. *No tag; repo
-      private; Apache-2.0 licence visible.*
+- [ ] Tagged commit pushed; repo public; licence visible. *`pre-upgrade` is
+      pushed, but no release tag exists; repo private; Apache-2.0 licence
+      visible.*
 - [ ] Demo URL tested from a private/incognito window without login. *No
       hosted URL.*
 - [ ] Video public on YouTube, under 3 minutes, plays correctly. *Not
       recorded.*
-- [ ] README numbers match `evals/results.md`. *There is no
-      `evals/results.md`; the README numbers do match `docs/results.md` and
-      the committed artifacts.*
+- [ ] README numbers match the report. *README numbers match
+      `docs/results.md` and the committed artifacts; the plan's
+      `evals/results.md` path does not exist.*
 - [x] No secrets in repo or history; keys rotated if ever exposed. *Targeted
       scan clean; `.env` never tracked; nothing to rotate.*
 - [ ] Track selected: Personal AI. *Intended; form not submitted.*
@@ -645,8 +678,13 @@ Upgrade Phase E is the open item.
 
 ## Upgrade integration note
 
-If this upgrade is implemented, the first three files to add are an
-orchestrator/state module, a trace writer that feeds the web timeline, and a
-code-based Verifier. The existing `eval/` artifacts already satisfy three
-of the four Phase D metrics; only the Auditor catch rate requires the new
-pipeline. Nothing in Phases 0–5 needs to be removed to make room for it.
+**Implemented.** The three first files were added exactly as suggested: an
+orchestrator/state module (`agent/orchestrator.py`), a trace writer that
+feeds the web timeline (`agent/trace.py`), and a code-based Verifier
+(`agent/verifier.py`). The deterministic Auditor (`agent/auditor.py`) is the
+fourth. Nothing in Phases 0–5 was removed; the upgrade is additive.
+
+What remains open is submission work, not implementation: make the repo
+public and decide the licence, set a spending cap, record the video, and
+submit to Devpost. The live gateway and live Serverless Job observations are
+still blocked on this host.

@@ -9,7 +9,7 @@ sandbox with a declarative egress policy, and a privacy router strips your
 personal details from anything that leaves, so the expensive models and
 third-party search engines never see them.
 
-> **Status: Phases 0–4 built; live gateway and serverless-job proofs pending.**
+> **Status: Phases 0–4 plus the glass-box upgrade built; live gateway and serverless-job proofs pending.**
 > The stack is de-risked and the decisions are recorded. The Phase 0 exit
 > condition was met by hand on 2026-10-21; the automated verifier has not
 > yet produced a green run, and two Phase 0 benchmark runs disagree about
@@ -18,15 +18,20 @@ third-party search engines never see them.
 > middleware, guard, audit trail and injection demo are implemented and
 > pass the offline suite; the live gateway leg is blocked by the client
 > certificate and missing Docker daemon recorded in F-030/F-043. Phase 3
-> has all three numbers — leak 100% → 0%, memory 100% vs a 43.3% baseline,
-> and the per-tier cost/latency table — but the Nebius Serverless Job is
-> implemented, not yet observed firing on a scheduler. Phase 4 packages
-> the result: a loopback web view with a fictional demo, the friction log
-> distilled into [`docs/feedback.md`](docs/feedback.md), and a recorded
-> cross-review in [`docs/packaging-review.md`](docs/packaging-review.md).
-> See [`docs/phase0-runbook.md`](docs/phase0-runbook.md) for the infra
-> side, [`docs/ocr-decision.md`](docs/ocr-decision.md) for the model
-> decision and the privacy architecture,
+> has all four numbers — leak 100% → 0%, memory 100% vs a 43.3% baseline,
+> the per-tier cost/latency table, and a 5/5 Auditor catch rate on planted
+> synthetic errors — but the Nebius Serverless Job is implemented, not yet
+> observed firing on a scheduler. Phase 4 packages the result: a loopback
+> web view with a fictional demo, the friction log distilled into
+> [`docs/feedback.md`](docs/feedback.md), and a recorded cross-review in
+> [`docs/packaging-review.md`](docs/packaging-review.md). The upgrade
+> adds a glass-box trace, plain-Python roles, a code Verifier, a
+> rule-based Auditor with a bounded revision loop, and a findings-first
+> dashboard; it is **not** a LangGraph pipeline and the Auditor is
+> deterministic code, not a Nemotron Ultra call. See
+> [`docs/phase0-runbook.md`](docs/phase0-runbook.md) for the infra side,
+> [`docs/ocr-decision.md`](docs/ocr-decision.md) for the model decision
+> and the privacy architecture,
 > [`docs/leak-test.md`](docs/leak-test.md) for the leak measurement,
 > [`docs/phase2-runbook.md`](docs/phase2-runbook.md) for the live router
 > procedure, [`docs/phase3-runbook.md`](docs/phase3-runbook.md) for the
@@ -42,10 +47,13 @@ make demo-web
 ```
 
 Open <http://127.0.0.1:8765>. The header says **Demo · fictional data**.
-The demo uses a temporary database seeded with four invented items, so it
-never reads or writes the real household sidecar. Cancel an item, watch it
-leave *Coming up*, reactivate it, upload a notice, and review the draft
-Ledger prepared without sending.
+The demo uses a temporary database seeded with five invented items, so it
+never reads or writes the real household sidecar. It opens on a pushed
+finding — two deadlines this week and one likely duplicate charge — and
+shows the glass-box trace: Redactor → Extractor → Verifier → Researcher →
+Drafter → **Auditor rejects a wrong amount** → revision → approved. Cancel
+an item, watch it leave *Coming up*, reactivate it, upload a notice, and
+review the draft Ledger prepared without sending.
 
 ```bash
 make demo-web   # fictional data, temporary database, loopback only
@@ -101,6 +109,53 @@ document's lines, at 1.3s a page, with no egress at all.
 > `8` — tesseract read `2027-03-07` as `2827-83-07` and every number
 > measured on it was wrong. It renders an A4 page at 150 DPI now, which
 > is what a real scan gives you. See F-037 in the friction log.
+
+### The glass-box upgrade — roles, Verifier, Auditor
+
+The upgrade plan's framework gate is time-boxed, and this build takes the
+documented fallback: **plain Python roles with the same shared state and
+the same conditional Auditor edge**. There is no LangGraph or CrewAI
+dependency, and the trace says `tier: local`, `code` or `template` because
+that is what actually ran.
+
+```
+Redactor ──► Extractor ──► Verifier ──► Researcher ──► Drafter ──► Auditor
+ (local)      (local)       (code)        (optional)    (template)      │
+                                                             reject ◄───┘
+                                                                │
+                                                  revise (max 2) ──► approve
+                                                                │
+                                                     needs_human_review
+```
+
+* **Shared state** (`agent/orchestrator.py`) is the plan's object:
+  `{doc_id, redacted_text, extracted_fields, verified_facts,
+  research_notes, draft, audit_result, retries, status}`.
+* **Verifier** (`agent/verifier.py`) is arithmetic and date subtraction:
+  line items sum to the total, duplicate charges (same vendor and amount,
+  nearby dates), days remaining, and a 14-day expiry flag.
+* **Auditor** (`agent/auditor.py`) is deterministic code with a veto. It
+  rejects a draft whose amount or date disagrees with the Verifier, whose
+  factual assertion has no Verifier fact or source span, that carries
+  personal detail the letter does not need, or that promises an outcome
+  or uses legal-advice phrasing. It takes no other action. Two rejections
+  is the cap; then the status is `needs_human_review`.
+* **Trace** (`agent/trace.py`) writes one JSON line per step to memory and
+  optionally to a JSONL file. Summaries are redacted before they are
+  stored, and egress is recorded as `none`, `allowed:<host>` or
+  `blocked:<host>`. The web view reads the same events.
+
+The user still approves every outbound action: `RunState.status == "ok"`
+means an approved draft is ready for a human, not that anything was sent.
+
+The demo's trace is a real run over fictional data with a planted wrong
+amount, so the rejection and the revision are visible in the UI. The same
+path is measured by `make auditor-eval`:
+
+```bash
+make auditor-eval   # 5 planted errors, catch rate, false approves
+make results        # recompile docs/results.md with all four numbers
+```
 
 ### Phase 2 — the leak test
 
@@ -194,19 +249,24 @@ procedure, rollback, and the current blocker.
 
 ---
 
-## The three claims
+## The claims and the four numbers
 
 | # | Claim | Where it is proven | Phase |
 |---|---|---|---|
 | 1 | Personal details do not leak out of the agent | `eval/leak_test.py` — **100% → 0%** on 200 documents, see [`docs/leak-test.md`](docs/leak-test.md) | 2 |
 | 2 | A prompt-injected agent cannot exfiltrate your data, and the attempt is on the record | `sandbox/middleware/ledger-router/`, `privacy_router/injection_guard.py`, `demo/injection/`, `sandbox/verify_phase2.sh` | 2 |
 | 3 | The agent's memory is right when the facts change, not just when they are recalled | `eval/memory_updates_eval.py` — **100% on 30 scenarios** against a 43.3% update-blind baseline, see [`docs/results.md`](docs/results.md) | 3 |
+| 4 | The Auditor rejects a bad draft before a human sees it | `eval/auditor_eval.py` — **5 of 5 planted errors** rejected, 0 false approves, 0 false rejects on the clean control | Upgrade |
 
 Plus a cost/latency table across three model tiers
 (`eval/cost_latency_bench.py`): **Nano is the cheapest and the slowest** —
 p95 18.4 s against 6.9 s for Super — and Super costs ~6.9× Nano per call
 because it reasons before it answers. The compiled numbers and charts are
 in [`docs/results.md`](docs/results.md).
+
+**All four numbers are synthetic test-set results**, not general
+guarantees. The Auditor number is a deterministic check over five planted
+error classes, not a claim that every real drafting mistake is caught.
 
 ---
 
@@ -330,11 +390,15 @@ ledger/
 │   ├── setup.sh                  idempotent setup; this is the README section
 │   └── verify.sh                 the Phase 0 exit-condition verifier
 │
-├── agent/                        the pipeline
+├── agent/                        the pipeline and the role graph
 │   ├── ingestion/                parse_documents.py, parse_email.py
 │   ├── memory/                   hermes_memory.py, update_tracker.py
 │   ├── deadlines/                flag_deadlines.py
-│   └── actions/                  draft_actions.py
+│   ├── actions/                  draft_actions.py
+│   ├── orchestrator.py           plain-Python roles, shared state, retry cap
+│   ├── verifier.py               totals, duplicates, days remaining
+│   ├── auditor.py                deterministic veto + bounded revision
+│   └── trace.py                  JSONL glass-box event log
 │
 ├── privacy_router/               Phase 2 — redaction and guardrails
 │   ├── redact.py                 the redaction library
@@ -347,7 +411,8 @@ ledger/
 ├── interface/                    chat handlers + loopback web view
 │   ├── bot/handlers.py           a renewal message becomes an item
 │   └── web/                      server.py, index.html, app.js
-├── eval/                         the three proofs + the synthetic corpus
+├── eval/                         the four proofs + the synthetic corpus
+│   └── auditor_cases/            planted synthetic errors for the Auditor
 └── docs/                         runbooks, friction log, feedback, architecture
 ```
 
@@ -375,6 +440,8 @@ make pin-models       # re-pin the live catalog into .env + docs/model-catalog.m
 make ocr-bench        # which model reads documents best
 make redacted-extract # can the model read redacted text? (the privacy architecture)
 make redaction-audit  # what the deterministic redactor misses
+make auditor-eval     # Auditor catch rate over the planted cases
+make results          # compile all four numbers into docs/results.md
 ```
 
 `make synth` needs Pillow (`make venv` installs it). The corpus is
@@ -395,6 +462,14 @@ comparable across runs.
 - **The agent's state lives in a named Docker volume, not a bind mount.**
   Hermes's WAL-mode SQLite can be silently corrupted by bind mounts that
   cross a VM boundary. See the friction log (F-008).
+- **The upgrade path is plain Python, not LangGraph.** The framework gate
+  was time-boxed; the fallback kept the same state object and the same
+  conditional Auditor edge. The Auditor and Verifier are deterministic
+  code — no model call, no third-party tracing — and the trace says so.
+- **The demo is loopback-only and there is no hosted URL.** Exposing it
+  would put the household database behind no authentication. The repo is
+  private and Apache-2.0; the upgrade plan's public + MIT items and a
+  spending cap are still open.
 
 ---
 

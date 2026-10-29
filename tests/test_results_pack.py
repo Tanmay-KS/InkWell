@@ -53,6 +53,30 @@ def _memory(scenarios: int = 20) -> dict:
     }
 
 
+def _auditor(planted: int = 5) -> dict:
+    return {
+        "measured_at": "2026-10-29T12:00:00+00:00",
+        "synthetic": True,
+        "method": "deterministic Auditor over the real orchestrator",
+        "planted_count": planted,
+        "rejected_first_pass": planted,
+        "catch_rate": 1.0,
+        "false_approvals": 0,
+        "false_rejects": 0,
+        "approved_after_revision": planted,
+        "two_rounds_in_trace": planted,
+        "cases": [
+            {
+                "case_id": "case-01-wrong-amount",
+                "description": "Draft states a wrong amount.",
+                "first_decision": "reject",
+                "final_decision": "approve",
+                "first_codes": ["amount_mismatch"],
+            }
+        ],
+    }
+
+
 def _cost(calls: int = 20) -> dict:
     return {
         "measured_at": "2026-10-28T17:00:00+00:00",
@@ -109,6 +133,19 @@ def test_memory_needs_enough_scenarios():
     assert "3 scenarios" in finding.detail
 
 
+def test_auditor_needs_the_planted_cases():
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "auditor.json"
+        path.write_text(json.dumps(_auditor(planted=1)))
+
+        _, finding = results_pack.load_auditor(path)
+
+    assert finding.ready is False
+    assert "1 planted cases" in finding.detail
+
+
 def test_cost_needs_successful_calls():
     import tempfile
 
@@ -130,10 +167,12 @@ def test_report_never_copies_an_example_excerpt():
             leak_finding,
             results_pack.load_memory(Path("memory.json"))[1],
             results_pack.load_cost(Path("cost.json"))[1],
+            results_pack.load_auditor(Path("auditor.json"))[1],
         ],
         leak,
         _memory(),
         _cost(),
+        _auditor(),
         charts={},
         artifacts={},
     )
@@ -161,6 +200,7 @@ def test_main_writes_the_report_and_charts(tmp_path):
     (results / "leak_test.json").write_text(json.dumps(_leak()))
     (results / "memory_eval.json").write_text(json.dumps(_memory()))
     (results / "cost_latency.json").write_text(json.dumps(_cost()))
+    (results / "auditor_eval.json").write_text(json.dumps(_auditor()))
 
     docs = tmp_path / "docs"
     report = docs / "results.md"
@@ -191,6 +231,7 @@ def test_main_returns_2_when_one_number_is_not_ready(tmp_path):
     (results / "leak_test.json").write_text(json.dumps(_leak()))
     (results / "memory_eval.json").write_text(json.dumps(_memory(3)))
     (results / "cost_latency.json").write_text(json.dumps(_cost()))
+    (results / "auditor_eval.json").write_text(json.dumps(_auditor()))
 
     docs = tmp_path / "docs"
     code = results_pack.main(

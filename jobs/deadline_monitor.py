@@ -51,6 +51,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 from agent.memory.hermes_memory import SIDECAR_PATH, HouseholdItem, HouseholdMemory
+from agent.verifier import inventory_findings
 
 __all__ = ["JobConfig", "main", "run_once", "state_status"]
 
@@ -131,7 +132,14 @@ def _log_notification(record: dict[str, object]) -> None:
     print(f"ledger: due {when}{eta} — {record.get('provider')} {record.get('kind')}")
 
 
-def _write_state(config: JobConfig, *, today: date, checked: int, flagged: list[dict]) -> Path:
+def _write_state(
+    config: JobConfig,
+    *,
+    today: date,
+    checked: int,
+    flagged: list[dict],
+    findings: dict[str, object] | None = None,
+) -> Path:
     """Record that this run happened.
 
     Written atomically: a job killed mid-write must leave either the
@@ -148,9 +156,12 @@ def _write_state(config: JobConfig, *, today: date, checked: int, flagged: list[
         "notify": config.notify,
         "checked": checked,
         "flagged": [
-            {"item_id": record["item_id"], "renewal_date": record["renewal_date"]}
+            {"item_id": record["item_id"], "renewal_date": record.get("renewal_date")}
             for record in flagged
+            if "item_id" in record
         ],
+        "findings": findings or {},
+        "findings_summary": (findings or {}).get("summary", ""),
     }
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -200,8 +211,12 @@ def run_once(
         memory.connect()
 
     flagged: list[dict[str, object]] = []
+    findings: dict[str, object] = {}
     try:
         items = memory.due_within(config.look_ahead_days, today=today)
+        findings = inventory_findings(
+            memory.all_items(), today=today, horizon_days=config.look_ahead_days
+        )
         for item in items:
             event = _event_for(item)
             if memory.was_handled(item.item_id, event):
@@ -225,12 +240,42 @@ def run_once(
                 record["notified"] = False
 
             flagged.append(record)
+
+        # The Verifier's finding is pushed once per day, separately from
+        # the per-item reminders. It is the proactive part of the demo:
+        # "2 deadlines this week, 1 likely duplicate charge".
+        duplicates = findings.get("duplicates") or []
+        if notify and duplicates:
+            first = duplicates[0].get("first") if isinstance(duplicates[0], dict) else None
+            owner_id = str(first.get("item_id") or "") if isinstance(first, dict) else ""
+            event = f"{EVENT_PREFIX}:verifier:{today.isoformat()}"
+            if owner_id and not memory.was_handled(owner_id, event):
+                summary_record: dict[str, object] = {
+                    "item_id": owner_id,
+                    "kind": "findings",
+                    "provider": "Ledger",
+                    "summary": findings.get("summary", ""),
+                    "due_count": len(findings.get("due") or []),
+                    "duplicate_count": len(duplicates),
+                }
+                try:
+                    deliver(summary_record)
+                    memory.record_event(
+                        owner_id, event, json.dumps(summary_record, sort_keys=True)
+                    )
+                    summary_record["notified"] = True
+                except Exception as exc:
+                    summary_record["notified"] = False
+                    summary_record["error"] = str(exc)
+                flagged.append(summary_record)
     finally:
         if owns_memory:
             memory.close()
 
     if notify:
-        _write_state(config, today=today, checked=len(items), flagged=flagged)
+        _write_state(
+            config, today=today, checked=len(items), flagged=flagged, findings=findings
+        )
 
     return flagged
 

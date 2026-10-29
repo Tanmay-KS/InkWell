@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="380" viewBox="0 0 720 380" role="img" aria-label="Auditor catch rate on planted errors">
+<rect width="720" height="380" fill="#ffffff"/>
+<text x="64" y="34" font-family="system-ui, sans-serif" font-size="19" font-weight="600" fill="#0f172a">Auditor catch rate on planted errors</text>
+<text x="64" y="56" font-family="system-ui, sans-serif" font-size="12" fill="#64748b">5 synthetic cases · deterministic checks</text>
+<rect x="643.0" y="28" width="10" height="10" rx="2" fill="#16a34a"/><text x="659.0" y="37" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">cases</text>
+<line x1="64" y1="318.0" x2="696" y2="318.0" stroke="#e2e8f0" stroke-width="1"/><text x="56" y="322.0" text-anchor="end" font-family="system-ui, sans-serif" font-size="10" fill="#64748b">0</text>
+<line x1="64" y1="262.5" x2="696" y2="262.5" stroke="#e2e8f0" stroke-width="1"/><text x="56" y="266.5" text-anchor="end" font-family="system-ui, sans-serif" font-size="10" fill="#64748b">1</text>
+<line x1="64" y1="207.0" x2="696" y2="207.0" stroke="#e2e8f0" stroke-width="1"/><text x="56" y="211.0" text-anchor="end" font-family="system-ui, sans-serif" font-size="10" fill="#64748b">2</text>
+<line x1="64" y1="151.5" x2="696" y2="151.5" stroke="#e2e8f0" stroke-width="1"/><text x="56" y="155.5" text-anchor="end" font-family="system-ui, sans-serif" font-size="10" fill="#64748b">4</text>
+<line x1="64" y1="96.0" x2="696" y2="96.0" stroke="#e2e8f0" stroke-width="1"/><text x="56" y="100.0" text-anchor="end" font-family="system-ui, sans-serif" font-size="10" fill="#64748b">5</text>
+<rect x="141.3" y="96.0" width="52.0" height="222.0" rx="2" fill="#16a34a"/><text x="167.3" y="90.0" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#0f172a">5</text>
+<text x="169.3" y="340" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#0f172a">planted errors caught</text>
+<rect x="352.0" y="96.0" width="52.0" height="222.0" rx="2" fill="#16a34a"/><text x="378.0" y="90.0" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#0f172a">5</text>
+<text x="380.0" y="340" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#0f172a">approved after revision</text>
+<rect x="562.7" y="318.0" width="52.0" height="0.0" rx="2" fill="#16a34a"/><text x="588.7" y="312.0" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#0f172a">0</text>
+<text x="590.7" y="340" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#0f172a">false approves</text>
+<line x1="64" y1="318" x2="696" y2="318" stroke="#64748b" stroke-width="1"/>
+</svg>

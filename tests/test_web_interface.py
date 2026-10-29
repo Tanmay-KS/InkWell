@@ -154,13 +154,17 @@ def test_the_demo_summary_is_fictional_and_seeded(web):
     status, _, data = _json(web, "GET", "/api/summary", {})
     assert status == 200
     assert data["demo"] is True
-    assert len(data["items"]) == 4
+    assert len(data["items"]) == 5
     assert {item["provider"] for item in data["items"]} == {
         "Northstar Auto", "Orchard Fitness", "BrightSmile Dental", "RiverFlix",
     }
     # A cancelled item stays in the household list but not in "coming up".
     assert "RiverFlix" not in {item["provider"] for item in data["due"]}
-    assert len(data["due"]) == 3
+    assert len(data["due"]) == 4
+    # The demo opens on a pushed finding, not on a typed prompt.
+    kinds = {finding["kind"] for finding in data["findings"]["findings"]}
+    assert "duplicate_charge" in kinds
+    assert "deadline" in kinds
 
 
 # --- the chat route --------------------------------------------------------
@@ -247,6 +251,34 @@ def test_a_text_notice_is_tracked_and_drafted(web):
 
     _, _, summary = _json(web, "GET", "/api/summary", {})
     assert "Meridian Mutual Insurance" in {item["provider"] for item in summary["items"]}
+    assert len(data["trace"]) >= 5
+    assert any(step["agent"] == "Auditor" for step in data["trace"])
+    assert data["audit"]["decision"] in {"approve", "reject"}
+
+
+def test_the_demo_trace_contains_a_rejection_and_a_revision(web):
+    from interface.web.server import _demo_trace_state
+
+    web.demo_trace = _demo_trace_state().to_dict()  # type: ignore[attr-defined]
+    status, _, data = _json(web, "GET", "/api/trace", {})
+    assert status == 200
+    statuses = [step["status"] for step in data["run"]["trace"] if step["agent"] == "Auditor"]
+    assert "rejected" in statuses
+    assert "ok" in statuses
+    denied = [step for step in data["run"]["trace"] if step["egress"].startswith(("allowed", "blocked"))]
+    assert denied == []
+
+
+def test_the_trace_never_contains_raw_personal_detail(web):
+    from interface.web.server import _demo_trace_state
+
+    run = _demo_trace_state().to_dict()
+    blob = json.dumps(run)
+    assert "taylor.reed@example.com" not in blob
+    assert "POL-482913-Z" not in blob
+    for step in run["trace"]:
+        assert "@" not in step["input_summary"]
+        assert "@" not in step["output_summary"]
 
 
 def test_an_upload_without_a_date_is_rejected(web):

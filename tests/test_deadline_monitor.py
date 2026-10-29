@@ -146,6 +146,25 @@ def test_a_moved_renewal_is_announced_again(memory, tmp_path):
     assert len(_run(memory, config)) == 1
 
 
+def test_the_verifier_summary_is_pushed_once(memory, tmp_path):
+    memory.upsert(_item(item_id="item-1", renewal=TODAY + timedelta(days=5)))
+    memory.upsert(_item(item_id="item-2", renewal=TODAY + timedelta(days=6)))
+    config = _config(tmp_path)
+    delivered: list[dict] = []
+
+    flagged = _run(memory, config, notifier=delivered.append)
+
+    summary = [record for record in flagged if record.get("kind") == "findings"]
+    assert len(summary) == 1
+    assert summary[0]["duplicate_count"] == 1
+    assert summary[0]["due_count"] == 2
+    assert "duplicate" in str(summary[0]["summary"])
+    assert summary[0]["notified"] is True
+
+    # The summary is idempotent like the reminders.
+    assert _run(memory, config, notifier=delivered.append) == []
+
+
 def test_the_run_record_advances(memory, tmp_path):
     memory.upsert(_item())
     config = _config(tmp_path)

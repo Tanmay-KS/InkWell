@@ -1,0 +1,9 @@
+{
+  "id": "case-05-unexpected-personal-data",
+  "description": "Draft carries an email address the letter does not need.",
+  "expect": "reject",
+  "expected_code": "unexpected_personal_data",
+  "edit": {
+    "append": "You can also reach me at taylor.reed@example.com."
+  }
+}

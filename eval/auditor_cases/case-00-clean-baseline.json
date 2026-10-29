@@ -1,0 +1,7 @@
+{
+  "id": "case-00-clean-baseline",
+  "description": "Unmodified template draft — the control case.",
+  "expect": "approve",
+  "expected_code": null,
+  "edit": null
+}

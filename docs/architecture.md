@@ -128,15 +128,65 @@ the document's serialisable form.
 
 ---
 
-## The three proofs
+## The role graph (glass-box upgrade)
 
-The video needs three numbers. Each maps to a place in this tree.
+The upgrade wraps the data flow in explicit roles with a shared state
+object. It is **plain Python** — no LangGraph or CrewAI dependency — and
+the Auditor/Verifier are deterministic code:
+
+```
+Trigger: upload OR Watcher (Serverless Job)
+                    │
+                    ▼
+        ORCHESTRATOR (code, no LLM) — state + retry cap
+                    │
+   ┌────────────────┼───────────────────────────────┐
+   ▼                ▼               ▼               ▼
+Redactor        Extractor       Verifier        Researcher
+(local)         (local)         (code)          (optional Tavily,
+strips PII      amounts, dates  sums, dates,    redacted queries)
+FIRST                           duplicates
+                    │
+                    ▼
+                 Drafter (template)
+                    │
+                    ▼
+        AUDITOR (deterministic) — veto, not a supervisor
+            │ reject + reasons ──► Drafter (max 2 rounds)
+            ▼ approve
+      Human approval ──► user saves or sends (never auto-sent)
+```
+
+The shared state is:
+
+```
+{doc_id, redacted_text, extracted_fields, verified_facts,
+ research_notes, draft, audit_result, retries, status}
+```
+
+`agent/trace.py` records every handoff as one JSON line, with the agent,
+tier, model, latency, token counts, redacted summaries, egress and status.
+The web timeline renders the same events. There is no third-party tracing
+service in the path.
+
+The Auditor checks four things: amounts and dates match the Verifier, a
+factual assertion has a Verifier fact or source span, personal detail does
+not exceed what the letter needs, and there is no promised outcome or
+legal-advice phrasing. Two rejections is the cap; then the run stops at
+`needs_human_review`.
+
+---
+
+## The four numbers
+
+Each number maps to a place in this tree.
 
 | Proof | Lives in | What it shows |
 |---|---|---|
 | Leak rate | `eval/leak_test.py` | how often personal details appear in outbound payloads with the router ON vs OFF — **100% → 0%** on 200 documents ([`docs/leak-test.md`](leak-test.md)) |
 | Memory accuracy | `eval/memory_updates_eval.py` | accuracy on questions where the underlying fact changed, not just recall |
 | Cost / latency per tier | `eval/cost_latency_bench.py` | the price of routing across Nano / Super / Ultra |
+| Auditor catch rate | `eval/auditor_eval.py` | planted errors rejected on the first pass, false approves, and approval after revision — **5/5, 0 false approves** on synthetic cases |
 
 ---
 

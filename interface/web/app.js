@@ -64,6 +64,96 @@ function message(value) {
   document.getElementById("notice").textContent = value;
 }
 
+function badge(text, variant) {
+  const span = document.createElement("span");
+  span.className = `badge ${variant || ""}`.trim();
+  span.textContent = text;
+  return span;
+}
+
+function renderFindings(findings) {
+  const list = document.getElementById("findings");
+  const summary = document.getElementById("findings-summary");
+  list.replaceChildren();
+  if (!findings || !findings.findings || !findings.findings.length) {
+    summary.textContent = "No pushed findings yet.";
+    document.getElementById("findings-count").textContent = "0 findings";
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    empty.textContent = "Nothing needs attention this week.";
+    list.append(empty);
+    return;
+  }
+  document.getElementById("findings-count").textContent =
+    `${findings.findings.length} ${findings.findings.length === 1 ? "finding" : "findings"}`;
+  summary.textContent = findings.summary || "";
+  for (const finding of findings.findings) {
+    const row = document.createElement("li");
+    row.className = `finding ${finding.severity || ""}`.trim();
+    const what = document.createElement("span");
+    what.className = "what";
+    const title = document.createElement("strong");
+    title.textContent = finding.title;
+    const detail = document.createElement("span");
+    detail.className = "detail";
+    detail.textContent = finding.detail;
+    what.append(title, detail);
+    row.append(what);
+    list.append(row);
+  }
+}
+
+function renderTrace(run) {
+  const list = document.getElementById("trace");
+  const label = document.getElementById("trace-run");
+  list.replaceChildren();
+  if (!run || !run.trace || !run.trace.length) {
+    label.textContent = "";
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    empty.textContent = "Run a document to see every step.";
+    list.append(empty);
+    return;
+  }
+  label.textContent = `${run.trace.length} steps · ${run.status}`;
+  for (const step of run.trace) {
+    const row = document.createElement("li");
+    const number = document.createElement("span");
+    number.className = "step-no";
+    number.textContent = step.step;
+    const agent = document.createElement("span");
+    agent.className = "step-agent";
+    agent.textContent = step.agent;
+    const summary = document.createElement("span");
+    summary.className = "step-summary";
+    const details = [step.output_summary];
+    if (step.model) details.push(step.model);
+    details.push(`${step.latency_ms} ms`);
+    summary.textContent = details.filter(Boolean).join(" · ");
+    const tier = badge(step.tier || "code", "tier");
+    const egress = badge(
+      step.egress === "none" ? "no egress" : step.egress,
+      step.egress.startsWith("allowed") ? "bad" : "ok",
+    );
+    const status = badge(
+      step.status,
+      step.status === "ok" ? "ok" : "bad",
+    );
+    row.append(number, agent, summary, tier, egress, status);
+    list.append(row);
+  }
+}
+
+async function refreshTrace() {
+  try {
+    const data = await request("/api/trace");
+    renderTrace(data.run);
+  } catch (error) {
+    // A trace is evidence, not a requirement for the household list.
+    console.warn(error.message);
+  }
+}
+
 function addChatMessage(role, text) {
   const log = document.getElementById("chat-log");
   const bubble = document.createElement("div");
@@ -109,6 +199,7 @@ async function refresh() {
   const data = await request("/api/summary");
   document.getElementById("mode").textContent =
     data.demo ? "Demo · fictional data" : "Local household";
+  renderFindings(data.findings);
   render("due", data.due, true);
   render("items", data.items);
 }
@@ -137,6 +228,15 @@ document.getElementById("upload").addEventListener("submit", async (event) => {
     const body = document.createElement("pre");
     body.textContent = result.draft;
     draft.append(heading, body);
+    if (result.audit) {
+      const audit = document.createElement("p");
+      audit.className = "notice";
+      audit.textContent = result.status === "ok"
+        ? `Auditor approved after ${result.retries} revision(s).`
+        : `Auditor stopped at ${result.status}: ${result.audit.reasons.join("; ")}`;
+      draft.append(audit);
+    }
+    if (result.trace) renderTrace({ trace: result.trace, status: result.status });
     message("Notice processed. Review the draft before sending it yourself.");
     await refresh();
   } catch (error) {
@@ -147,3 +247,4 @@ document.getElementById("upload").addEventListener("submit", async (event) => {
 });
 
 refresh().catch((error) => message(error.message));
+refreshTrace();

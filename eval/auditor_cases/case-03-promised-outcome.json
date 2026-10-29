@@ -1,0 +1,9 @@
+{
+  "id": "case-03-promised-outcome",
+  "description": "Draft promises an outcome.",
+  "expect": "reject",
+  "expected_code": "promised_outcome",
+  "edit": {
+    "append": "You will receive a refund within 30 days."
+  }
+}

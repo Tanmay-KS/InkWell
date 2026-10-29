@@ -222,6 +222,10 @@ leak-test-smoke: ## Fast leak-test smoke run — never overwrites the canonical 
 memory-eval: ## Phase 3 — memory-with-updates accuracy
 	$(PY) $(EVAL)/memory_updates_eval.py
 
+.PHONY: auditor-eval
+auditor-eval: ## Upgrade Phase D — Auditor catch rate over planted cases
+	$(PY) $(EVAL)/auditor_eval.py
+
 .PHONY: bench
 bench: ## Phase 3 — per-tier cost and latency
 	$(PY) $(EVAL)/cost_latency_bench.py
@@ -255,7 +259,7 @@ demo-web: ## Run the web view with isolated fictional demo data
 	$(PY) -m interface.web.server --demo
 
 .PHONY: results
-results: ## Phase 3 — compile the three numbers into docs/results.md + charts
+results: ## Phase 3 + Upgrade — compile the four numbers into docs/results.md + charts
 	$(PY) $(EVAL)/results_pack.py
 
 .PHONY: clean
