@@ -1,0 +1,9 @@
+{
+  "id": "case-02-uncited-claim",
+  "description": "Draft contains an uncited claim.",
+  "expect": "reject",
+  "expected_code": "uncited_claim",
+  "edit": {
+    "append": "Your policy includes a 30-day cooling-off period."
+  }
+}

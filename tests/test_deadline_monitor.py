@@ -1,58 +1,47 @@
-"""Tests for the Phase 3 deadline monitor.
+"""Tests for the Phase 3 background deadline monitor.
 
-These tests run entirely offline. They use a temporary SQLite sidecar and
-fake notifiers, so the idempotency and failure behavior can be asserted
-without a Nebius job, a chat gateway, or a real household database.
+The job's whole value is that it runs when nobody is watching, so the
+tests are about the properties that fail silently in production:
 
-The important property is not "does it find a date". `HouseholdMemory`
-already owns that query. The monitor's job is to notify *once*, fail
-retryably, and keep personal values out of operational output.
+* a due item is announced once, not every day;
+* a dry run announces nothing and does not consume the real notification;
+* a failed delivery is retried, not swallowed;
+* the run record advances, because that is the only evidence the schedule
+  is actually firing.
 """
 
 from __future__ import annotations
 
-import json
-import shlex
-import subprocess
-import sys
-from datetime import date, timedelta
-from pathlib import Path
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
 from agent.memory.hermes_memory import HouseholdItem, HouseholdMemory, TrackedState
-from jobs.deadline_monitor import JobConfig, main, run_once
-from jobs.notifier import command_notifier, stdout_notifier
+from jobs.deadline_monitor import JobConfig, main, run_once, state_status
 
 TODAY = date(2026, 10, 20)
 
 
-class FakeNotifier:
-    """A notifier that records notices and can fail on demand."""
-
-    def __init__(self, error: BaseException | None = None) -> None:
-        self.notices: list[dict[str, object]] = []
-        self.error = error
-
-    def __call__(self, notice: dict[str, object]) -> None:
-        self.notices.append(dict(notice))
-        if self.error is not None:
-            raise self.error
-
-
-class FailFirstNotifier(FakeNotifier):
-    """Fail the first delivery, then succeed, to test per-item isolation."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.failed = False
-
-    def __call__(self, notice: dict[str, object]) -> None:
-        if not self.failed:
-            self.failed = True
-            self.notices.append(dict(notice))
-            raise RuntimeError("first delivery failed")
-        super().__call__(notice)
+def _item(
+    *,
+    item_id: str = "item-1",
+    provider: str = "Meridian Mutual",
+    renewal: date | None = None,
+    state: TrackedState = TrackedState.NEW,
+    holder: str = "Devin Sullivan",
+    reference: str = "POL-482913-Z",
+    amount: float = 148.95,
+) -> HouseholdItem:
+    return HouseholdItem(
+        item_id=item_id,
+        kind="insurance",
+        provider=provider,
+        holder=holder,
+        reference=reference,
+        renewal_date=renewal or TODAY + timedelta(days=5),
+        amount=amount,
+        state=state,
+    )
 
 
 @pytest.fixture
@@ -62,388 +51,188 @@ def memory(tmp_path):
     store.close()
 
 
-@pytest.fixture
-def config(tmp_path):
+def _config(tmp_path, **overrides):
     return JobConfig(
-        look_ahead_days=14,
-        notify=True,
         state_path=str(tmp_path / "state" / "job_state.json"),
-        household_id="test-house",
+        memory_path=str(tmp_path / "memory.db"),
+        **overrides,
     )
 
 
-def add_item(
-    memory: HouseholdMemory,
-    *,
-    provider: str = "Acme",
-    days: int = 3,
-    holder: str = "Devin Sullivan",
-    reference: str = "REF-123",
-    state: TrackedState = TrackedState.NEW,
-    kind: str = "subscription",
-) -> HouseholdItem:
-    item = HouseholdItem(
-        item_id=HouseholdItem.make_id(provider, holder, reference),
-        kind=kind,
-        provider=provider,
-        holder=holder,
-        reference=reference,
-        renewal_date=TODAY + timedelta(days=days),
-        state=state,
-    )
-    memory.upsert(item)
-    return item
+def _run(memory, config, **kwargs):
+    return run_once(config, today=TODAY, memory=memory, **kwargs)
 
 
-def test_due_item_is_notified_and_marked_handled(memory, config):
-    item = add_item(memory)
-    notifier = FakeNotifier()
+def test_flags_a_due_item_once(memory, tmp_path):
+    memory.upsert(_item())
+    config = _config(tmp_path)
+    delivered: list[dict] = []
 
-    flagged = run_once(
-        config,
-        today=TODAY,
-        memory=memory,
-        notifier=notifier,
-    )
+    flagged = _run(memory, config, notifier=delivered.append)
 
     assert len(flagged) == 1
-    assert flagged[0]["item_id"] == item.item_id
+    assert flagged[0]["provider"] == "Meridian Mutual"
+    assert flagged[0]["days_until"] == 5
     assert flagged[0]["notified"] is True
-    assert flagged[0]["days_until"] == 3
-    assert memory.was_handled(item.item_id, "notified") is True
+    assert delivered == [{**flagged[0]}]
 
-    [notice] = notifier.notices
-    assert notice["holder"] == "Devin Sullivan"
-    assert notice["reference"] == "REF-123"
-    assert notice["event"] == "deadline"
+    # The second pass is the one that matters: a daily job must not repeat itself.
+    assert _run(memory, config, notifier=delivered.append) == []
+    assert len(delivered) == 1
 
 
-def test_the_returned_summary_does_not_contain_personal_fields(memory, config):
-    add_item(memory)
+def test_notification_carries_no_personal_detail(memory, tmp_path):
+    memory.upsert(_item())
+    delivered: list[dict] = []
 
-    [summary] = run_once(
-        config,
-        today=TODAY,
-        memory=memory,
-        notifier=FakeNotifier(),
-    )
+    _run(memory, _config(tmp_path), notifier=delivered.append)
 
-    assert "holder" not in summary
-    assert "reference" not in summary
-    assert "amount" not in summary
+    record = delivered[0]
+    assert "holder" not in record
+    assert "reference" not in record
+    assert "Devin" not in str(record)
+    assert "POL-482913-Z" not in str(record)
 
 
-def test_item_outside_the_window_is_not_flagged(memory, config):
-    add_item(memory, provider="Later", days=30)
-    notifier = FakeNotifier()
+def test_dry_run_does_not_consume_the_notification(memory, tmp_path):
+    memory.upsert(_item())
+    config = _config(tmp_path, notify=False)
 
-    flagged = run_once(config, today=TODAY, memory=memory, notifier=notifier)
+    preview = _run(memory, config)
 
-    assert flagged == []
-    assert notifier.notices == []
+    assert len(preview) == 1
+    assert preview[0]["notified"] is False
+    assert not (tmp_path / "state" / "job_state.json").exists()
+    assert not memory.was_handled("item-1", "deadline_notified:2026-10-25")
 
-
-def test_item_on_the_window_boundary_is_flagged(memory, config):
-    add_item(memory, provider="Boundary", days=14)
-
-    flagged = run_once(
-        config,
-        today=TODAY,
-        memory=memory,
-        notifier=FakeNotifier(),
-    )
-
-    assert len(flagged) == 1
-    assert flagged[0]["days_until"] == 14
+    # The real run still has something to say.
+    assert len(_run(memory, _config(tmp_path))) == 1
 
 
-def test_dismissed_item_is_not_flagged(memory, config):
-    add_item(memory, provider="Dismissed", state=TrackedState.DISMISSED)
-    notifier = FakeNotifier()
+def test_dismissed_items_are_left_alone(memory, tmp_path):
+    memory.upsert(_item(state=TrackedState.DISMISSED))
 
-    flagged = run_once(config, today=TODAY, memory=memory, notifier=notifier)
-
-    assert flagged == []
-    assert notifier.notices == []
+    assert _run(memory, _config(tmp_path)) == []
 
 
-def test_handled_item_is_not_flagged_even_without_an_event(memory, config):
-    add_item(memory, provider="Already Handled", state=TrackedState.HANDLED)
-    notifier = FakeNotifier()
+def test_far_off_items_are_not_flagged(memory, tmp_path):
+    memory.upsert(_item(renewal=TODAY + timedelta(days=45)))
 
-    flagged = run_once(config, today=TODAY, memory=memory, notifier=notifier)
-
-    assert flagged == []
-    assert notifier.notices == []
+    assert _run(memory, _config(tmp_path)) == []
 
 
-def test_second_run_does_not_notify_again(memory, config):
-    add_item(memory)
-    notifier = FakeNotifier()
+def test_a_failed_delivery_is_retried_not_swallowed(memory, tmp_path):
+    memory.upsert(_item())
+    config = _config(tmp_path)
 
-    first = run_once(config, today=TODAY, memory=memory, notifier=notifier)
-    second = run_once(config, today=TODAY, memory=memory, notifier=notifier)
+    def broken(_record):
+        raise RuntimeError("gateway down")
 
-    assert len(first) == 1
-    assert second == []
-    assert len(notifier.notices) == 1
+    flagged = _run(memory, config, notifier=broken)
 
-
-def test_notifier_can_be_injected_through_the_config(memory, config):
-    add_item(memory)
-    notifier = FakeNotifier()
-    config.notifier = notifier
-
-    flagged = run_once(config, today=TODAY, memory=memory)
-
-    assert len(flagged) == 1
-    assert len(notifier.notices) == 1
-
-
-def test_callable_in_extra_is_used_as_a_notifier(memory, config):
-    add_item(memory)
-    notifier = FakeNotifier()
-    config.extra["notifier"] = notifier
-
-    flagged = run_once(config, today=TODAY, memory=memory)
-
-    assert len(flagged) == 1
-    assert len(notifier.notices) == 1
-
-
-def test_notifier_failure_is_retryable(memory, config):
-    item = add_item(memory)
-    failing = FakeNotifier(error=RuntimeError("gateway down"))
-
-    first = run_once(config, today=TODAY, memory=memory, notifier=failing)
-
-    assert len(first) == 1
-    assert first[0]["notified"] is False
-    assert memory.was_handled(item.item_id, "notified") is False
-
-    succeeding = FakeNotifier()
-    second = run_once(config, today=TODAY, memory=memory, notifier=succeeding)
-
-    assert len(second) == 1
-    assert second[0]["notified"] is True
-    assert memory.was_handled(item.item_id, "notified") is True
-    assert len(succeeding.notices) == 1
-
-
-def test_notifier_failure_does_not_prevent_later_items(memory, config):
-    failed_item = add_item(memory, provider="First", days=2)
-    delivered_item = add_item(memory, provider="Second", days=3)
-    notifier = FailFirstNotifier()
-
-    flagged = run_once(config, today=TODAY, memory=memory, notifier=notifier)
-
-    assert len(flagged) == 2
-    assert flagged[0]["item_id"] == failed_item.item_id
     assert flagged[0]["notified"] is False
-    assert flagged[1]["item_id"] == delivered_item.item_id
-    assert flagged[1]["notified"] is True
-    assert memory.was_handled(failed_item.item_id, "notified") is False
-    assert memory.was_handled(delivered_item.item_id, "notified") is True
+    assert "gateway down" in flagged[0]["error"]
+    assert not memory.was_handled("item-1", "deadline_notified:2026-10-25")
+
+    delivered: list[dict] = []
+    assert len(_run(memory, config, notifier=delivered.append)) == 1
+    assert len(delivered) == 1
 
 
-def test_dry_run_does_not_notify_or_mark_handled(memory, tmp_path):
-    item = add_item(memory)
-    config = JobConfig(
-        look_ahead_days=14,
-        notify=False,
-        state_path=str(tmp_path / "state.json"),
-        household_id="test-house",
-    )
-    notifier = FakeNotifier()
+def test_a_moved_renewal_is_announced_again(memory, tmp_path):
+    memory.upsert(_item())
+    config = _config(tmp_path)
+    _run(memory, config)
 
-    flagged = run_once(config, today=TODAY, memory=memory, notifier=notifier)
+    memory.upsert(_item(renewal=TODAY + timedelta(days=7)))
 
-    assert len(flagged) == 1
-    assert flagged[0]["notified"] is False
-    assert notifier.notices == []
-    assert memory.was_handled(item.item_id, "notified") is False
+    assert len(_run(memory, config)) == 1
 
 
-def test_state_file_is_written_without_personal_values(memory, config):
-    add_item(memory)
+def test_the_verifier_summary_is_pushed_once(memory, tmp_path):
+    memory.upsert(_item(item_id="item-1", renewal=TODAY + timedelta(days=5)))
+    memory.upsert(_item(item_id="item-2", renewal=TODAY + timedelta(days=6)))
+    config = _config(tmp_path)
+    delivered: list[dict] = []
 
-    run_once(config, today=TODAY, memory=memory, notifier=FakeNotifier())
+    flagged = _run(memory, config, notifier=delivered.append)
 
-    path = Path(config.state_path)
-    assert path.exists()
-    text = path.read_text(encoding="utf-8")
-    assert "Devin Sullivan" not in text
-    assert "REF-123" not in text
+    summary = [record for record in flagged if record.get("kind") == "findings"]
+    assert len(summary) == 1
+    assert summary[0]["duplicate_count"] == 1
+    assert summary[0]["due_count"] == 2
+    assert "duplicate" in str(summary[0]["summary"])
+    assert summary[0]["notified"] is True
 
-    state = json.loads(text)
-    assert state["household_id"] == "test-house"
-    assert state["due"] == 1
-    assert state["flagged"] == 1
-    assert state["notified"] == 1
-    assert state["failures"] == 0
-
-
-def test_state_write_failure_does_not_cancel_notification(memory, tmp_path):
-    add_item(memory)
-    blocker = tmp_path / "not-a-directory"
-    blocker.write_text("x", encoding="utf-8")
-    config = JobConfig(
-        look_ahead_days=14,
-        notify=True,
-        state_path=str(blocker / "job_state.json"),
-        household_id="test-house",
-    )
-    notifier = FakeNotifier()
-
-    flagged = run_once(config, today=TODAY, memory=memory, notifier=notifier)
-
-    assert len(flagged) == 1
-    assert flagged[0]["notified"] is True
-    assert len(notifier.notices) == 1
+    # The summary is idempotent like the reminders.
+    assert _run(memory, config, notifier=delivered.append) == []
 
 
-def test_negative_look_ahead_is_rejected(memory):
-    config = JobConfig(look_ahead_days=-1, notify=False)
+def test_the_run_record_advances(memory, tmp_path):
+    memory.upsert(_item())
+    config = _config(tmp_path)
 
-    with pytest.raises(ValueError):
-        run_once(config, today=TODAY, memory=memory)
+    _run(memory, config)
 
-
-def test_stdout_notifier_omits_personal_fields(capsys):
-    notice = {
-        "event": "deadline",
-        "household_id": "test-house",
-        "item_id": "item-1",
-        "kind": "subscription",
-        "provider": "Acme",
-        "holder": "Devin Sullivan",
-        "reference": "REF-123",
-        "renewal_date": "2026-10-23",
-        "days_until": 3,
-        "amount": 12.34,
-    }
-
-    stdout_notifier()(notice)
-    output = capsys.readouterr().out
-
-    payload = json.loads(output)
-    assert payload["event"] == "deadline_notification"
-    assert payload["item_id"] == "item-1"
-    assert payload["provider"] == "Acme"
-    assert "amount" not in payload
-    assert "Devin Sullivan" not in output
-    assert "REF-123" not in output
-
-
-def test_command_notifier_pipes_the_full_notice(tmp_path):
-    script = tmp_path / "notify.py"
-    output = tmp_path / "notice.json"
-    script.write_text(
-        "import pathlib, sys\n"
-        "pathlib.Path(sys.argv[1]).write_text(sys.stdin.read(), encoding='utf-8')\n",
-        encoding="utf-8",
-    )
-    command = shlex.join([sys.executable, str(script), str(output)])
-    notice = {
-        "event": "deadline",
-        "item_id": "item-1",
-        "holder": "Devin Sullivan",
-        "reference": "REF-123",
-    }
-
-    command_notifier(command)(notice)
-
-    payload = json.loads(output.read_text(encoding="utf-8"))
-    assert payload["item_id"] == "item-1"
-    assert payload["holder"] == "Devin Sullivan"
-    assert payload["reference"] == "REF-123"
-
-
-def test_command_notifier_failure_does_not_echo_the_payload():
-    command = shlex.join([sys.executable, "-c", "raise SystemExit(7)"])
-    notifier = command_notifier(command)
-
-    with pytest.raises(RuntimeError) as caught:
-        notifier({"holder": "Devin Sullivan", "reference": "REF-123"})
-
-    assert "7" in str(caught.value)
-    assert "Devin Sullivan" not in str(caught.value)
-    assert "REF-123" not in str(caught.value)
-
-
-def test_command_notifier_rejects_an_empty_command():
-    with pytest.raises(ValueError):
-        command_notifier("   ")
-
-
-def test_command_notifier_rejects_a_non_positive_timeout():
-    with pytest.raises(ValueError):
-        command_notifier(sys.executable, timeout=0)
-
-
-def test_command_notifier_times_out():
-    command = shlex.join([sys.executable, "-c", "import time; time.sleep(2)"])
-    notifier = command_notifier(command, timeout=0.05)
-
-    with pytest.raises(subprocess.TimeoutExpired):
-        notifier({"item_id": "item-1"})
-
-
-def test_module_entrypoint_does_not_emit_runpy_warning():
-    root = Path(__file__).resolve().parents[1]
-    result = subprocess.run(
-        [sys.executable, "-m", "jobs.deadline_monitor", "--help"],
-        cwd=root,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0
-    assert "RuntimeWarning" not in result.stderr
-
-
-def test_main_dry_run_does_not_mark_items(memory, tmp_path, capsys):
-    item = add_item(memory)
-    state_path = tmp_path / "state.json"
-
-    code = main(
-        [
-            "--dry-run",
-            "--today",
-            TODAY.isoformat(),
-            "--memory-db",
-            str(memory.path),
-            "--state-path",
-            str(state_path),
-        ]
-    )
-
+    code, message = state_status(config.state_path)
     assert code == 0
-    assert memory.was_handled(item.item_id, "notified") is False
-    output = capsys.readouterr().out
-    assert "flagged 1 item(s)" in output
-    assert "Devin Sullivan" not in output
-    assert "REF-123" not in output
+    assert "1 checked, 1 flagged" in message
 
 
-def test_main_returns_failure_when_notification_fails(memory, tmp_path):
-    item = add_item(memory)
-    command = shlex.join([sys.executable, "-c", "raise SystemExit(1)"])
-
-    code = main(
-        [
-            "--notify",
-            "--notify-command",
-            command,
-            "--today",
-            TODAY.isoformat(),
-            "--memory-db",
-            str(memory.path),
-            "--state-path",
-            str(tmp_path / "state.json"),
-        ]
-    )
-
+def test_status_distinguishes_never_run_from_stale(tmp_path):
+    missing = tmp_path / "never.json"
+    code, message = state_status(missing)
     assert code == 1
-    assert memory.was_handled(item.item_id, "notified") is False
+    assert "never run" in message
+
+    stale = tmp_path / "stale.json"
+    stale.write_text(
+        '{"last_run": "%s", "checked": 3, "flagged": []}'
+        % (datetime.now(UTC) - timedelta(days=3))
+    )
+    code, message = state_status(stale)
+    assert code == 1
+    assert "not firing" in message
+
+
+def test_status_rejects_a_corrupt_record(tmp_path):
+    broken = tmp_path / "broken.json"
+    broken.write_text("{not json")
+
+    code, message = state_status(broken)
+    assert code == 1
+    assert "unreadable" in message
+
+
+def test_main_cli_execution_and_flags(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    state_file = tmp_path / "state.json"
+    store = HouseholdMemory(db_path)
+    store.upsert(_item())
+    store.close()
+
+    exit_code = main([
+        "--db",
+        str(db_path),
+        "--state",
+        str(state_file),
+        "--dry-run",
+    ])
+    assert exit_code == 0
+    assert not state_file.exists()
+
+    exit_code_run = main([
+        "--db",
+        str(db_path),
+        "--state",
+        str(state_file),
+    ])
+    assert exit_code_run == 0
+    assert state_file.exists()
+
+    exit_code_status = main([
+        "--state",
+        str(state_file),
+        "--status",
+    ])
+    assert exit_code_status == 0

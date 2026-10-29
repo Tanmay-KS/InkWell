@@ -1,7 +1,6 @@
-"""Background jobs.
+"""Background jobs package.
 
 Phase 3 — Person A.
-
 `deadline_monitor.py` is the Nebius Serverless Jobs entrypoint for
 background deadline monitoring.
 

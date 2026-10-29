@@ -2,10 +2,8 @@
 
 Phase 4 — Person B.
 
-The assets here (`index.html`, `app.js`) are served through the
-OpenShell gateway, not imported as Python. The package marker exists so
-that the static files can be declared as package data and shipped with an
-installed copy of the project.
+The local loopback server in `server.py` serves the static page and exposes
+the household summary, upload, and status-update routes.
 """
 
 __all__: list[str] = []

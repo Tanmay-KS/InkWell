@@ -15,6 +15,7 @@
         --warn: #e0af68;
         --ok: #9ece6a;
         --bad: #f7768e;
+        --surface: #202530;
       }
       * { box-sizing: border-box; }
       body {
@@ -23,8 +24,11 @@
         color: var(--text);
         font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
       }
+      a { color: var(--accent); }
+      button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+      button:disabled { opacity: .6; cursor: wait; }
       header {
-        padding: 22px 28px;
+        padding: 20px max(22px, calc((100vw - 940px) / 2));
         border-bottom: 1px solid var(--line);
         display: flex;
         align-items: baseline;
@@ -33,6 +37,10 @@
       h1 { font-size: 19px; margin: 0; letter-spacing: 0.2px; }
       header span { color: var(--muted); font-size: 13px; }
       main { max-width: 940px; margin: 0 auto; padding: 28px; }
+      .intro { color: var(--muted); max-width: 680px; margin: 0 0 22px; }
+      .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+      .mode { margin-left: auto; border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; }
       .panel {
         background: var(--panel);
         border: 1px solid var(--line);
@@ -71,8 +79,64 @@
       .state.soon { color: var(--warn); border-color: var(--warn); }
       .state.due { color: var(--bad); border-color: var(--bad); }
       .state.done { color: var(--ok); border-color: var(--ok); }
+      .banner {
+        border: 1px solid var(--warn);
+        color: var(--warn);
+        background: #2a2418;
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 13px;
+        margin: 0 0 18px;
+      }
+      .finding { align-items: flex-start; }
+      .finding .what { display: grid; gap: 3px; }
+      .finding .detail { color: var(--muted); font-size: 13px; }
+      .finding.warn .what strong { color: var(--warn); }
+      .finding.bad .what strong { color: var(--bad); }
+      .finding.ok .what strong { color: var(--ok); }
+      .timeline li { align-items: flex-start; flex-wrap: wrap; }
+      .step-no { color: var(--muted); min-width: 28px; font-variant-numeric: tabular-nums; }
+      .step-agent { min-width: 120px; font-weight: 600; }
+      .step-summary { flex: 1 1 320px; color: var(--muted); font-size: 13px; }
+      .badge {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        white-space: nowrap;
+        text-transform: lowercase;
+      }
+      .badge.ok { color: var(--ok); border-color: var(--ok); }
+      .badge.bad { color: var(--bad); border-color: var(--bad); }
+      .badge.tier { color: var(--accent); border-color: var(--accent); }
       .empty { color: var(--muted); font-style: italic; }
+      button, input[type="file"] { font: inherit; }
+      button { background: #27334d; color: var(--text); border: 1px solid var(--accent); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+      .upload { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+      input[type="file"] { max-width: 100%; color: var(--muted); }
+      .privacy-note { background: var(--surface); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+      .chat-log { display: grid; gap: 10px; max-height: 360px; overflow-y: auto; margin: 12px 0; }
+      .chat-message { max-width: 86%; padding: 10px 12px; border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .chat-message.assistant { background: var(--surface); justify-self: start; }
+      .chat-message.user { background: #27334d; justify-self: end; }
+      .chat-form { display: flex; gap: 10px; }
+      .chat-form input { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 10px; font: inherit; }
+      .suggestions { display: flex; gap: 8px; flex-wrap: wrap; }
+      .notice { color: var(--muted); min-height: 1.5em; }
+      pre { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+      .draft { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; }
       footer { color: var(--muted); font-size: 12px; padding: 0 28px 40px; max-width: 940px; margin: 0 auto; }
+      @media (max-width: 640px) {
+        main { padding: 20px 14px; }
+        header { padding: 18px 14px; }
+        .panel { padding: 15px; }
+        li { flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+        .when { min-width: 0; }
+        .what { flex-basis: calc(100% - 110px); }
+        .who { flex: 1; }
+        footer { padding-inline: 14px; }
+      }
       code {
         background: #1e222b;
         padding: 1px 5px;
@@ -85,21 +149,58 @@
     <header>
       <h1>Ledger</h1>
       <span>deadlines, renewals, and entitlements</span>
+      <span id="mode" class="mode">Local household</span>
     </header>
     <main>
+      <p class="intro">Keep the paperwork that matters in one place. Ledger finds dates, keeps a history of changes, and prepares drafts you can review.</p>
+      <p class="banner" role="note">Synthetic documents only. Do not upload real personal data.</p>
       <section class="panel">
-        <h2>Coming up</h2>
+        <div class="section-heading"><h2>Proactive findings</h2><span id="findings-count" class="count"></span></div>
+        <p id="findings-summary" class="intro"></p>
+        <ul id="findings"><li class="empty">Nothing needs attention this week.</li></ul>
+      </section>
+      <section class="panel">
+        <h2>Add a notice</h2>
+        <form id="upload" class="upload">
+          <input id="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.txt,.eml" required />
+          <button type="submit">Process locally</button>
+        </form>
+        <p id="notice" class="notice" role="status">Documents are processed on this machine.</p>
+        <p class="privacy-note">Documents stay on this machine during extraction. Drafts are never sent automatically. Outputs are information, not legal or financial advice.</p>
+        <div id="draft" class="draft" hidden></div>
+      </section>
+      <section class="panel">
+        <div class="section-heading"><h2>Glass-box trace</h2><span id="trace-run" class="count"></span></div>
+        <ul id="trace" class="timeline"><li class="empty">Run a document to see every step.</li></ul>
+      </section>
+      <section class="panel" aria-labelledby="chat-title">
+        <h2 id="chat-title">Ask Ledger</h2>
+        <div id="chat-log" class="chat-log" role="log" aria-live="polite">
+          <div class="chat-message assistant">Hi, I can look up your tracked items and upcoming dates. I can also record a cancellation or reactivation.</div>
+        </div>
+        <div class="suggestions">
+          <button type="button" data-prompt="What's coming up?">What's coming up?</button>
+          <button type="button" data-prompt="Show my items">Show my items</button>
+        </div>
+        <form id="chat-form" class="chat-form">
+          <input id="chat-input" type="text" maxlength="2000" autocomplete="off" aria-label="Message Ledger" placeholder="Ask about a renewal or update an item…" required />
+          <button type="submit">Send</button>
+        </form>
+        <p class="notice">Ledger answers from local household data. It does not send messages or contact providers.</p>
+      </section>
+      <section class="panel">
+        <div class="section-heading"><h2>Coming up</h2><span id="due-count" class="count"></span></div>
         <ul id="due"><li class="empty">Nothing due.</li></ul>
       </section>
 
       <section class="panel">
-        <h2>Household</h2>
+        <div class="section-heading"><h2>Household</h2><span id="item-count" class="count"></span></div>
         <ul id="items"><li class="empty">Nothing tracked yet.</li></ul>
       </section>
     </main>
     <footer>
-      Phase 4 — this view is a placeholder until the pipeline lands.
-      The data it renders comes from <code>agent/memory/hermes_memory.py</code>.
+      This local view reads <code>agent/memory/hermes_memory.py</code>.
+      Drafts are for review; Ledger never sends them.
     </footer>
     <script src="app.js"></script>
   </body>

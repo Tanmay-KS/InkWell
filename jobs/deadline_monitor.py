@@ -17,42 +17,72 @@ It owns three things:
 * **When** to run. Nebius Serverless Jobs are triggered by a schedule or
   by an event; the schedule is configured on the job, not in this file.
 * **What to do with the result.** Anything due gets a notification through
-  an injected notifier. The default notifier writes a safe event to the
-  job log; a command notifier is the seam for Telegram/Slack.
+  the messaging gateway, and anything already handled is left alone.
 * **Not doing it twice.** The handled log in `hermes_memory.py` is what
   makes the job idempotent — a job that runs every day must not re-notify
   about the same renewal every day.
 
-The operational log deliberately does not contain holder names or account
-references. The full notice is handed to the notifier, which is the only
-part of this job allowed to talk to the user's private channel.
+Two properties are deliberate:
+
+* **The run record is the liveness evidence.** Each real run writes
+  `last_run` to `state_path`. A schedule that exists but never fires looks
+  identical to a working one from the console; this file is how
+  `--status` tells them apart.
+* **The notification carries no personal detail.** A serverless job's
+  stdout is a log. The provider and the date are enough to act on; the
+  holder and the account number are not, and they stay out of the record.
+
+Usage:
+
+    python -m jobs.deadline_monitor                 # one pass, as the job does
+    python -m jobs.deadline_monitor --dry-run       # report, do not notify, do not record
+    python -m jobs.deadline_monitor --status        # is the schedule actually firing?
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
 import json
 import logging
 import os
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-from agent.memory.hermes_memory import HouseholdItem, HouseholdMemory, TrackedState
+from agent.memory.hermes_memory import SIDECAR_PATH, HouseholdItem, HouseholdMemory
+
+try:
+    from agent.verifier import inventory_findings
+except ImportError:
+    inventory_findings = None  # Minimal container image does not stage verifier
+
 from jobs.notifier import (
-    Notifier,
     command_notifier,
     stdout_notifier,
     telegram_notifier,
     webhook_notifier,
 )
 
-__all__ = ["JobConfig", "main", "run_once"]
+__all__ = ["JobConfig", "main", "run_once", "state_status"]
 
+Notifier = Callable[[dict[str, Any]], None]
+
+EVENT_PREFIX = "deadline_notified"
 LOG = logging.getLogger(__name__)
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name, "")
+    if not raw:
+        return default
+    try:
+        val = float(raw)
+        return val if val > 0 else default
+    except ValueError:
+        return default
 
 
 @dataclass(slots=True)
@@ -64,22 +94,17 @@ class JobConfig:
             not actionable yet; one inside a week is.
         notify: Whether to send notifications. False for a dry run.
         state_path: Where the job keeps its own run state, on the data
-            volume. This is operational metadata, not the idempotency
-            ledger; the ledger is the SQLite handled-event table.
+            volume. This is the liveness record, not the memory database.
         household_id: Which household to check. One household per
             deployment in the demo; the field exists so the multi-household
             version does not need a schema change.
-        memory_path: SQLite sidecar path. An empty value lets
-            `HouseholdMemory` use its normal environment default.
-        notification_command: Optional executable that receives the full
-            notice as JSON on stdin. When empty, the job uses the safe
-            stdout notifier.
-        notification_timeout_seconds: How long a command notifier may run
-            before the attempt is treated as failed.
-        notifier: Explicit notifier, mainly for tests and embedding.
-        extra: Extension point. A callable `notifier` here is used when the
-            field above is unset, so older call sites can inject one
-            without changing the dataclass.
+        memory_path: The SQLite sidecar. Empty means the standard location
+            (`LEDGER_MEMORY_DB`, else the Hermes data volume).
+        notification_command: Optional executable that receives the notice
+            as JSON on stdin.
+        notification_timeout_seconds: Timeout for command notifier execution.
+        notifier: Explicit notifier instance.
+        extra: Additional configuration dictionary.
     """
 
     look_ahead_days: int = 14
@@ -98,61 +123,25 @@ class JobConfig:
     notification_command: str = field(
         default_factory=lambda: os.environ.get("LEDGER_NOTIFY_COMMAND", "")
     )
-    notification_timeout_seconds: float = 30.0
-    notifier: Notifier | None = field(default=None, repr=False, compare=False)
-    extra: dict[str, object] = field(default_factory=dict)
+    notification_timeout_seconds: float = field(
+        default_factory=lambda: _env_float("LEDGER_NOTIFY_TIMEOUT_SECONDS", 30.0)
+    )
+    notifier: Notifier | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
-def _env_bool(name: str, default: bool) -> bool:
-    raw = os.environ.get(name)
-    if raw is None or not raw.strip():
-        return default
-    return raw.strip().lower() not in {"0", "false", "no", "off"}
+def _event_for(item: HouseholdItem) -> str:
+    """The handled-log key for "we told the user about this renewal"."""
+    when = item.renewal_date.isoformat() if item.renewal_date else "unknown"
+    return f"{EVENT_PREFIX}:{when}"
 
 
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if raw is None or not raw.strip():
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        raise ValueError(f"{name} must be an integer") from None
+def _record(item: HouseholdItem, today: date) -> dict[str, Any]:
+    """The notification payload.
 
-
-def _env_float(name: str, default: float) -> float:
-    raw = os.environ.get(name)
-    if raw is None or not raw.strip():
-        return default
-    try:
-        return float(raw)
-    except ValueError:
-        raise ValueError(f"{name} must be a number") from None
-
-
-def _notification(item: HouseholdItem, config: JobConfig, today: date) -> dict[str, Any]:
-    """The full user-facing notice. It may contain personal detail."""
-    days_until = (item.renewal_date - today).days if item.renewal_date else None
-    return {
-        "event": "deadline",
-        "household_id": config.household_id,
-        "item_id": item.item_id,
-        "kind": item.kind,
-        "provider": item.provider,
-        "holder": item.holder,
-        "reference": item.reference,
-        "renewal_date": item.renewal_date.isoformat() if item.renewal_date else None,
-        "days_until": days_until,
-        "amount": item.amount,
-    }
-
-
-def _summary(item: HouseholdItem, today: date, *, notified: bool) -> dict[str, Any]:
-    """The safe form returned to callers and written to job state.
-
-    The notifier gets the full notice. This summary deliberately omits the
-    holder and the reference so a caller can log it without becoming a
-    second copy of the household picture.
+    The holder and the reference are absent on purpose: this record is
+    written to a serverless log, and a log is not a place for an account
+    number.
     """
     return {
         "item_id": item.item_id,
@@ -160,55 +149,52 @@ def _summary(item: HouseholdItem, today: date, *, notified: bool) -> dict[str, A
         "provider": item.provider,
         "renewal_date": item.renewal_date.isoformat() if item.renewal_date else None,
         "days_until": (item.renewal_date - today).days if item.renewal_date else None,
-        "notified": notified,
+        "amount": item.amount,
     }
+
+
+def _log_notification(record: dict[str, Any]) -> None:
+    """The default notifier: one line on stdout."""
+    stdout_notifier()(record)
 
 
 def _write_state(
     config: JobConfig,
-    today: date,
     *,
-    due: int,
-    summaries: list[dict[str, Any]],
-    notified: int,
-    failures: int,
-) -> None:
-    """Write the run metadata atomically.
-
-    The state file is diagnostic. If it cannot be written, the run still
-    succeeds: the handled-event table is the source of truth for
-    idempotency, and losing a diagnostic count must not lose a
-    notification.
-    """
-    if not config.state_path:
-        return
-
+    today: date,
+    checked: int,
+    flagged: list[dict[str, Any]],
+    findings: dict[str, Any] | None = None,
+) -> Path:
+    """Record that this run happened atomically."""
     path = Path(config.state_path)
-    state = {
-        "last_run": datetime.now(UTC).isoformat(),
-        "run_date": today.isoformat(),
-        "household_id": config.household_id,
-        "look_ahead_days": config.look_ahead_days,
-        "due": due,
-        "flagged": len(summaries),
-        "notified": notified,
-        "failures": failures,
-    }
-
-    temporary: Path | None = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-        temporary.write_text(
-            json.dumps(state, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        os.replace(temporary, path)
-    except OSError as exc:
-        LOG.warning("could not write job state (%s)", type(exc).__name__)
-        if temporary is not None:
-            with contextlib.suppress(OSError):
-                temporary.unlink(missing_ok=True)
+    except OSError:
+        if not os.environ.get("LEDGER_STATE_PATH"):
+            path = Path("/tmp/ledger_job_state.json")
+            path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            raise
+    payload = {
+        "last_run": datetime.now(UTC).isoformat(timespec="seconds"),
+        "today": today.isoformat(),
+        "household_id": config.household_id,
+        "look_ahead_days": config.look_ahead_days,
+        "notify": config.notify,
+        "checked": checked,
+        "flagged": [
+            {"item_id": record["item_id"], "renewal_date": record.get("renewal_date")}
+            for record in flagged
+            if "item_id" in record
+        ],
+        "findings": findings or {},
+        "findings_summary": (findings or {}).get("summary", ""),
+    }
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
+    return path
 
 
 def run_once(
@@ -218,156 +204,192 @@ def run_once(
     memory: HouseholdMemory | None = None,
     notifier: Notifier | None = None,
 ) -> list[dict[str, Any]]:
-    """Run one pass of the deadline check.
-
-    Args:
-        config: Job configuration. Defaults to environment-driven values.
-        today: The reference date. Defaults to the local date.
-        memory: An existing memory store, mainly for tests. When omitted,
-            the job opens one itself and closes it before returning.
-        notifier: Explicit notifier. Overrides the config field and the
-            callable in `config.extra`.
-
-    Returns:
-        One safe summary per item flagged in this run. Items with a
-        previous `notified` event are not returned, which is what makes a
-        second run quiet. In dry-run mode the summary is returned with
-        `notified=False`.
-
-    Raises:
-        ValueError: The look-ahead window is negative.
-        Exception: A memory/query failure propagates; the job should fail
-            rather than silently report a clean run.
-    """
+    """Run one pass of the deadline check."""
     config = config or JobConfig()
-    if config.look_ahead_days < 0:
-        raise ValueError("look_ahead_days must be non-negative")
+    today = today or datetime.now(UTC).date()
+    notify = config.notify
 
-    when = today or date.today()
+    deliver = notifier or config.notifier
+    if deliver is None and notify:
+        if config.notification_command:
+            deliver = command_notifier(
+                config.notification_command,
+                timeout=config.notification_timeout_seconds,
+            )
+        elif os.environ.get("TELEGRAM_BOT_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID"):
+            deliver = telegram_notifier()
+        elif os.environ.get("LEDGER_WEBHOOK_URL") or os.environ.get("SLACK_WEBHOOK_URL"):
+            deliver = webhook_notifier()
+        else:
+            deliver = _log_notification
+    elif deliver is None:
+        deliver = _log_notification
+
     owns_memory = memory is None
     if memory is None:
-        memory = (
-            HouseholdMemory(Path(config.memory_path))
-            if config.memory_path
-            else HouseholdMemory()
+        memory = HouseholdMemory(
+            Path(config.memory_path) if config.memory_path else SIDECAR_PATH
         )
+        memory.connect()
 
+    flagged: list[dict[str, Any]] = []
+    findings: dict[str, Any] = {}
     try:
-        due = memory.due_within(config.look_ahead_days, today=when)
-
-        send = notifier or config.notifier
-        if send is None:
-            extra_notifier = config.extra.get("notifier")
-            if callable(extra_notifier):
-                send = extra_notifier
-        if send is None and config.notify:
-            if config.notification_command:
-                send = command_notifier(
-                    config.notification_command,
-                    timeout=config.notification_timeout_seconds,
-                )
-            elif os.environ.get("TELEGRAM_BOT_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID"):
-                send = telegram_notifier()
-            elif os.environ.get("LEDGER_WEBHOOK_URL") or os.environ.get("SLACK_WEBHOOK_URL"):
-                send = webhook_notifier()
-            else:
-                send = stdout_notifier()
-
-        summaries: list[dict[str, Any]] = []
-        notified_count = 0
-        failures = 0
-
-        for item in due:
-            # `due_within` already excludes dismissed items. A handled item
-            # is also finished, even if it has no notification event.
-            if item.state is TrackedState.HANDLED:
-                continue
-            if memory.was_handled(item.item_id, "notified"):
+        items = memory.due_within(config.look_ahead_days, today=today)
+        if callable(inventory_findings):
+            all_items = memory.all_items()
+            findings = inventory_findings(
+                all_items, today=today, horizon_days=config.look_ahead_days
+            )
+        for item in items:
+            event = _event_for(item)
+            if memory.was_handled(item.item_id, event):
                 continue
 
-            notified = False
-            if config.notify:
-                if send is None:
-                    raise RuntimeError("notify is enabled but no notifier is configured")
+            record = _record(item, today)
+            if notify:
                 try:
-                    send(_notification(item, config, when))
+                    deliver(record)
                 except Exception as exc:
-                    # The exception message is deliberately not logged: a
-                    # notifier is third-party code and its message is
-                    # unbounded text.
-                    failures += 1
-                    LOG.warning(
-                        "notification failed for %s (%s)",
-                        item.item_id,
-                        type(exc).__name__,
-                    )
-                else:
+                    record["notified"] = False
+                    record["error"] = str(exc)
+                    flagged.append(record)
+                    continue
+                memory.record_event(item.item_id, event, json.dumps(record, sort_keys=True))
+                record["notified"] = True
+            else:
+                record["notified"] = False
+
+            flagged.append(record)
+
+        duplicates = findings.get("duplicates") or []
+        if isinstance(duplicates, list) and duplicates:
+            first = duplicates[0].get("first") if isinstance(duplicates[0], dict) else None
+            owner_id = str(first.get("item_id") or "") if isinstance(first, dict) else ""
+            event = f"{EVENT_PREFIX}:verifier:{today.isoformat()}"
+            if owner_id and not memory.was_handled(owner_id, event):
+                summary_record: dict[str, Any] = {
+                    "item_id": owner_id,
+                    "kind": "findings",
+                    "provider": "Ledger",
+                    "summary": findings.get("summary", ""),
+                    "due_count": len(findings.get("due") or []),
+                    "duplicate_count": len(duplicates),
+                }
+                if notify:
                     try:
+                        deliver(summary_record)
                         memory.record_event(
-                            item.item_id,
-                            "notified",
-                            detail=f"look_ahead_days={config.look_ahead_days}",
+                            owner_id, event, json.dumps(summary_record, sort_keys=True)
                         )
+                        summary_record["notified"] = True
                     except Exception as exc:
-                        failures += 1
-                        LOG.warning(
-                            "could not record notification for %s (%s)",
-                            item.item_id,
-                            type(exc).__name__,
-                        )
-                    else:
-                        notified = True
-                        notified_count += 1
-
-            summaries.append(_summary(item, when, notified=notified))
-
-        _write_state(
-            config,
-            when,
-            due=len(due),
-            summaries=summaries,
-            notified=notified_count,
-            failures=failures,
-        )
-        LOG.info(
-            "deadline monitor complete: due=%d flagged=%d notified=%d failures=%d",
-            len(due),
-            len(summaries),
-            notified_count,
-            failures,
-        )
-        return summaries
+                        summary_record["notified"] = False
+                        summary_record["error"] = str(exc)
+                else:
+                    summary_record["notified"] = False
+                flagged.append(summary_record)
     finally:
         if owns_memory:
             memory.close()
 
+    if notify:
+        _write_state(
+            config, today=today, checked=len(items), flagged=flagged, findings=findings
+        )
 
-def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "--look-ahead-days",
-        type=int,
-        default=None,
-        help="override LEDGER_LOOK_AHEAD_DAYS",
+    return flagged
+
+
+def state_status(state_path: str | Path, *, max_age_hours: float = 36.0) -> tuple[int, str]:
+    """Is the schedule actually firing?"""
+    path = Path(state_path)
+    if not path.exists():
+        return 1, f"no run record at {path} — the job has never run here"
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        last_run = datetime.fromisoformat(str(payload["last_run"]))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return 1, f"run record at {path} is unreadable: {exc}"
+
+    if last_run.tzinfo is None:
+        last_run = last_run.replace(tzinfo=UTC)
+    age = datetime.now(UTC) - last_run
+    age_hours = age.total_seconds() / 3600
+
+    if age_hours > max_age_hours:
+        return 1, (
+            f"last run {last_run.isoformat()} is {age_hours:.1f}h old "
+            f"(limit {max_age_hours:.0f}h) — the schedule is not firing"
+        )
+    return 0, (
+        f"last run {last_run.isoformat()} ({age_hours:.1f}h ago), "
+        f"{payload.get('checked', 0)} checked, "
+        f"{len(payload.get('flagged', []))} flagged"
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Entrypoint for the Nebius Serverless Job container."""
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--dry-run", action="store_true", help="report, do not notify")
     parser.add_argument(
         "--today",
         type=date.fromisoformat,
         default=None,
-        help="reference date in YYYY-MM-DD form (for testing and backfills)",
+        help="reference date for due calculations (YYYY-MM-DD)",
     )
-    parser.add_argument("--memory-db", default=None, help="SQLite sidecar path")
-    parser.add_argument("--state-path", default=None, help="job state JSON path")
+    parser.add_argument(
+        "--look-ahead",
+        "--look-ahead-days",
+        dest="look_ahead_days",
+        type=int,
+        default=None,
+        help="days to look ahead",
+    )
+    parser.add_argument(
+        "--state",
+        "--state-path",
+        dest="state_path",
+        default=None,
+        help="run-record path",
+    )
+    parser.add_argument(
+        "--db",
+        "--memory-db",
+        dest="memory_db",
+        default=None,
+        help="memory database path",
+    )
+    parser.add_argument(
+        "--household",
+        "--household-id",
+        dest="household_id",
+        default=None,
+        help="household id",
+    )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="check the run record instead of running; exits 1 when stale",
+    )
+    parser.add_argument(
+        "--max-age-hours",
+        type=float,
+        default=36.0,
+        help="staleness limit for --status",
+    )
     parser.add_argument(
         "--notify-command",
         default=None,
-        help="executable that receives the full notice as JSON on stdin",
+        help="executable command receiving notice JSON on stdin",
     )
     parser.add_argument(
         "--notify-timeout",
         type=float,
         default=None,
-        help="maximum seconds for one command-notifier attempt",
+        help="maximum seconds for command notifier",
     )
     parser.add_argument(
         "--notify-telegram",
@@ -389,81 +411,30 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         default=None,
         help="Webhook URL (default: $LEDGER_WEBHOOK_URL or $SLACK_WEBHOOK_URL)",
     )
-    notify = parser.add_mutually_exclusive_group()
-    notify.add_argument(
-        "--notify",
-        dest="notify",
-        action="store_true",
-        default=None,
-        help="send notifications (the default unless --dry-run)",
-    )
-    notify.add_argument(
-        "--no-notify",
-        dest="notify",
-        action="store_false",
-        default=None,
-        help="do not send notifications",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="query and report without notifying or marking items handled",
-    )
-    return parser.parse_args(argv)
 
+    args = parser.parse_args(argv)
 
-def main(argv: list[str] | None = None) -> int:
-    """Entrypoint for the Nebius Serverless Job container.
+    config = JobConfig()
+    if args.state_path:
+        config.state_path = args.state_path
+    if args.memory_db:
+        config.memory_path = args.memory_db
+    if args.household_id:
+        config.household_id = args.household_id
+    if args.look_ahead_days is not None:
+        config.look_ahead_days = args.look_ahead_days
+    if args.notify_command is not None:
+        config.notification_command = args.notify_command
+    if args.notify_timeout is not None:
+        config.notification_timeout_seconds = args.notify_timeout
 
-    Reads configuration from the environment (with CLI overrides for local
-    dry runs), runs one pass, and exits non-zero if a notification failed.
-    The job's schedule is configured on the Nebius side, not here.
-    """
-    args = _parse_args(argv)
+    if args.status:
+        code, message = state_status(config.state_path, max_age_hours=args.max_age_hours)
+        print(f"ledger: {message}")
+        return code
 
-    try:
-        config = JobConfig(
-            look_ahead_days=(
-                args.look_ahead_days
-                if args.look_ahead_days is not None
-                else _env_int("LEDGER_LOOK_AHEAD_DAYS", 14)
-            ),
-            notify=(
-                False
-                if args.dry_run
-                else (
-                    args.notify
-                    if args.notify is not None
-                    else _env_bool("LEDGER_NOTIFY", True)
-                )
-            ),
-            state_path=(
-                args.state_path
-                if args.state_path is not None
-                else os.environ.get(
-                    "LEDGER_STATE_PATH", "/opt/data/state/job_state.json"
-                )
-            ),
-            household_id=os.environ.get("LEDGER_HOUSEHOLD_ID", "default"),
-            memory_path=(
-                args.memory_db
-                if args.memory_db is not None
-                else os.environ.get("LEDGER_MEMORY_DB", "")
-            ),
-            notification_command=(
-                args.notify_command
-                if args.notify_command is not None
-                else os.environ.get("LEDGER_NOTIFY_COMMAND", "")
-            ),
-            notification_timeout_seconds=(
-                args.notify_timeout
-                if args.notify_timeout is not None
-                else _env_float("LEDGER_NOTIFY_TIMEOUT_SECONDS", 30.0)
-            ),
-        )
-    except ValueError as exc:
-        print(f"ledger: invalid configuration ({exc})", file=sys.stderr)
-        return 1
+    if args.dry_run:
+        config.notify = False
 
     notifier: Notifier | None = None
     if config.notify:
@@ -491,8 +462,6 @@ def main(argv: list[str] | None = None) -> int:
                 or os.environ.get("SLACK_WEBHOOK_URL")
             ):
                 notifier = webhook_notifier(url=args.webhook_url)
-            else:
-                notifier = stdout_notifier()
         except Exception as exc:
             print(
                 f"ledger: invalid notifier configuration ({type(exc).__name__})",
@@ -500,8 +469,12 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
 
+    today = args.today or datetime.now(UTC).date()
     try:
-        flagged = run_once(config, today=args.today, notifier=notifier)
+        flagged = run_once(config, today=today, notifier=notifier)
+    except OSError as exc:
+        print(f"ledger: could not record the run: {exc}", file=sys.stderr)
+        return 1
     except Exception as exc:
         print(
             f"ledger: deadline monitor failed ({type(exc).__name__})",
@@ -510,10 +483,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(f"ledger: flagged {len(flagged)} item(s) for {config.household_id}")
-    failures = sum(
-        1 for item in flagged if config.notify and not item.get("notified", False)
-    )
-    return 1 if failures else 0
+    if not config.notify:
+        print("ledger: dry run — nothing notified, nothing recorded")
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover

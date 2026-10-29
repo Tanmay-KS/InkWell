@@ -222,18 +222,55 @@ leak-test-smoke: ## Fast leak-test smoke run — never overwrites the canonical 
 memory-eval: ## Phase 3 — memory-with-updates accuracy
 	$(PY) $(EVAL)/memory_updates_eval.py
 
+.PHONY: auditor-eval
+auditor-eval: ## Upgrade Phase D — Auditor catch rate over planted cases
+	$(PY) $(EVAL)/auditor_eval.py
+
+.PHONY: langgraph-gate
+langgraph-gate: ## Upgrade Phase B — compile the graph and make one real Nemotron call
+	$(PY) $(EVAL)/langgraph_gate.py
+
 .PHONY: bench
 bench: ## Phase 3 — per-tier cost and latency
 	$(PY) $(EVAL)/cost_latency_bench.py
 
-.PHONY: deadline-monitor
-deadline-monitor: ## Phase 3 — run one deadline-monitor pass
+# The benchmark spends money, so the dry run is the default way to check
+# that the catalog still resolves the three tiers.
+.PHONY: bench-dry-run
+bench-dry-run: ## Phase 3 — resolve tiers and prices without calling a model
+	$(PY) $(EVAL)/cost_latency_bench.py --dry-run
+
+.PHONY: job
+job: ## Phase 3 — run the deadline monitor once
 	$(PY) -m jobs.deadline_monitor
 
+.PHONY: job-dry-run
+job-dry-run: ## Phase 3 — deadline monitor without notifying or recording
+	$(PY) -m jobs.deadline_monitor --dry-run
+
+.PHONY: job-status
+job-status: ## Phase 3 — is the deadline-monitor schedule actually firing?
+	$(PY) -m jobs.deadline_monitor --status
+
+.PHONY: deadline-monitor
+deadline-monitor: job ## Phase 3 alias — run one deadline-monitor pass
+
 .PHONY: deadline-monitor-dry-run
-deadline-monitor-dry-run: ## Phase 3 — query due items without notifying
-	$(PY) -m jobs.deadline_monitor --dry-run \
-		--state-path /tmp/ledger-job-state.json
+deadline-monitor-dry-run: job-dry-run ## Phase 3 alias — query due items without notifying
+
+# --- Phase 4: the interface -------------------------------------------------
+
+.PHONY: web
+web: ## Run the local web view against the household database (loopback only)
+	$(PY) -m interface.web.server
+
+.PHONY: demo-web
+demo-web: ## Run the web view with isolated fictional demo data
+	$(PY) -m interface.web.server --demo
+
+.PHONY: results
+results: ## Phase 3 + Upgrade — compile the four numbers into docs/results.md + charts
+	$(PY) $(EVAL)/results_pack.py
 
 .PHONY: clean
 clean: ## Remove caches and build artifacts

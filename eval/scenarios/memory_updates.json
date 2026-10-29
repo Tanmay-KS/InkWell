@@ -1,0 +1,339 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "status-reinstated-current",
+      "statements": [
+        {"subject": "gym", "kind": "subscription_status", "value": "active", "valid_from": "2026-01-01"},
+        {"subject": "gym", "kind": "subscription_status", "value": "cancelled", "valid_from": "2026-03-14"},
+        {"subject": "gym", "kind": "subscription_status", "value": "active", "valid_from": "2026-06-01"}
+      ],
+      "question": "What is the gym membership status now?",
+      "expected": "active",
+      "answer_type": "current",
+      "metadata": {"subject": "gym", "kind": "subscription_status", "as_of": "2026-10-20", "category": "status"}
+    },
+    {
+      "scenario_id": "status-reinstated-superseded",
+      "statements": [
+        {"subject": "gym", "kind": "subscription_status", "value": "active", "valid_from": "2026-01-01"},
+        {"subject": "gym", "kind": "subscription_status", "value": "cancelled", "valid_from": "2026-03-14"},
+        {"subject": "gym", "kind": "subscription_status", "value": "active", "valid_from": "2026-06-01"}
+      ],
+      "question": "What was the gym membership status in May, before it was reinstated?",
+      "expected": "cancelled",
+      "answer_type": "superseded",
+      "metadata": {"subject": "gym", "kind": "subscription_status", "as_of": "2026-05-01", "category": "status"}
+    },
+    {
+      "scenario_id": "status-cancelled-current",
+      "statements": [
+        {"subject": "home-insurance", "kind": "subscription_status", "value": "active", "valid_from": "2025-11-01"},
+        {"subject": "home-insurance", "kind": "subscription_status", "value": "cancelled", "valid_from": "2026-04-02"}
+      ],
+      "question": "Is the home insurance still active?",
+      "expected": "cancelled",
+      "answer_type": "current",
+      "metadata": {"subject": "home-insurance", "kind": "subscription_status", "as_of": "2026-10-20", "category": "status"}
+    },
+    {
+      "scenario_id": "status-cancelled-superseded",
+      "statements": [
+        {"subject": "home-insurance", "kind": "subscription_status", "value": "active", "valid_from": "2025-11-01"},
+        {"subject": "home-insurance", "kind": "subscription_status", "value": "cancelled", "valid_from": "2026-04-02"}
+      ],
+      "question": "Was the home insurance active in March?",
+      "expected": "active",
+      "answer_type": "superseded",
+      "metadata": {"subject": "home-insurance", "kind": "subscription_status", "as_of": "2026-03-01", "category": "status"}
+    },
+    {
+      "scenario_id": "status-paused",
+      "statements": [
+        {"subject": "broadband", "kind": "subscription_status", "value": "active", "valid_from": "2026-01-01"},
+        {"subject": "broadband", "kind": "subscription_status", "value": "paused", "valid_from": "2026-05-01"}
+      ],
+      "question": "Is the broadband subscription running?",
+      "expected": "paused",
+      "answer_type": "current",
+      "metadata": {"subject": "broadband", "kind": "subscription_status", "as_of": "2026-10-20", "category": "status"}
+    },
+    {
+      "scenario_id": "status-trial-ended",
+      "statements": [
+        {"subject": "streamco", "kind": "subscription_status", "value": "active", "valid_from": "2026-02-01"},
+        {"subject": "streamco", "kind": "subscription_status", "value": "cancelled", "valid_from": "2026-02-20"}
+      ],
+      "question": "Did the streaming trial turn into a paid subscription?",
+      "expected": "cancelled",
+      "answer_type": "current",
+      "metadata": {"subject": "streamco", "kind": "subscription_status", "as_of": "2026-03-01", "category": "status"}
+    },
+    {
+      "scenario_id": "status-trial-superseded",
+      "statements": [
+        {"subject": "streamco", "kind": "subscription_status", "value": "active", "valid_from": "2026-02-01"},
+        {"subject": "streamco", "kind": "subscription_status", "value": "cancelled", "valid_from": "2026-02-20"}
+      ],
+      "question": "What was the streaming status during the trial?",
+      "expected": "active",
+      "answer_type": "superseded",
+      "metadata": {"subject": "streamco", "kind": "subscription_status", "as_of": "2026-02-15", "category": "status"}
+    },
+    {
+      "scenario_id": "status-never-stated",
+      "statements": [
+        {"subject": "gym", "kind": "subscription_status", "value": "active", "valid_from": "2026-01-01"},
+        {"subject": "gym", "kind": "subscription_status", "value": "cancelled", "valid_from": "2026-03-14"}
+      ],
+      "question": "What is the pet insurance status?",
+      "expected": "",
+      "answer_type": "never_stated",
+      "metadata": {"subject": "pet-insurance", "kind": "subscription_status", "as_of": "2026-10-20", "category": "status"}
+    },
+
+    {
+      "scenario_id": "amount-premium-increase-current",
+      "statements": [
+        {"subject": "home-insurance", "kind": "amount", "value": "148.95", "valid_from": "2026-01-01"},
+        {"subject": "home-insurance", "kind": "amount", "value": "162.40", "valid_from": "2026-06-01"}
+      ],
+      "question": "What is the home insurance premium now?",
+      "expected": "162.40",
+      "answer_type": "current",
+      "metadata": {"subject": "home-insurance", "kind": "amount", "as_of": "2026-10-20", "category": "amount"}
+    },
+    {
+      "scenario_id": "amount-premium-increase-superseded",
+      "statements": [
+        {"subject": "home-insurance", "kind": "amount", "value": "148.95", "valid_from": "2026-01-01"},
+        {"subject": "home-insurance", "kind": "amount", "value": "162.40", "valid_from": "2026-06-01"}
+      ],
+      "question": "What was the premium before the increase?",
+      "expected": "148.95",
+      "answer_type": "superseded",
+      "metadata": {"subject": "home-insurance", "kind": "amount", "as_of": "2026-05-01", "category": "amount"}
+    },
+    {
+      "scenario_id": "amount-gym-price-drop",
+      "statements": [
+        {"subject": "gym", "kind": "amount", "value": "45.00", "valid_from": "2026-01-01"},
+        {"subject": "gym", "kind": "amount", "value": "39.00", "valid_from": "2026-04-01"}
+      ],
+      "question": "What does the gym membership cost now?",
+      "expected": "39.00",
+      "answer_type": "current",
+      "metadata": {"subject": "gym", "kind": "amount", "as_of": "2026-10-20", "category": "amount"}
+    },
+    {
+      "scenario_id": "amount-energy-bill",
+      "statements": [
+        {"subject": "energy", "kind": "amount", "value": "120.00", "valid_from": "2026-01-01"},
+        {"subject": "energy", "kind": "amount", "value": "145.50", "valid_from": "2026-08-01"}
+      ],
+      "question": "What is the monthly energy charge?",
+      "expected": "145.50",
+      "answer_type": "current",
+      "metadata": {"subject": "energy", "kind": "amount", "as_of": "2026-10-20", "category": "amount"}
+    },
+    {
+      "scenario_id": "amount-never-stated",
+      "statements": [
+        {"subject": "energy", "kind": "amount", "value": "120.00", "valid_from": "2026-01-01"}
+      ],
+      "question": "What is the water utility amount?",
+      "expected": "",
+      "answer_type": "never_stated",
+      "metadata": {"subject": "water-utility", "kind": "amount", "as_of": "2026-10-20", "category": "amount"}
+    },
+
+    {
+      "scenario_id": "renewal-moved-later-current",
+      "statements": [
+        {"subject": "car-insurance", "kind": "renewal_date", "value": "2026-11-15", "valid_from": "2026-01-01"},
+        {"subject": "car-insurance", "kind": "renewal_date", "value": "2026-12-01", "valid_from": "2026-09-01"}
+      ],
+      "question": "When does the car insurance renew?",
+      "expected": "2026-12-01",
+      "answer_type": "current",
+      "metadata": {"subject": "car-insurance", "kind": "renewal_date", "as_of": "2026-10-20", "category": "renewal_date"}
+    },
+    {
+      "scenario_id": "renewal-moved-later-superseded",
+      "statements": [
+        {"subject": "car-insurance", "kind": "renewal_date", "value": "2026-11-15", "valid_from": "2026-01-01"},
+        {"subject": "car-insurance", "kind": "renewal_date", "value": "2026-12-01", "valid_from": "2026-09-01"}
+      ],
+      "question": "What renewal date did we have before the change?",
+      "expected": "2026-11-15",
+      "answer_type": "superseded",
+      "metadata": {"subject": "car-insurance", "kind": "renewal_date", "as_of": "2026-08-01", "category": "renewal_date"}
+    },
+    {
+      "scenario_id": "renewal-moved-earlier",
+      "statements": [
+        {"subject": "domain", "kind": "renewal_date", "value": "2027-03-01", "valid_from": "2026-01-01"},
+        {"subject": "domain", "kind": "renewal_date", "value": "2027-01-15", "valid_from": "2026-09-01"}
+      ],
+      "question": "When does the domain renew?",
+      "expected": "2027-01-15",
+      "answer_type": "current",
+      "metadata": {"subject": "domain", "kind": "renewal_date", "as_of": "2026-10-20", "category": "renewal_date"}
+    },
+    {
+      "scenario_id": "renewal-corrected",
+      "statements": [
+        {"subject": "passport", "kind": "renewal_date", "value": "2027-05-10", "valid_from": "2026-01-01"},
+        {"subject": "passport", "kind": "renewal_date", "value": "2027-05-24", "valid_from": "2026-07-01"}
+      ],
+      "question": "When does the passport expire?",
+      "expected": "2027-05-24",
+      "answer_type": "current",
+      "metadata": {"subject": "passport", "kind": "renewal_date", "as_of": "2026-10-20", "category": "renewal_date"}
+    },
+    {
+      "scenario_id": "renewal-never-stated",
+      "statements": [
+        {"subject": "car-insurance", "kind": "renewal_date", "value": "2026-11-15", "valid_from": "2026-01-01"}
+      ],
+      "question": "When is the boiler service due?",
+      "expected": "",
+      "answer_type": "never_stated",
+      "metadata": {"subject": "boiler-service", "kind": "renewal_date", "as_of": "2026-10-20", "category": "renewal_date"}
+    },
+
+    {
+      "scenario_id": "holder-changed-current",
+      "statements": [
+        {"subject": "home-insurance", "kind": "holder", "value": "Devin Sullivan", "valid_from": "2026-01-01"},
+        {"subject": "home-insurance", "kind": "holder", "value": "Morgan Sullivan", "valid_from": "2026-05-01"}
+      ],
+      "question": "Whose name is the home policy in now?",
+      "expected": "Morgan Sullivan",
+      "answer_type": "current",
+      "metadata": {"subject": "home-insurance", "kind": "holder", "as_of": "2026-10-20", "category": "holder"}
+    },
+    {
+      "scenario_id": "holder-changed-superseded",
+      "statements": [
+        {"subject": "home-insurance", "kind": "holder", "value": "Devin Sullivan", "valid_from": "2026-01-01"},
+        {"subject": "home-insurance", "kind": "holder", "value": "Morgan Sullivan", "valid_from": "2026-05-01"}
+      ],
+      "question": "Whose name was the home policy in before the transfer?",
+      "expected": "Devin Sullivan",
+      "answer_type": "superseded",
+      "metadata": {"subject": "home-insurance", "kind": "holder", "as_of": "2026-04-01", "category": "holder"}
+    },
+    {
+      "scenario_id": "holder-gym",
+      "statements": [
+        {"subject": "gym", "kind": "holder", "value": "Devin Sullivan", "valid_from": "2026-01-01"},
+        {"subject": "gym", "kind": "holder", "value": "Morgan Sullivan", "valid_from": "2026-03-01"}
+      ],
+      "question": "Whose gym membership is it?",
+      "expected": "Morgan Sullivan",
+      "answer_type": "current",
+      "metadata": {"subject": "gym", "kind": "holder", "as_of": "2026-10-20", "category": "holder"}
+    },
+
+    {
+      "scenario_id": "contact-email-changed",
+      "statements": [
+        {"subject": "home-insurance", "kind": "contact", "value": "devin@example.com", "valid_from": "2026-01-01"},
+        {"subject": "home-insurance", "kind": "contact", "value": "d.sullivan@example.com", "valid_from": "2026-06-01"}
+      ],
+      "question": "Which email is on the home policy?",
+      "expected": "d.sullivan@example.com",
+      "answer_type": "current",
+      "metadata": {"subject": "home-insurance", "kind": "contact", "as_of": "2026-10-20", "category": "contact"}
+    },
+    {
+      "scenario_id": "contact-phone-changed",
+      "statements": [
+        {"subject": "energy", "kind": "contact", "value": "+1-503-555-0148", "valid_from": "2026-01-01"},
+        {"subject": "energy", "kind": "contact", "value": "+1-503-555-0199", "valid_from": "2026-05-15"}
+      ],
+      "question": "Which phone number does the energy supplier have?",
+      "expected": "+1-503-555-0199",
+      "answer_type": "current",
+      "metadata": {"subject": "energy", "kind": "contact", "as_of": "2026-10-20", "category": "contact"}
+    },
+    {
+      "scenario_id": "contact-never-stated",
+      "statements": [
+        {"subject": "energy", "kind": "contact", "value": "+1-503-555-0148", "valid_from": "2026-01-01"}
+      ],
+      "question": "Which email does the water utility have?",
+      "expected": "",
+      "answer_type": "never_stated",
+      "metadata": {"subject": "water-utility", "kind": "contact", "as_of": "2026-10-20", "category": "contact"}
+    },
+
+    {
+      "scenario_id": "preference-channel-changed",
+      "statements": [
+        {"subject": "household", "kind": "preference", "value": "email", "valid_from": "2026-01-01"},
+        {"subject": "household", "kind": "preference", "value": "sms", "valid_from": "2026-04-01"}
+      ],
+      "question": "How does the household want to be contacted?",
+      "expected": "sms",
+      "answer_type": "current",
+      "metadata": {"subject": "household", "kind": "preference", "as_of": "2026-10-20", "category": "preference"}
+    },
+    {
+      "scenario_id": "preference-billing-changed",
+      "statements": [
+        {"subject": "household", "kind": "preference", "value": "paper", "valid_from": "2026-01-01"},
+        {"subject": "household", "kind": "preference", "value": "paperless", "valid_from": "2026-02-01"}
+      ],
+      "question": "How does the household receive bills?",
+      "expected": "paperless",
+      "answer_type": "current",
+      "metadata": {"subject": "household", "kind": "preference", "as_of": "2026-10-20", "category": "preference"}
+    },
+    {
+      "scenario_id": "preference-never-stated",
+      "statements": [
+        {"subject": "household", "kind": "preference", "value": "paperless", "valid_from": "2026-02-01"}
+      ],
+      "question": "What language does the household prefer?",
+      "expected": "",
+      "answer_type": "never_stated",
+      "metadata": {"subject": "language", "kind": "preference", "as_of": "2026-10-20", "category": "preference"}
+    },
+
+    {
+      "scenario_id": "confidence-low-ignored",
+      "statements": [
+        {"subject": "gym", "kind": "subscription_status", "value": "active", "valid_from": "2026-01-01", "confidence": 1.0},
+        {"subject": "gym", "kind": "subscription_status", "value": "cancelled", "valid_from": "2026-05-01", "confidence": 0.4}
+      ],
+      "question": "A low-confidence note says the gym was cancelled. What do we believe?",
+      "expected": "active",
+      "answer_type": "current",
+      "metadata": {"subject": "gym", "kind": "subscription_status", "as_of": "2026-10-20", "category": "confidence"}
+    },
+    {
+      "scenario_id": "confidence-high-applied",
+      "statements": [
+        {"subject": "gym", "kind": "subscription_status", "value": "active", "valid_from": "2026-01-01", "confidence": 0.4},
+        {"subject": "gym", "kind": "subscription_status", "value": "cancelled", "valid_from": "2026-06-01", "confidence": 1.0}
+      ],
+      "question": "Do we believe the confirmed cancellation over the earlier note?",
+      "expected": "cancelled",
+      "answer_type": "current",
+      "metadata": {"subject": "gym", "kind": "subscription_status", "as_of": "2026-10-20", "category": "confidence"}
+    },
+
+    {
+      "scenario_id": "restatement-same-value",
+      "statements": [
+        {"subject": "gym", "kind": "subscription_status", "value": "active", "valid_from": "2026-01-01"},
+        {"subject": "gym", "kind": "subscription_status", "value": "active", "valid_from": "2026-04-01"}
+      ],
+      "question": "What is the gym status after the user restated it?",
+      "expected": "active",
+      "answer_type": "current",
+      "metadata": {"subject": "gym", "kind": "subscription_status", "as_of": "2026-10-20", "category": "restatement"}
+    }
+  ]
+}

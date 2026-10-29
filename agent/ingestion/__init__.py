@@ -3,11 +3,9 @@
 Turns raw input into structured text that the rest of the pipeline can work
 with.
 
-The extraction path is a vision model on Nebius Token Factory
-(`nvidia/NVIDIA-Nemotron-3-Nano-Omni`, pinned via `LEDGER_MODEL_OCR` in
-`.env`). A local extractor (tesseract / poppler, baked into the sandbox
-image) is the fallback and the zero-egress path for pages that must not
-leave the machine at all.
+Documents and email are extracted locally first (tesseract / poppler,
+baked into the sandbox image); the vision model is a last-resort fallback.
+Email bodies and locally readable attachments feed the same pipeline.
 
 Phase 1 — Person B.
 """

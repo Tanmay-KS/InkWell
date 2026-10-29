@@ -1,447 +1,179 @@
-"""Offline tests for the Phase 3 cost/latency benchmark.
+"""Tests for the Phase 3 cost/latency benchmark.
 
-The benchmark's useful property is not that it can call Nebius. It is that
-the scheduling, token accounting, error handling, pricing validation, and
-evidence output are correct before a live key is spent on them. These tests
-inject a transport and never touch the network.
+The benchmark's value depends on two properties that are easy to lose:
+
+* **model IDs come from the catalog** — a test that asserts the resolution
+  path will not save a hard-coded ID from creeping back, but it will catch
+  the day a pin goes stale or a role disappears;
+* **a missing price is an error** — a zero-rate row silent in the table is
+  a confident wrong number in the video.
+
+The measurement itself is tested with a fake transport, so the suite never
+spends money or needs a network.
 """
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 
-from eval.cost_latency_bench import (
-    DEFAULT_PROMPTS,
-    DEFAULT_TIERS,
-    PRICING_PATH,
-    TierResult,
-    TokenFactoryTransport,
-    load_pricing,
-    main,
-    render_markdown,
-    run_bench,
-)
+from eval import cost_latency_bench as bench
 
 
-def pricing_data() -> dict[str, object]:
+def _model(
+    model_id: str,
+    *,
+    modality: str = "text->text",
+    prompt_price: float = 0.0000003,
+    completion_price: float = 0.0000009,
+) -> dict:
     return {
-        "_meta": {
-            "source": "test catalog",
-            "snapshot": "test-snapshot",
-            "taken": "2026-10-22T00:00:00Z",
-            "unit": "USD per 1,000,000 tokens",
-        },
-        "Nano": {"input_per_million": 0.06, "output_per_million": 0.24},
-        "Super": {"input_per_million": 0.30, "output_per_million": 0.90},
-        "Ultra": {"input_per_million": 1.00, "output_per_million": 3.00},
+        "id": model_id,
+        "architecture": {"modality": modality},
+        "pricing": {"prompt": str(prompt_price), "completion": str(completion_price)},
     }
 
 
-def write_pricing(tmp_path: Path, data: object) -> Path:
-    path = tmp_path / "pricing.json"
-    path.write_text(json.dumps(data), encoding="utf-8")
-    return path
+CATALOG = [
+    _model("nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"),
+    _model("nvidia/Nemotron-3.5-Super-VL", modality="text+image->text"),
+    _model("nvidia/nemotron-3-super-120b-a12b"),
+    _model("nvidia/Nemotron-3-Ultra-550b-a55b", prompt_price=0.000001, completion_price=0.000003),
+]
 
 
-class FakeTransport:
-    """A deterministic transport that records calls and can fail by model."""
-
-    def __init__(
-        self,
-        *,
-        prompt_tokens: int = 100,
-        completion_tokens: int = 25,
-        fail_models: set[str] | None = None,
-        fail_with: str = "synthetic transport failure",
-    ) -> None:
-        self.prompt_tokens = prompt_tokens
-        self.completion_tokens = completion_tokens
-        self.fail_models = fail_models or set()
-        self.fail_with = fail_with
-        self.calls: list[dict[str, object]] = []
-
-    def __call__(
-        self,
-        model: str,
-        messages: list[dict[str, str]],
-        *,
-        max_tokens: int,
-        temperature: float,
-    ) -> dict[str, int]:
-        self.calls.append(
-            {
-                "model": model,
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-            }
-        )
-        if model in self.fail_models:
-            raise RuntimeError(self.fail_with)
-        return {
-            "prompt_tokens": self.prompt_tokens,
-            "completion_tokens": self.completion_tokens,
-        }
-
-
-def one_prompt() -> list[dict[str, object]]:
-    return [
-        {
-            "id": "p1",
-            "messages": [{"role": "user", "content": "a representative prompt"}],
-        }
-    ]
-
-
-def test_run_bench_accounts_tokens_calls_and_latency():
-    transport = FakeTransport(prompt_tokens=100, completion_tokens=25)
-    tiers = [("model-a", "Nano"), ("model-b", "Super")]
-
-    results = run_bench(
-        tiers,
-        one_prompt(),
-        repeats=2,
-        transport=transport,
+def test_resolution_prefers_the_pinned_role():
+    tiers = bench.resolve_tiers(
+        CATALOG,
+        pinned={"nano": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B", "super": "nvidia/Nemotron-3.5-Super-VL"},
     )
 
-    assert [result.calls for result in results] == [2, 2]
-    assert [result.attempts for result in results] == [2, 2]
-    assert results[0].prompt_tokens == 200
-    assert results[0].completion_tokens == 50
-    assert len(results[0].latencies) == 2
-    assert all(latency >= 0 for result in results for latency in result.latencies)
-    assert transport.calls[0]["max_tokens"] == 4096
-    assert transport.calls[0]["temperature"] == 0.0
+    assert [tier.role for tier in tiers] == ["nano", "super", "ultra"]
+    assert tiers[1].model == "nvidia/Nemotron-3.5-Super-VL"
+    assert tiers[2].input_per_million == 1.0
+    assert tiers[2].output_per_million == 3.0
 
 
-def test_run_bench_interleaves_tiers_within_each_prompt_repetition():
-    transport = FakeTransport()
-    tiers = [("model-a", "Nano"), ("model-b", "Super")]
-    prompts = [
-        {
-            "id": "p1",
-            "messages": [{"role": "user", "content": "p1"}],
-        },
-        {
-            "id": "p2",
-            "messages": [{"role": "user", "content": "p2"}],
-        },
-    ]
+def test_resolution_falls_back_to_the_catalog_and_prefers_text():
+    tiers = bench.resolve_tiers(CATALOG, pinned={})
 
-    run_bench(tiers, prompts, repeats=1, transport=transport)
-
-    observed = [
-        (call["model"], call["messages"][-1]["content"])  # type: ignore[index]
-        for call in transport.calls
-    ]
-    assert observed == [
-        ("model-a", "p1"),
-        ("model-b", "p1"),
-        ("model-a", "p2"),
-        ("model-b", "p2"),
-    ]
+    # "super" matches both the VL model and the text model; the bench sends
+    # text, so the text-only record wins.
+    assert tiers[1].model == "nvidia/nemotron-3-super-120b-a12b"
 
 
-def test_run_bench_records_error_types_without_messages():
-    secret = "PROMPT-CONTENT-THAT-MUST-NOT-BE-LOGGED"
-    transport = FakeTransport(fail_models={"bad-model"}, fail_with=secret)
-    tiers = [("bad-model", "Nano"), ("good-model", "Super")]
-    prompts = [
-        {
-            "id": "p1",
-            "messages": [{"role": "user", "content": secret}],
-        }
-    ]
+def test_resolution_ignores_a_stale_pin():
+    tiers = bench.resolve_tiers(CATALOG, pinned={"super": "nvidia/removed-model"})
 
-    results = run_bench(tiers, prompts, repeats=2, transport=transport)
+    assert tiers[1].model == "nvidia/nemotron-3-super-120b-a12b"
+
+
+def test_unpriced_model_is_an_error_not_a_zero_row():
+    catalog = [_model("nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B", prompt_price=0, completion_price=0)]
+
+    with pytest.raises(RuntimeError, match="no price"):
+        bench.resolve_tiers(catalog, pinned={})
+
+
+def test_missing_role_is_an_error():
+    with pytest.raises(RuntimeError, match="no catalog model"):
+        bench.resolve_tiers(CATALOG[:1], pinned={"ultra": "nvidia/removed-model"})
+
+
+def test_p95_is_nearest_rank_not_interpolated():
+    samples = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.11, 0.99]
+
+    # ceil(0.95 * 12) - 1 == 11 — the slowest call, which is the point.
+    assert bench.p95(samples) == 0.99
+    assert bench.p95([]) == 0.0
+
+
+def test_run_bench_aggregates_tokens_and_latency(monkeypatch):
+    calls: list[str] = []
+
+    def fake_chat(model, prompt, *, api_key, timeout, max_tokens):
+        calls.append(prompt.prompt_id)
+        return 100, 50, 0.25
+
+    monkeypatch.setattr(bench, "_chat", fake_chat)
+    tiers = bench.resolve_tiers(CATALOG)
+
+    results = bench.run_bench(
+        tiers[:2],
+        bench.prompts(),
+        repeats=2,
+        api_key="test",
+    )
+
+    assert calls.count("transcribe") == 4  # two tiers x two repeats
+    for tier in results:
+        assert tier.calls == 8
+        assert tier.errors == 0
+        assert tier.prompt_tokens == 800
+        assert tier.completion_tokens == 400
+        assert tier.mean_latency == pytest.approx(0.25)
+        assert tier.cost_usd > 0
+        assert set(tier.by_prompt) == {"transcribe", "deadline_extract", "action_draft", "memory_update"}
+
+
+def test_run_bench_records_a_failed_call_instead_of_dropping_it(monkeypatch):
+    def broken_chat(model, prompt, *, api_key, timeout, max_tokens):
+        raise RuntimeError("HTTP 503: overloaded")
+
+    monkeypatch.setattr(bench, "_chat", broken_chat)
+    results = bench.run_bench(bench.resolve_tiers(CATALOG)[:1], bench.prompts(), repeats=1)
 
     assert results[0].calls == 0
-    assert results[0].errors == 2
-    assert results[0].error_types == ["RuntimeError", "RuntimeError"]
-    assert results[1].calls == 2
-    assert results[1].errors == 0
-
-    rendered = results[0].to_dict(pricing_data())
-    assert "RuntimeError" in json.dumps(rendered)
-    assert secret not in json.dumps(rendered)
+    assert results[0].errors == 4
+    assert "HTTP 503" in results[0].error_messages[0]
+    assert results[0].cost_usd == 0
 
 
-def test_run_bench_reads_nested_usage_and_token_aliases():
-    class NestedTransport:
-        def __call__(self, model, messages, *, max_tokens, temperature):
-            return {"usage": {"input_tokens": 11, "output_tokens": 7}}
+def test_run_bench_retries_a_transient_failure(monkeypatch):
+    attempts = {"count": 0}
 
-    [result] = run_bench(
-        [("model-a", "Nano")],
-        one_prompt(),
+    def flaky_chat(model, prompt, *, api_key, timeout, max_tokens):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("[SSL: UNEXPECTED_EOF_WHILE_READING]")
+        return 10, 5, 0.1
+
+    monkeypatch.setattr(bench, "_chat", flaky_chat)
+    results = bench.run_bench(
+        bench.resolve_tiers(CATALOG)[:1],
+        bench.prompts()[:1],
         repeats=1,
-        transport=NestedTransport(),
+        api_key="test",
+        retries=1,
     )
 
-    assert result.calls == 1
-    assert result.prompt_tokens == 11
-    assert result.completion_tokens == 7
+    assert results[0].calls == 1
+    assert results[0].retries == 1
+    assert results[0].errors == 0
 
 
-def test_run_bench_uses_a_prompt_specific_max_tokens():
-    transport = FakeTransport()
-    prompts = [
-        {
-            "id": "p1",
-            "max_tokens": 123,
-            "messages": [{"role": "user", "content": "hello"}],
-        }
-    ]
+def test_run_bench_does_not_retry_a_client_error(monkeypatch):
+    def refused_chat(model, prompt, *, api_key, timeout, max_tokens):
+        raise RuntimeError("HTTP 400: bad request")
 
-    run_bench([("model-a", "Nano")], prompts, repeats=1, transport=transport)
-
-    assert transport.calls[0]["max_tokens"] == 123
-
-
-def test_run_bench_accepts_system_and_user_shorthand():
-    transport = FakeTransport()
-    prompts = [{"id": "p1", "system": "be brief", "user": "hello"}]
-
-    run_bench([("model-a", "Nano")], prompts, repeats=1, transport=transport)
-
-    messages = transport.calls[0]["messages"]
-    assert messages == [
-        {"role": "system", "content": "be brief"},
-        {"role": "user", "content": "hello"},
-    ]
-
-
-@pytest.mark.parametrize(
-    ("tiers", "prompts", "kwargs"),
-    [
-        ([], one_prompt(), {}),
-        ([("model-a", "Nano")], [], {}),
-        ([("model-a", "Nano")], one_prompt(), {"repeats": 0}),
-        (
-            [("model-a", "Nano"), ("model-a", "Nano")],
-            one_prompt(),
-            {},
-        ),
-        ([("", "Nano")], one_prompt(), {}),
-        ([("model-a", "Nano")], [{"id": "p1"}], {}),
-        ([("model-a", "Nano")], one_prompt(), {"max_tokens": 0}),
-    ],
-)
-def test_run_bench_rejects_bad_inputs(tiers, prompts, kwargs):
-    with pytest.raises(ValueError):
-        run_bench(tiers, prompts, transport=FakeTransport(), **kwargs)
-
-
-def test_run_bench_requires_a_key_without_an_injected_transport():
-    with pytest.raises(ValueError):
-        run_bench([("model-a", "Nano")], one_prompt(), repeats=1)
-
-
-def test_cost_usd_uses_per_million_rates():
-    result = TierResult(
-        model="model-a",
-        tier="Nano",
-        calls=2,
-        prompt_tokens=1_000_000,
-        completion_tokens=500_000,
-    )
-
-    cost = result.cost_usd(pricing_data())
-
-    assert cost == pytest.approx(0.06 + 0.12)
-    assert result.cost_per_call_usd(pricing_data()) == pytest.approx(0.09)
-
-
-def test_cost_usd_can_fall_back_to_a_model_key():
-    result = TierResult(
-        model="model-a",
-        tier="Nano",
-        calls=1,
-        prompt_tokens=1_000_000,
-        completion_tokens=0,
-    )
-    pricing = {"model-a": {"input_per_million": 2.0, "output_per_million": 4.0}}
-
-    assert result.cost_usd(pricing) == pytest.approx(2.0)
-
-
-def test_latency_statistics_include_the_tail():
-    result = TierResult(
-        model="model-a",
-        tier="Nano",
-        latencies=[1.0, 2.0, 3.0, 4.0, 5.0],
-    )
-
-    assert result.mean_latency == pytest.approx(3.0)
-    assert result.min_latency == 1.0
-    assert result.max_latency == 5.0
-    assert result.p50_latency == 3.0
-    assert result.p95_latency == 4.0
-
-
-def test_load_pricing_accepts_the_committed_table():
-    pricing = load_pricing(PRICING_PATH, DEFAULT_TIERS)
-
-    assert pricing["Nano"]["input_per_million"] == pytest.approx(0.06)
-    assert pricing["Super"]["output_per_million"] == pytest.approx(0.90)
-    assert pricing["Ultra"]["input_per_million"] == pytest.approx(1.0)
-
-
-def test_load_pricing_accepts_model_keyed_rates(tmp_path):
-    path = write_pricing(
-        tmp_path,
-        {"model-a": {"input_per_million": 0.1, "output_per_million": 0.2}},
-    )
-
-    pricing = load_pricing(path, [("model-a", "Nano")])
-
-    assert pricing["model-a"]["input_per_million"] == pytest.approx(0.1)
-
-
-def test_load_pricing_rejects_a_missing_tier(tmp_path):
-    path = write_pricing(tmp_path, {"Nano": pricing_data()["Nano"]})
-
-    with pytest.raises(ValueError, match="missing"):
-        load_pricing(path, [("model-a", "Nano"), ("model-b", "Super")])
-
-
-def test_load_pricing_rejects_a_negative_rate(tmp_path):
-    path = write_pricing(
-        tmp_path,
-        {"Nano": {"input_per_million": -1, "output_per_million": 0}},
-    )
-
-    with pytest.raises(ValueError, match="negative"):
-        load_pricing(path, [("model-a", "Nano")])
-
-
-def test_load_pricing_rejects_malformed_json(tmp_path):
-    path = tmp_path / "pricing.json"
-    path.write_text("{not json", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="not valid JSON"):
-        load_pricing(path)
-
-
-def test_render_markdown_contains_the_table_and_only_prompt_ids():
-    result = TierResult(
-        model="model-a",
-        tier="Nano",
-        calls=1,
-        prompt_tokens=100,
-        completion_tokens=20,
-        latencies=[0.5],
-    )
-    prompts = [
-        {
-            "id": "redaction",
-            "messages": [{"role": "user", "content": "PROMPT-TEXT"}],
-        }
-    ]
-
-    markdown = render_markdown(
-        [result],
-        pricing_data(),
+    monkeypatch.setattr(bench, "_chat", refused_chat)
+    results = bench.run_bench(
+        bench.resolve_tiers(CATALOG)[:1],
+        bench.prompts()[:1],
         repeats=1,
-        prompts=prompts,
+        api_key="test",
+        retries=1,
     )
 
-    assert "| Tier | Model | Calls | Errors | Mean | p50 | p95 |" in markdown
-    assert "`model-a`" in markdown
-    assert "`redaction`" in markdown
-    assert "PROMPT-TEXT" not in markdown
+    assert results[0].calls == 0
+    assert results[0].retries == 0
+    assert results[0].errors == 1
 
 
-def test_main_without_api_key_returns_one_and_writes_nothing(
-    tmp_path, monkeypatch, capsys
-):
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("NEBIUS_API_KEY", raising=False)
-    pricing = write_pricing(tmp_path, pricing_data())
-    json_out = tmp_path / "out.json"
-    markdown_out = tmp_path / "out.md"
+def test_prompts_carry_placeholders_not_personal_details():
+    text = " ".join(p.system + p.user for p in bench.prompts())
 
-    code = main(
-        [
-            "--pricing",
-            str(pricing),
-            "--json",
-            str(json_out),
-            "--markdown",
-            str(markdown_out),
-        ]
-    )
-
-    assert code == 1
-    assert not json_out.exists()
-    assert not markdown_out.exists()
-    assert "NEBIUS_API_KEY" in capsys.readouterr().err
-
-
-def test_main_writes_json_and_markdown_with_an_injected_transport(tmp_path):
-    pricing = write_pricing(tmp_path, pricing_data())
-    json_out = tmp_path / "out.json"
-    markdown_out = tmp_path / "out.md"
-    transport = FakeTransport(prompt_tokens=120, completion_tokens=30)
-
-    code = main(
-        [
-            "--repeats",
-            "1",
-            "--pricing",
-            str(pricing),
-            "--json",
-            str(json_out),
-            "--markdown",
-            str(markdown_out),
-        ],
-        transport=transport,
-    )
-
-    assert code == 0
-    payload = json.loads(json_out.read_text(encoding="utf-8"))
-    assert payload["repeats"] == 1
-    assert len(payload["tiers"]) == len(DEFAULT_TIERS)
-    assert {tier["tier"] for tier in payload["tiers"]} == {
-        tier for _, tier in DEFAULT_TIERS
-    }
-    assert all(tier["calls"] == len(DEFAULT_PROMPTS) for tier in payload["tiers"])
-    assert "Cost and latency by Nemotron tier" in markdown_out.read_text(
-        encoding="utf-8"
-    )
-    assert "Northwind Insurance" not in json_out.read_text(encoding="utf-8")
-
-
-def test_main_returns_one_when_a_tier_has_no_successful_calls(tmp_path):
-    pricing = write_pricing(tmp_path, pricing_data())
-    transport = FakeTransport(fail_models={"nvidia/Nemotron-3-Ultra-550b-a55b"})
-
-    code = main(
-        [
-            "--repeats",
-            "1",
-            "--pricing",
-            str(pricing),
-            "--json",
-            str(tmp_path / "out.json"),
-            "--markdown",
-            str(tmp_path / "out.md"),
-        ],
-        transport=transport,
-    )
-
-    assert code == 1
-    payload = json.loads((tmp_path / "out.json").read_text(encoding="utf-8"))
-    ultra = next(tier for tier in payload["tiers"] if tier["tier"] == "Ultra")
-    assert ultra["calls"] == 0
-    assert ultra["errors"] == len(DEFAULT_PROMPTS)
-
-
-def test_token_factory_transport_requires_a_key_and_positive_timeout():
-    with pytest.raises(ValueError):
-        TokenFactoryTransport("")
-    with pytest.raises(ValueError):
-        TokenFactoryTransport("key", timeout=0)
+    # A benchmark is not a reason to put a name, an email, or a real
+    # reference into a prompt.
+    assert "[PROVIDER_1]" in text
+    assert "[ACCOUNT_1]" in text
+    assert "@" not in text

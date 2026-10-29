@@ -12,738 +12,583 @@ than the redaction itself.
 The benchmark runs the same set of representative prompts against each
 tier and records:
 
-* **cost** — from the token counts the API returns, priced at the tier's
-  published rate. Token Factory returns usage on every response, so this
-  is measured, not estimated.
+* **cost** — from the token counts the API returns, priced at the rate the
+  live catalog publishes. Token Factory returns `usage` on every response,
+  so this is measured, not estimated.
 * **latency** — wall clock per call, plus the p95 across repetitions,
   because the mean hides the tail and the tail is what a user feels.
 * **tokens** — input and output, separately, because the two are priced
   very differently.
 
-The representative set is not synthetic filler. It is drawn from the
-pipeline: a redaction request, a deadline extraction request, an action
-draft, and a memory update. Those are the four things the agent actually
-asks a model to do.
+The representative set is drawn from the four request shapes the agent
+sends when it escalates to a model: transcribe, extract a deadline, draft
+an action, record a memory update. The deterministic path does most of the
+work (`agent/pipeline.py` runs with no model call); this measures the
+calls that remain.
 
-Pricing is not hard-coded here. It is read from `eval/pricing.json`, which
-records the catalog snapshot the rates came from. The script refuses to run
-without a complete rate entry for every tier; a benchmark that silently
-uses stale or missing prices produces a confident wrong number.
+Two rules this script will not bend:
 
-The TierResult objects are intentionally independent of the transport.
-`run_bench()` accepts a callable transport, so the test suite runs the
-whole scheduling, accounting, and error path with no network. The default
-transport is the only thing that knows how to talk to Token Factory.
+1. **Model IDs come from the live catalog, never from this file.** The
+   tier slots are role names (`nano`, `super`, `ultra`); the pinned role in
+   `.env` wins when it still exists in the catalog, otherwise the catalog's
+   own matcher decides. A hard-coded ID here would rot silently the next
+   time Nebius re-spells a model.
+2. **Pricing comes from the live catalog, and a missing price is an
+   error.** A cost table built on stale or guessed rates is a confident
+   wrong number, which is worse than no number.
 
 Usage:
 
-    python eval/cost_latency_bench.py --repeats 3
-    python eval/cost_latency_bench.py --pricing eval/pricing.json
-
-`NEBIUS_API_KEY` is read from the environment or `.env`, through the same
-loader the other eval scripts use. The key is never printed.
+    python eval/cost_latency_bench.py --dry-run      # resolve, spend nothing
+    python eval/cost_latency_bench.py                # measure, 3 repeats
+    python eval/cost_latency_bench.py --repeats 5 --json eval/results/cost_latency.json
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 import sys
 import time
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from eval.tokenfactory import base_url, load_api_key
+from eval.tokenfactory import (
+    ROLE_PATTERNS,
+    base_url,
+    fetch_models,
+    find_by_pattern,
+    find_model,
+    load_api_key,
+    model_id,
+    pricing_per_token,
+    read_pinned_roles,
+)
 
 __all__ = [
-    "DEFAULT_PROMPTS",
-    "DEFAULT_TIERS",
-    "ChatTransport",
-    "TierResult",
-    "TokenFactoryTransport",
-    "load_pricing",
+    "Prompt",
+    "Tier",
+    "TierSpec",
     "main",
-    "render_markdown",
+    "p95",
+    "prompts",
+    "resolve_tiers",
     "run_bench",
 ]
 
-EVAL_DIR = Path(__file__).resolve().parent
-PRICING_PATH = EVAL_DIR / "pricing.json"
-RESULTS_DIR = EVAL_DIR / "results"
+# The tier slots from the plan, in ascending order of cost.
+TIER_ROLES = ("nano", "super", "ultra")
 
-# The three pinned tiers from docs/model-catalog.md and eval/pin_models.py.
-# Super is Super-VL because that is the pinned main-reasoning and OCR model;
-# the text-only `nemotron-3-super-120b-a12b` is a comparator, not the tier.
-DEFAULT_TIERS = [
-    ("nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B", "Nano"),
-    ("nvidia/Nemotron-3.5-Super-VL", "Super"),
-    ("nvidia/Nemotron-3-Ultra-550b-a55b", "Ultra"),
-]
-
-# Four representative pipeline calls. The prompts are synthetic, short, and
-# deliberately contain no real household data. They are not a quality
-# benchmark; they are the shape of the work the agent sends to a model.
-DEFAULT_PROMPTS: list[dict[str, Any]] = [
-    {
-        "id": "redaction",
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are a deterministic privacy filter. Return only a JSON "
-                    "object with a `redacted` string and a `spans` array. Do not "
-                    "explain."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    "Redact every personal name, account number, email address, "
-                    "and postal address. Keep dates and merchant names. Text: "
-                    "'On 2 November 2026, Rowan Example (account "
-                    "ACCT-EXAMPLE-0001, rowan@example.invalid) renewed the "
-                    "Northwind Insurance policy from 14 Example Street.'"
-                ),
-            },
-        ],
-    },
-    {
-        "id": "deadline_extraction",
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "Extract structured fields. Return only a JSON object with "
-                    "provider, holder, reference, renewal_date, and amount. Use "
-                    "ISO dates and a number for amount."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    "Northwind Insurance renewal notice for Rowan Example. "
-                    "Policy POL-EXAMPLE-42 renews on 2 November 2026. The "
-                    "annual amount is 148.00 USD."
-                ),
-            },
-        ],
-    },
-    {
-        "id": "action_draft",
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "Draft a concise, polite message the user can send. Do not "
-                    "invent account details. Return only the message body."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    "The household cancelled the Example Gym membership. Draft "
-                    "a cancellation confirmation request for the gym, effective "
-                    "at the end of the current term. Ask for written "
-                    "confirmation and the final billing date."
-                ),
-            },
-        ],
-    },
-    {
-        "id": "memory_update",
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "Update a household fact. Return only a JSON object with "
-                    "status, effective_date, and supersedes."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    "The user says: 'I cancelled the Northwind policy in March.' "
-                    "Existing fact: Northwind policy POL-EXAMPLE-42 is active, "
-                    "renews 2 November 2026. Record the new status and the month "
-                    "it took effect."
-                ),
-            },
-        ],
-    },
-]
-
+# Reasoning models spend completion tokens before they answer. A 1024-token
+# budget is consumed by the trace and the answer comes back empty, which
+# would look like a fast call and a cheap one. The pipeline uses the same
+# budget for the OCR path for the same reason.
 MAX_COMPLETION_TOKENS = 4096
-DEFAULT_TEMPERATURE = 0.0
-DEFAULT_TIMEOUT_SECONDS = 120.0
 
 
-class ChatTransport(Protocol):
-    """One chat-completion call.
+@dataclass(slots=True)
+class Prompt:
+    """One representative request.
 
-    The transport returns a mapping containing token usage. The default
-    adapter normalises Token Factory's OpenAI-compatible response; tests
-    inject a fake with the same shape.
+    Attributes:
+        prompt_id: Stable name used in the results.
+        system: The system message, if the shape uses one.
+        user: The user message. Redacted text only — a benchmark is not a
+            reason to send a personal detail to a model.
+        why: What pipeline stage this stands in for, for the report.
     """
 
-    def __call__(
-        self,
-        model: str,
-        messages: list[dict[str, str]],
-        *,
-        max_tokens: int,
-        temperature: float,
-    ) -> Mapping[str, Any]: ...
+    prompt_id: str
+    system: str
+    user: str
+    why: str
 
 
-@dataclass
-class TierResult:
+def prompts() -> list[Prompt]:
+    """The four request shapes, with placeholder text only.
+
+    The numbers are fixed so two runs are comparable. Everything that
+    would be a personal detail in a real document is already a
+    placeholder — there is no reason for a cost benchmark to carry one.
+    """
+    return [
+        Prompt(
+            prompt_id="transcribe",
+            system="Transcribe the document exactly. Output only its text.",
+            user=(
+                "PROVIDER: [PROVIDER_1]\n"
+                "REFERENCE: [ACCOUNT_1]\n"
+                "NOTICE DATE: 2026-02-26\n"
+                "Your plan renews on 2027-03-07. The annual amount is [AMOUNT_1].\n"
+                "To cancel before renewal, notify us by 2027-02-21."
+            ),
+            why="document reading, after local redaction",
+        ),
+        Prompt(
+            prompt_id="deadline_extract",
+            system=(
+                "You extract obligations from household documents. Return JSON "
+                "with provider, renewal_date, amount, and the exact evidence "
+                "line for each field. Never invent a value."
+            ),
+            user=(
+                "Document:\n"
+                "PROVIDER: [PROVIDER_1]\n"
+                "REFERENCE: [ACCOUNT_1]\n"
+                "Your plan renews on 2027-03-07. The annual amount is [AMOUNT_1].\n"
+                "To cancel before renewal, notify us by 2027-02-21."
+            ),
+            why="deadline extraction when the deterministic pass is unsure",
+        ),
+        Prompt(
+            prompt_id="action_draft",
+            system=(
+                "You draft short, polite household correspondence. Use only the "
+                "facts supplied. Never invent a number, a date, or a name."
+            ),
+            user=(
+                "Draft a cancellation email to [PROVIDER_1] for [ACCOUNT_1], "
+                "asking to cancel before the renewal on 2027-03-07. Mention the "
+                "notice date of 2026-02-26."
+            ),
+            why="drafting the letter the user sends themselves",
+        ),
+        Prompt(
+            prompt_id="memory_update",
+            system=(
+                "You turn a statement from the user into one structured fact. "
+                'Return JSON with keys subject, kind, value, valid_from. If the '
+                "statement is not an update, return an empty object."
+            ),
+            user=(
+                'The user said: "I cancelled the gym membership in March." '
+                "Today is 2026-10-20. The subject is gym and the kind is "
+                "subscription_status."
+            ),
+            why="memory update when the statement is free text",
+        ),
+    ]
+
+
+@dataclass(slots=True, frozen=True)
+class TierSpec:
+    """A resolved tier: role, model ID, and the catalog's published rates."""
+
+    role: str
+    model: str
+    input_per_million: float
+    output_per_million: float
+
+
+@dataclass(slots=True)
+class Tier:
     """The measured cost and latency of one tier."""
 
+    role: str
     model: str
-    tier: str
+    input_per_million: float
+    output_per_million: float
     calls: int = 0
+    errors: int = 0
+    retries: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
     latencies: list[float] = field(default_factory=list)
-    errors: int = 0
-    error_types: list[str] = field(default_factory=list)
-
-    @property
-    def attempts(self) -> int:
-        return self.calls + self.errors
+    error_messages: list[str] = field(default_factory=list)
+    by_prompt: dict[str, dict[str, float]] = field(default_factory=dict)
 
     @property
     def mean_latency(self) -> float:
+        """Mean wall-clock latency in seconds."""
         return statistics.mean(self.latencies) if self.latencies else 0.0
 
     @property
-    def min_latency(self) -> float:
-        return min(self.latencies) if self.latencies else 0.0
-
-    @property
-    def max_latency(self) -> float:
-        return max(self.latencies) if self.latencies else 0.0
-
-    @property
-    def p50_latency(self) -> float:
-        return statistics.median(self.latencies) if self.latencies else 0.0
-
-    @property
     def p95_latency(self) -> float:
-        if not self.latencies:
-            return 0.0
-        ordered = sorted(self.latencies)
-        return ordered[max(0, int(len(ordered) * 0.95) - 1)]
+        """Nearest-rank p95 in seconds. Empty when no call succeeded."""
+        return p95(self.latencies)
 
-    def cost_usd(self, pricing: Mapping[str, Any]) -> float:
-        """Cost in USD using the supplied per-million-token rates."""
-        rates = pricing.get(self.tier) or pricing.get(self.model) or {}
-        if not isinstance(rates, Mapping):
-            return 0.0
-        per_million_in = float(rates.get("input_per_million", 0.0))
-        per_million_out = float(rates.get("output_per_million", 0.0))
+    @property
+    def cost_usd(self) -> float:
+        """Total cost in USD from the measured token counts."""
         return (
-            self.prompt_tokens / 1_000_000 * per_million_in
-            + self.completion_tokens / 1_000_000 * per_million_out
+            self.prompt_tokens / 1_000_000 * self.input_per_million
+            + self.completion_tokens / 1_000_000 * self.output_per_million
         )
 
-    def cost_per_call_usd(self, pricing: Mapping[str, Any]) -> float:
-        if not self.calls:
-            return 0.0
-        return self.cost_usd(pricing) / self.calls
+    @property
+    def cost_per_call(self) -> float:
+        """Mean cost of one successful call."""
+        return self.cost_usd / self.calls if self.calls else 0.0
 
-    def to_dict(self, pricing: Mapping[str, Any]) -> dict[str, Any]:
-        """The JSON-safe record for one tier. No prompt text is included."""
+    def to_dict(self) -> dict[str, object]:
         return {
-            "tier": self.tier,
+            "tier": self.role.capitalize(),
             "model": self.model,
-            "attempts": self.attempts,
+            "input_per_million_usd": self.input_per_million,
+            "output_per_million_usd": self.output_per_million,
             "calls": self.calls,
             "errors": self.errors,
-            "error_types": sorted(set(self.error_types)),
+            "retries": self.retries,
+            "error_messages": self.error_messages,
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
-            "mean_latency_seconds": round(self.mean_latency, 6),
-            "min_latency_seconds": round(self.min_latency, 6),
-            "p50_latency_seconds": round(self.p50_latency, 6),
-            "p95_latency_seconds": round(self.p95_latency, 6),
-            "max_latency_seconds": round(self.max_latency, 6),
-            "cost_usd": round(self.cost_usd(pricing), 8),
-            "cost_per_call_usd": round(self.cost_per_call_usd(pricing), 8),
+            "mean_latency_ms": round(self.mean_latency * 1000, 1),
+            "p95_latency_ms": round(self.p95_latency * 1000, 1),
+            "cost_usd": round(self.cost_usd, 8),
+            "cost_per_call_usd": round(self.cost_per_call, 8),
+            "cost_per_1k_calls_usd": round(self.cost_per_call * 1000, 4),
+            "by_prompt": self.by_prompt,
         }
 
 
-class TokenFactoryTransport:
-    """The default transport: Token Factory's OpenAI-compatible endpoint.
+def p95(samples: list[float]) -> float:
+    """Nearest-rank 95th percentile.
 
-    A single `httpx.Client` is reused for the whole run so connection setup
-    is not counted as model latency. The client is closed by `close()`.
+    With 12 samples that is the 12th value, not the 11th: the point of a
+    tail number is that it is the tail, and this corpus is too small to
+    interpolate honestly.
     """
-
-    def __init__(
-        self,
-        api_key: str,
-        *,
-        base: str | None = None,
-        timeout: float = DEFAULT_TIMEOUT_SECONDS,
-    ) -> None:
-        if not api_key:
-            raise ValueError("api_key is required for the default transport")
-        if timeout <= 0:
-            raise ValueError("timeout must be positive")
-
-        import httpx
-
-        self._api_key = api_key
-        self._url = f"{(base or base_url()).rstrip('/')}/chat/completions"
-        self._client = httpx.Client(timeout=timeout)
-
-    def __call__(
-        self,
-        model: str,
-        messages: list[dict[str, str]],
-        *,
-        max_tokens: int,
-        temperature: float,
-    ) -> Mapping[str, Any]:
-        payload = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-        }
-        response = self._client.post(
-            self._url,
-            json=payload,
-            headers={"Authorization": f"Bearer {self._api_key}"},
-        )
-        if response.status_code != 200:
-            # Do not put the response body in the error: it can echo the
-            # prompt, and this script's output is committed evidence.
-            raise RuntimeError(f"HTTP {response.status_code} from Token Factory")
-
-        data = response.json()
-        usage = data.get("usage")
-        if not isinstance(usage, Mapping):
-            raise RuntimeError("response omitted token usage")
-        if usage.get("prompt_tokens") is None or usage.get("completion_tokens") is None:
-            raise RuntimeError("response omitted prompt/completion token counts")
-        return {
-            "prompt_tokens": int(usage["prompt_tokens"]),
-            "completion_tokens": int(usage["completion_tokens"]),
-        }
-
-    def close(self) -> None:
-        self._client.close()
-
-    def __enter__(self) -> TokenFactoryTransport:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
+    if not samples:
+        return 0.0
+    ordered = sorted(samples)
+    index = max(0, math.ceil(0.95 * len(ordered)) - 1)
+    return ordered[index]
 
 
-def _usage_tokens(response: Mapping[str, Any]) -> tuple[int, int]:
-    """Read token usage from a transport response.
+def _pick_text_model(matches: list[dict], role: str) -> dict | None:
+    """Choose deterministically from the catalog's matches for a role.
 
-    Accepts both the normalised shape and a nested OpenAI-style `usage`
-    object, so a fake transport can mirror whichever is convenient.
+    The bench sends text, so a text-only model is preferred when the
+    catalog offers one. Order within that is the catalog's, which is
+    stable. The pinned role in `.env` is tried first, so this only runs
+    when the pin is gone.
     """
-    usage: Any = response.get("usage", response)
-    if not isinstance(usage, Mapping):
-        raise RuntimeError("transport response has no token usage")
-    prompt = usage.get("prompt_tokens", usage.get("input_tokens"))
-    completion = usage.get("completion_tokens", usage.get("output_tokens"))
-    if prompt is None or completion is None:
-        raise RuntimeError("transport response omitted prompt/completion tokens")
-    try:
-        prompt_tokens = int(prompt)
-        completion_tokens = int(completion)
-    except (TypeError, ValueError):
-        raise RuntimeError("transport response had non-integer token usage") from None
-    if prompt_tokens < 0 or completion_tokens < 0:
-        raise RuntimeError("transport response had negative token usage")
-    return prompt_tokens, completion_tokens
+    if not matches:
+        return None
+    text_only = [
+        model
+        for model in matches
+        if "text->text" in str((model.get("architecture") or {}).get("modality", "")).lower()
+    ]
+    return (text_only or matches)[0]
 
 
-def _prompt_id(prompt: Mapping[str, Any], index: int) -> str:
-    return str(prompt.get("id") or f"prompt-{index + 1}")
+def resolve_tiers(
+    models: list[dict],
+    *,
+    pinned: dict[str, str] | None = None,
+) -> list[TierSpec]:
+    """Resolve the three tier slots against the live catalog.
 
+    Args:
+        models: The catalog records, as returned by `fetch_models`.
+        pinned: The `LEDGER_MODEL_*` roles from `.env`, if any. A pinned
+            role wins when the exact ID still exists in the catalog,
+            because that is the model the agent actually calls.
 
-def _messages_for(prompt: Mapping[str, Any], prompt_id: str) -> list[dict[str, str]]:
-    raw = prompt.get("messages")
-    if raw is None:
-        if "role" in prompt and "content" in prompt:
-            raw = [prompt]
-        else:
-            raw = []
-            if prompt.get("system"):
-                raw.append({"role": "system", "content": prompt["system"]})
-            if prompt.get("user"):
-                raw.append({"role": "user", "content": prompt["user"]})
+    Returns:
+        One `TierSpec` per role, in plan order.
 
-    if not isinstance(raw, list) or not raw:
-        raise ValueError(f"prompt {prompt_id!r} has no messages")
+    Raises:
+        RuntimeError: if a role has no catalog match, or the match has no
+            published price. The benchmark refuses to guess either.
+    """
+    pinned = pinned or {}
+    resolved: list[TierSpec] = []
 
-    messages: list[dict[str, str]] = []
-    for message in raw:
-        if not isinstance(message, Mapping):
-            raise ValueError(f"prompt {prompt_id!r} has a non-object message")
-        if "role" not in message or "content" not in message:
-            raise ValueError(f"prompt {prompt_id!r} message needs role and content")
-        messages.append(
-            {"role": str(message["role"]), "content": str(message["content"])}
-        )
-    return messages
+    for role in TIER_ROLES:
+        pin = pinned.get(role, "").strip()
+        chosen = find_model(models, pin) if pin else None
+        if chosen is None:
+            chosen = _pick_text_model(find_by_pattern(models, ROLE_PATTERNS[role]), role)
+        if chosen is None:
+            raise RuntimeError(
+                f"no catalog model matches the {role!r} role "
+                f"(patterns: {ROLE_PATTERNS[role]})"
+            )
 
+        prompt_price, completion_price = pricing_per_token(chosen)
+        if prompt_price <= 0 or completion_price <= 0:
+            raise RuntimeError(
+                f"the catalog publishes no price for {model_id(chosen)!r} "
+                f"({role} tier). Refusing to benchmark without a rate."
+            )
 
-def _positive_int(value: Any, name: str) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        raise ValueError(f"{name} must be a positive integer") from None
-    if number <= 0:
-        raise ValueError(f"{name} must be a positive integer")
-    return number
-
-
-def _temperature_for(prompt: Mapping[str, Any], prompt_id: str) -> float:
-    value = prompt.get("temperature", DEFAULT_TEMPERATURE)
-    try:
-        temperature = float(value)
-    except (TypeError, ValueError):
-        raise ValueError(f"prompt {prompt_id!r} has a non-numeric temperature") from None
-    if not 0.0 <= temperature <= 2.0:
-        raise ValueError(f"prompt {prompt_id!r} temperature must be between 0 and 2")
-    return temperature
-
-
-def _prepare_prompts(
-    prompts: list[dict[str, Any]], max_tokens: int
-) -> list[tuple[str, list[dict[str, str]], int, float]]:
-    prepared = []
-    for index, prompt in enumerate(prompts):
-        if not isinstance(prompt, Mapping):
-            raise ValueError(f"prompt {index + 1} is not an object")
-        prompt_id = _prompt_id(prompt, index)
-        messages = _messages_for(prompt, prompt_id)
-        prompt_max_tokens = _positive_int(prompt.get("max_tokens", max_tokens), "max_tokens")
-        prepared.append(
-            (
-                prompt_id,
-                messages,
-                prompt_max_tokens,
-                _temperature_for(prompt, prompt_id),
+        resolved.append(
+            TierSpec(
+                role=role,
+                model=model_id(chosen),
+                input_per_million=round(prompt_price * 1_000_000, 6),
+                output_per_million=round(completion_price * 1_000_000, 6),
             )
         )
-    return prepared
+
+    return resolved
 
 
-def load_pricing(
-    path: str | Path = PRICING_PATH,
-    tiers: list[tuple[str, str]] | None = None,
-) -> dict[str, Any]:
-    """Read and validate the per-tier rate table.
+def _chat(
+    model: str,
+    prompt: Prompt,
+    *,
+    api_key: str,
+    timeout: float,
+    max_tokens: int,
+) -> tuple[int, int, float]:
+    """One chat completion. Returns (prompt tokens, completion tokens, seconds).
 
-    A missing file, malformed JSON, or a missing/negative rate is an error.
-    The benchmark must not silently use zero for a tier it cannot price.
+    Raises `RuntimeError` on an API or transport failure; `run_bench`
+    records that as an error rather than dropping the call.
     """
-    pricing_path = Path(path)
-    try:
-        text = pricing_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise ValueError(f"could not read pricing file {pricing_path}: {exc}") from exc
+    import httpx
 
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"pricing file {pricing_path} is not valid JSON: {exc}") from exc
-    if not isinstance(data, Mapping):
-        raise ValueError(f"pricing file {pricing_path} must contain a JSON object")
+    messages = []
+    if prompt.system:
+        messages.append({"role": "system", "content": prompt.system})
+    messages.append({"role": "user", "content": prompt.user})
 
-    for model, tier in tiers or DEFAULT_TIERS:
-        rates = data.get(tier) or data.get(model)
-        if not isinstance(rates, Mapping):
-            raise ValueError(f"pricing is missing a rate entry for {tier!r} ({model})")
-        for key in ("input_per_million", "output_per_million"):
-            value = rates.get(key)
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise ValueError(f"pricing for {tier!r} is missing a numeric {key}")
-            if value < 0:
-                raise ValueError(f"pricing for {tier!r} has a negative {key}")
-    return dict(data)
+    payload = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.0,
+    }
+
+    started = time.perf_counter()
+    with httpx.Client(timeout=timeout) as client:
+        response = client.post(
+            f"{base_url()}/chat/completions",
+            json=payload,
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+    elapsed = time.perf_counter() - started
+
+    if response.status_code != 200:
+        raise RuntimeError(f"HTTP {response.status_code}: {response.text[:300]}")
+
+    data = response.json()
+    usage = data.get("usage") or {}
+    return (
+        int(usage.get("prompt_tokens", 0) or 0),
+        int(usage.get("completion_tokens", 0) or 0),
+        elapsed,
+    )
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Whether a failed call is worth trying again.
+
+    A TLS EOF or a 5xx from the endpoint says nothing about the tier, so
+    retrying it is honest. A 400 or a 401 does say something, and retrying
+    it just doubles the wait before the same failure.
+    """
+    text = str(exc)
+    return any(
+        marker in text
+        for marker in ("SSL", "EOF", "timed out", "timeout", "Connection", "HTTP 5")
+    )
 
 
 def run_bench(
-    tiers: list[tuple[str, str]],
-    prompts: list[dict[str, Any]],
+    tiers: list[TierSpec],
+    prompt_set: list[Prompt],
     *,
     repeats: int = 3,
     api_key: str = "",
-    transport: ChatTransport | None = None,
+    timeout: float = 120.0,
     max_tokens: int = MAX_COMPLETION_TOKENS,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
-) -> list[TierResult]:
+    retries: int = 1,
+) -> list[Tier]:
     """Run the benchmark.
 
     Args:
-        tiers: (model_id, tier_name) pairs.
-        prompts: Representative prompts.
+        tiers: Resolved tiers, from `resolve_tiers`.
+        prompt_set: Representative prompts, from `prompts`.
         repeats: How many times to run each prompt against each tier, so
             the latency distribution means something.
-        api_key: The Token Factory API key. Only used when `transport` is
-            omitted.
-        transport: Injected callable for offline tests and alternate
-            endpoints.
-        max_tokens: Default completion budget. Individual prompts may
-            override it.
-        timeout: Per-request timeout for the default transport.
+        api_key: The Token Factory API key.
+        timeout: Per-call timeout in seconds.
+        max_tokens: Completion budget. Must leave room for a reasoning
+            trace, or a reasoning model scores as fast and empty.
+        retries: Extra attempts for a transient transport failure. A
+            retried call still counts as one call; the retry count is
+            reported so a flaky endpoint cannot hide in the table.
 
     Returns:
-        One `TierResult` per tier, in the order supplied.
-
-    Raises:
-        ValueError: Empty/duplicate tiers, no prompts, a bad repetition
-            count, an invalid prompt, or no API key with no transport.
+        One `Tier` per input tier, with per-call timings and token counts.
     """
-    repeats = _positive_int(repeats, "repeats")
-    max_tokens = _positive_int(max_tokens, "max_tokens")
-    if not tiers:
-        raise ValueError("at least one tier is required")
-    if not prompts:
-        raise ValueError("at least one prompt is required")
+    results: list[Tier] = []
 
-    seen: set[tuple[str, str]] = set()
-    for model, tier in tiers:
-        if not model or not tier:
-            raise ValueError("tier model and name must be non-empty")
-        key = (model, tier)
-        if key in seen:
-            raise ValueError(f"duplicate tier entry: {tier!r} ({model})")
-        seen.add(key)
+    for spec in tiers:
+        tier = Tier(
+            role=spec.role,
+            model=spec.model,
+            input_per_million=spec.input_per_million,
+            output_per_million=spec.output_per_million,
+        )
+        per_prompt: dict[str, dict[str, float]] = {}
 
-    prepared = _prepare_prompts(prompts, max_tokens)
-    results = [TierResult(model=model, tier=tier) for model, tier in tiers]
-    by_key = {(result.model, result.tier): result for result in results}
+        for prompt in prompt_set:
+            latencies: list[float] = []
+            prompt_tokens = 0
+            completion_tokens = 0
+            errors = 0
 
-    owned_transport: TokenFactoryTransport | None = None
-    if transport is None:
-        if not api_key:
-            raise ValueError("api_key is required when no transport is injected")
-        owned_transport = TokenFactoryTransport(api_key, timeout=timeout)
-        transport = owned_transport
-
-    try:
-        # Interleave tiers inside each prompt/repetition. Running one tier
-        # to completion first would let a network change or a warm cache
-        # bias the comparison toward whichever tier went first.
-        for _ in range(repeats):
-            for _prompt_id, messages, prompt_max_tokens, temperature in prepared:
-                for model, tier in tiers:
-                    result = by_key[(model, tier)]
-                    started = time.perf_counter()
+            for _ in range(repeats):
+                attempt = 0
+                while True:
                     try:
-                        response = transport(
-                            model,
-                            messages,
-                            max_tokens=prompt_max_tokens,
-                            temperature=temperature,
+                        sent, received, elapsed = _chat(
+                            spec.model,
+                            prompt,
+                            api_key=api_key,
+                            timeout=timeout,
+                            max_tokens=max_tokens,
                         )
-                        elapsed = time.perf_counter() - started
-                        prompt_tokens, completion_tokens = _usage_tokens(response)
-                    except Exception as exc:
-                        # The exception text is not recorded: a transport
-                        # may include request/response text in it.
-                        result.errors += 1
-                        result.error_types.append(type(exc).__name__)
-                        continue
+                        break
+                    except Exception as exc:  # one bad call, not a dead tier
+                        if attempt < retries and _is_transient(exc):
+                            attempt += 1
+                            tier.retries += 1
+                            time.sleep(0.5 * attempt)
+                            continue
+                        tier.errors += 1
+                        errors += 1
+                        tier.error_messages.append(f"{prompt.prompt_id}: {exc}")
+                        sent = received = None
+                        break
 
-                    result.calls += 1
-                    result.prompt_tokens += prompt_tokens
-                    result.completion_tokens += completion_tokens
-                    result.latencies.append(elapsed)
-    finally:
-        if owned_transport is not None:
-            owned_transport.close()
+                if sent is None:
+                    continue
+
+                tier.calls += 1
+                tier.prompt_tokens += sent
+                tier.completion_tokens += received
+                tier.latencies.append(elapsed)
+                latencies.append(elapsed)
+                prompt_tokens += sent
+                completion_tokens += received
+
+            per_prompt[prompt.prompt_id] = {
+                "calls": len(latencies),
+                "errors": errors,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "mean_latency_ms": round(statistics.mean(latencies) * 1000, 1)
+                if latencies
+                else 0.0,
+                "p95_latency_ms": round(p95(latencies) * 1000, 1),
+            }
+
+        tier.by_prompt = per_prompt
+        results.append(tier)
 
     return results
 
 
-def render_markdown(
-    results: list[TierResult],
-    pricing: Mapping[str, Any],
-    *,
-    repeats: int,
-    prompts: list[dict[str, Any]],
-) -> str:
-    """Render the video-ready table and its method note."""
-    meta = pricing.get("_meta")
-    source = "eval/pricing.json"
-    snapshot = ""
-    if isinstance(meta, Mapping):
-        source = str(meta.get("source") or source)
-        snapshot = str(meta.get("snapshot") or "")
-
+def render_table(results: list[Tier]) -> str:
+    """A markdown table of the measured numbers."""
     lines = [
-        "# Cost and latency by Nemotron tier",
-        "",
-        f"Generated by `eval/cost_latency_bench.py` · repeats per prompt: {repeats} · "
-        f"prompts: {len(prompts)}",
-        "",
-        f"Pricing: {source}" + (f" (`{snapshot}`)" if snapshot else ""),
-        "",
-        "Latency is wall-clock around one chat completion, including network "
-        "time. Cost uses the token usage returned by the API and the rates in "
-        "`eval/pricing.json`. Errors are counted but their messages are not "
-        "recorded.",
-        "",
-        "| Tier | Model | Calls | Errors | Mean | p50 | p95 | Tokens in | Tokens out | Cost | $/call |",
+        "| Tier | Model | Calls | Errors | Retries | In tok | Out tok | Mean ms | p95 ms | "
+        "Cost/call | $/1k calls |",
         "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
-    for result in results:
+    for tier in results:
         lines.append(
-            f"| {result.tier} | `{result.model}` | {result.calls} | "
-            f"{result.errors} | {result.mean_latency:.3f}s | "
-            f"{result.p50_latency:.3f}s | {result.p95_latency:.3f}s | "
-            f"{result.prompt_tokens:,} | {result.completion_tokens:,} | "
-            f"${result.cost_usd(pricing):.6f} | "
-            f"${result.cost_per_call_usd(pricing):.6f} |"
+            f"| {tier.role.capitalize()} | `{tier.model}` | {tier.calls} | {tier.errors} | "
+            f"{tier.retries} | "
+            f"{tier.prompt_tokens:,} | {tier.completion_tokens:,} | "
+            f"{tier.mean_latency * 1000:.0f} | {tier.p95_latency * 1000:.0f} | "
+            f"${tier.cost_per_call:.6f} | ${tier.cost_per_call * 1000:.2f} |"
         )
-    lines += [
-        "",
-        "## Prompts",
-        "",
-    ]
-    for index, prompt in enumerate(prompts):
-        prompt_id = _prompt_id(prompt, index)
-        lines.append(f"- `{prompt_id}`")
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines)
 
 
-def _result_payload(
-    results: list[TierResult],
-    pricing: Mapping[str, Any],
-    *,
-    repeats: int,
-    prompts: list[dict[str, Any]],
-) -> dict[str, Any]:
-    meta = pricing.get("_meta")
-    return {
-        "generated_at": datetime.now(UTC).isoformat(),
-        "repeats": repeats,
-        "prompts": [_prompt_id(prompt, index) for index, prompt in enumerate(prompts)],
-        "pricing": dict(meta) if isinstance(meta, Mapping) else {},
-        "tiers": [result.to_dict(pricing) for result in results],
-    }
-
-
-def main(argv: list[str] | None = None, *, transport: ChatTransport | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--repeats", type=int, default=3, help="per prompt per tier")
+    parser.add_argument("--json", dest="json_out", default="eval/results/cost_latency.json")
     parser.add_argument(
-        "--json",
-        dest="json_out",
-        default=str(RESULTS_DIR / "cost_latency.json"),
-        help="JSON result path",
+        "--dry-run",
+        action="store_true",
+        help="resolve tiers and print the plan without spending anything",
     )
+    parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument(
-        "--markdown",
-        dest="markdown_out",
-        default=str(RESULTS_DIR / "cost_latency.md"),
-        help="Markdown table path",
-    )
-    parser.add_argument(
-        "--pricing",
-        default=str(PRICING_PATH),
-        help="per-tier rate table",
-    )
-    parser.add_argument(
-        "--max-tokens",
+        "--retries",
         type=int,
-        default=MAX_COMPLETION_TOKENS,
-        help="default completion budget",
-    )
-    parser.add_argument(
-        "--timeout",
-        type=float,
-        default=DEFAULT_TIMEOUT_SECONDS,
-        help="per-request timeout for the default transport",
+        default=1,
+        help="extra attempts for a transient transport failure",
     )
     args = parser.parse_args(argv)
 
-    try:
-        pricing = load_pricing(args.pricing, DEFAULT_TIERS)
-    except ValueError as exc:
-        print(f"pricing error: {exc}", file=sys.stderr)
+    api_key = load_api_key()
+    if not api_key:
+        print("NEBIUS_API_KEY is not set (env or .env)", file=sys.stderr)
         return 1
-
-    api_key = ""
-    if transport is None:
-        api_key = load_api_key()
-        if not api_key:
-            print(
-                "NEBIUS_API_KEY is not set (environment or .env); refusing to "
-                "run a live benchmark without credentials.",
-                file=sys.stderr,
-            )
-            return 1
 
     try:
-        results = run_bench(
-            DEFAULT_TIERS,
-            DEFAULT_PROMPTS,
-            repeats=args.repeats,
-            api_key=api_key,
-            transport=transport,
-            max_tokens=args.max_tokens,
-            timeout=args.timeout,
-        )
-    except ValueError as exc:
-        print(f"benchmark error: {exc}", file=sys.stderr)
-        return 1
-    except Exception as exc:
-        print(f"benchmark failed ({type(exc).__name__})", file=sys.stderr)
+        models = fetch_models(api_key)
+        tiers = resolve_tiers(models, pinned=read_pinned_roles())
+    except RuntimeError as exc:
+        print(f"cannot resolve tiers: {exc}", file=sys.stderr)
         return 1
 
-    markdown = render_markdown(
-        results,
-        pricing,
-        repeats=args.repeats,
-        prompts=DEFAULT_PROMPTS,
-    )
-    payload = _result_payload(
-        results,
-        pricing,
-        repeats=args.repeats,
-        prompts=DEFAULT_PROMPTS,
-    )
-
-    json_path = Path(args.json_out)
-    markdown_path = Path(args.markdown_out)
-    try:
-        json_path.parent.mkdir(parents=True, exist_ok=True)
-        markdown_path.parent.mkdir(parents=True, exist_ok=True)
-        json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-        markdown_path.write_text(markdown, encoding="utf-8")
-    except OSError as exc:
-        print(f"could not write results ({type(exc).__name__})", file=sys.stderr)
-        return 1
-
-    print(markdown)
-    print(f"wrote {json_path} and {markdown_path}")
-
-    if any(result.calls == 0 for result in results):
+    prompt_set = prompts()
+    print(f"catalog: {len(models)} models at {base_url()}")
+    for spec in tiers:
         print(
-            "one or more tiers produced no successful calls; inspect the "
-            "error counts before using this table",
-            file=sys.stderr,
+            f"  {spec.role:5s} {spec.model:48s} "
+            f"${spec.input_per_million:.2f}/1M in  ${spec.output_per_million:.2f}/1M out"
         )
+    print(f"prompts: {', '.join(p.prompt_id for p in prompt_set)}")
+    print(f"calls: {len(tiers) * len(prompt_set) * args.repeats}")
+
+    if args.dry_run:
+        print("dry run — nothing sent")
+        return 0
+
+    results = run_bench(
+        tiers,
+        prompt_set,
+        repeats=args.repeats,
+        retries=args.retries,
+        api_key=api_key,
+        timeout=args.timeout,
+    )
+
+    report = {
+        "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "endpoint": base_url(),
+        "catalog_models": len(models),
+        "pricing_source": "live Token Factory catalog (pricing.prompt/pricing.completion)",
+        "repeats": args.repeats,
+        "retries": args.retries,
+        "max_completion_tokens": MAX_COMPLETION_TOKENS,
+        "prompts": [
+            {"prompt_id": p.prompt_id, "why": p.why, "system": p.system, "user": p.user}
+            for p in prompt_set
+        ],
+        "tiers": [tier.to_dict() for tier in results],
+        "total_cost_usd": round(sum(tier.cost_usd for tier in results), 8),
+    }
+
+    out = Path(args.json_out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+    print()
+    print(render_table(results))
+    print()
+    print(f"total measured cost: ${report['total_cost_usd']:.6f}")
+    print(f"written to {out}")
+
+    if sum(tier.calls for tier in results) == 0:
+        print("no call succeeded — refusing to report an empty table as a result", file=sys.stderr)
         return 1
     return 0
 

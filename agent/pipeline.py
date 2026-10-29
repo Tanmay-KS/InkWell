@@ -63,6 +63,15 @@ _HEADING_WORDS = {
 
 _AMOUNT = re.compile(r"\$\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)")
 
+# A document can list components and then the total. The total is the
+# amount the obligation is about, so it wins over the first component the
+# regex meets. Without this, a refund draft asks for the first line item
+# instead of the amount actually charged.
+_TOTAL_AMOUNT = re.compile(
+    r"(?im)^\s*(?:grand\s+total|total|amount\s+due|balance)\s*[:=]?\s*\$?\s*"
+    r"([0-9][0-9,]*(?:\.[0-9]{1,2})?)"
+)
+
 
 @dataclass(slots=True)
 class PipelineResult:
@@ -125,8 +134,13 @@ def guess_provider(text: str) -> str:
 
 
 def guess_amount(text: str) -> float | None:
-    """The amount mentioned in the document, if there is one."""
-    match = _AMOUNT.search(text)
+    """The amount the obligation is about, if there is one.
+
+    A "Total:" line wins over the first amount on the page: a notice that
+    lists components and a total is about the total, and a refund draft
+    that asks for a component is wrong.
+    """
+    match = _TOTAL_AMOUNT.search(text) or _AMOUNT.search(text)
     if not match:
         return None
     try:

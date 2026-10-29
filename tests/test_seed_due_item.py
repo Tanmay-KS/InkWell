@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 
 from agent.memory.hermes_memory import HouseholdMemory, TrackedState
-from jobs.deadline_monitor import run_once
+from jobs.deadline_monitor import JobConfig, run_once
 from jobs.seed_due_item import main, seed_due_item
 
 
@@ -55,9 +55,15 @@ def test_seed_due_item_runs_with_deadline_monitor(tmp_path: Path):
         today=today,
     )
 
+    config = JobConfig(
+        state_path=str(tmp_path / "job_state.json"),
+        memory_path=str(db_path),
+    )
+
     # First monitor pass flags the item
     notified_first: list[dict] = []
     flagged_first = run_once(
+        config=config,
         today=today,
         memory=HouseholdMemory(db_path),
         notifier=lambda notice: notified_first.append(notice),
@@ -69,6 +75,7 @@ def test_seed_due_item_runs_with_deadline_monitor(tmp_path: Path):
     # Second monitor pass flags 0 items because handled-event table recorded it
     notified_second: list[dict] = []
     flagged_second = run_once(
+        config=config,
         today=today,
         memory=HouseholdMemory(db_path),
         notifier=lambda notice: notified_second.append(notice),

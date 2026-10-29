@@ -574,6 +574,97 @@ advertised cap, and `router_register.sh` will not install a config that
 fails preflight. Regression test:
 `test_enable_uncomments_only_the_registration_block`.
 
+### F-045 · The benchmark stub hard-coded the three model IDs
+**Owner:** Person A · **Phase:** 3 · **Status:** fixed
+`eval/cost_latency_bench.py` shipped with
+`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`, `nvidia/nemotron-3-super-120b-a12b`
+and `nvidia/Nemotron-3-Ultra-550b-a55b` written into `DEFAULT_TIERS`. The
+spellings happen to be right today, which is what makes the bug quiet: the
+project rule is that every ID is read from the live catalog, because Nebius
+publishes the same model under several casings (F-017/F-018).
+**Cost if unresolved:** the cost table silently rots the next time a model
+is renamed, and the stale IDs look authoritative because they are in a
+table.
+**Detection:** reading the stub before implementing `run_bench`.
+**Fix:** tiers are role names resolved at run time — the `.env` pin when it
+still exists in the catalog, otherwise the catalog matcher, preferring a
+text-only model because the bench sends text. A role with no match or no
+published price is an error. `make bench-dry-run` proves resolution without
+spending anything.
+
+### F-046 · An evaluation that could not fail
+**Owner:** Person B · **Phase:** 3 · **Status:** fixed
+In the memory eval, the `never_stated` branch returned `""` without asking
+the tracker. The answer type that exists to catch a system which always
+produces an answer was itself answering by construction: 100% on that
+category, with no code path that could ever be wrong.
+**Cost if unresolved:** the published memory score would include a
+category that is not a measurement, and the one number most demos omit
+would be the one number here that proves nothing.
+**Detection:** reading the branch while expanding the scenario set.
+**Fix:** all three answer types go through the same store query. Added
+`test_never_stated_actually_queries_the_store`, which builds a scenario
+whose subject *does* have a fact and asserts the result is wrong. The
+canonical set is now 30 scenarios across 8 categories, checked by the
+suite so a tracker regression fails CI.
+
+### F-047 · `python -m jobs.deadline_monitor` warned before it started
+**Owner:** Person A · **Phase:** 3 · **Status:** fixed
+`jobs/__init__.py` imported `JobConfig`/`run_once` from
+`jobs.deadline_monitor`, so running the module as the serverless
+entrypoint made runpy print "found in sys.modules after import of package
+… may result in unpredictable behaviour" on every run.
+**Cost if unresolved:** every job log starts with a warning that looks
+like an import error, and the entrypoint the plan depends on is the one
+with the warning.
+**Detection:** the first local run of `python -m jobs.deadline_monitor`.
+**Fix:** the package re-exports lazily through `__getattr__`, so the module
+is not imported until someone asks for the name.
+
+### F-048 · The documented `/cancel` command did nothing
+**Owner:** Person B · **Phase:** 4 · **Status:** fixed
+`/help` advertised `/cancel ITEM_ID`, but the generic "cancel" keyword check
+ran first and sent the text to the natural-language parser, whose patterns
+did not allow a leading slash. The parser returned no intent, execution
+fell through to the item lookup, and the bot answered with the item's
+current status instead of recording the change. The dedicated slash-command
+branch below it was unreachable.
+**Cost if unresolved:** the one command a reviewer is most likely to try
+silently does nothing, which reads as "the memory feature is broken".
+**Detection:** writing the first interface test.
+**Fix:** slash commands are parsed before the keyword checks; the parser
+strips the slash and accepts an optional `YYYY-MM-DD` effective date.
+`test_slash_command_cancel_records_the_change` is the regression.
+
+### F-049 · A fresh item displayed as "new"
+**Owner:** Person B · **Phase:** 4 · **Status:** fixed
+The chat reply and the web list used `TrackedState` — the item's lifecycle
+(`new`, `acknowledged`, `handled`, `dismissed`) — as the subscription status.
+An item that had never been cancelled therefore showed `new`, which looks
+like an error rather than "active".
+**Cost if unresolved:** every item in the demo has the wrong status until
+someone changes it, and the first thing a reviewer sees is a state label
+that does not mean what they think.
+**Detection:** the first demo run.
+**Fix:** display the current status fact, else `active` (or `dismissed`
+when the lifecycle is dismissed). The lifecycle and the subscription status
+stay separate; both are still stored.
+
+### F-050 · The plan asked for a demo URL, and the safe demo is local
+**Owner:** Joint · **Phase:** 4 · **Status:** worked around
+The Phase 4 exit condition says "repo and demo URL", but the interface is a
+loopback-only server over the household database with no authentication
+layer. Exposing it to get a URL would put the sidecar behind no access
+control — a privacy regression in the one project where that is the whole
+point.
+**Cost if unresolved:** either no demo URL, or a URL that contradicts the
+privacy claim.
+**Detection:** reading `serve()`'s host guard against the exit condition.
+**Fix:** `make demo-web` runs the real interface against an isolated,
+temporary, fictional database and needs no credentials; `docs/demo.md`
+states the boundary and why there is no hosted URL. The demo is still
+"fully logged-out" because there is no login at all.
+
 ### Pre-registered risks, now closed
 
 | Ref | Was | Now |
@@ -581,7 +672,8 @@ fails preflight. Regression test:
 | F-002 | Model ID casing is inconsistent across Nebius's own docs | **Confirmed and worse than expected** — see F-017 and F-018. Every ID is now read from the live catalog. |
 | F-007 | Rate limits will bite during the leak test | **Not yet hit.** A 20-document, 5-model benchmark (100 calls) ran without a throttle. The 200-document, two-condition leak test is 10× that — still to be proven. |
 
-_(F-001…F-044 above are the Phase 0, Phase 1 and Phase 2 record. Later phases append here.)_
+_(F-001…F-050 above are the Phase 0, Phase 1, Phase 2, Phase 3 and Phase 4
+record. Later phases append here.)_
 
 ---
 

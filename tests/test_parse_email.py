@@ -9,7 +9,10 @@ stripped before the text reaches any model.
 
 from __future__ import annotations
 
+from datetime import date
+
 from agent.ingestion.parse_email import parse_email, strip_quoted_chain
+from agent.pipeline import process_document
 
 PLAIN_EMAIL = """From: Northwind Fitness <billing@northwind.example.com>
 To: sam.rivera@example.com
@@ -142,3 +145,18 @@ Content-Type: text/plain
 """
     )
     assert parsed.body == ""
+
+
+def test_an_email_notice_reaches_the_pipeline(tmp_path):
+    """An `.eml` is an ingestion path, not only a parser input."""
+    path = tmp_path / "notice.eml"
+    path.write_text(PLAIN_EMAIL, encoding="utf-8")
+
+    result = process_document(path)
+
+    assert result.ok
+    assert result.item is not None
+    assert result.item.provider == "Northwind Fitness"
+    assert result.item.renewal_date == date(2027, 1, 15)
+    assert result.item.reference == "1234-5678"
+    assert result.deadlines[0].date == date(2027, 1, 15)

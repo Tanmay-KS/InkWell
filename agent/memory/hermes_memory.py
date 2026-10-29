@@ -173,6 +173,20 @@ class HouseholdMemory:
 
             CREATE INDEX IF NOT EXISTS idx_event_item
                 ON handled_event (item_id, event);
+
+            CREATE TABLE IF NOT EXISTS fact (
+                subject      TEXT NOT NULL,
+                kind         TEXT NOT NULL,
+                value        TEXT NOT NULL,
+                valid_from   TEXT NOT NULL,
+                valid_to     TEXT,
+                source       TEXT,
+                confidence  REAL NOT NULL,
+                metadata     TEXT NOT NULL DEFAULT '{}',
+                PRIMARY KEY (subject, kind, valid_from)
+            );
+            CREATE INDEX IF NOT EXISTS idx_fact_current
+                ON fact (subject, kind, valid_to);
             """
         )
         conn.commit()
@@ -274,9 +288,18 @@ class HouseholdMemory:
             WHERE renewal_date IS NOT NULL
               AND renewal_date <= ?
               AND state != ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM fact
+                  WHERE fact.subject = household_item.item_id
+                    AND fact.kind = 'subscription_status'
+                    AND fact.value IN ('cancelled', 'paused', 'expired')
+                    AND fact.valid_from <= ?
+                    AND (fact.valid_to IS NULL OR fact.valid_to >= ?)
+              )
             ORDER BY renewal_date
             """,
-            (horizon.isoformat(), TrackedState.DISMISSED.value),
+            (horizon.isoformat(), TrackedState.DISMISSED.value,
+             today.isoformat(), today.isoformat()),
         ).fetchall()
         return [_row_to_item(row) for row in rows]
 
@@ -289,6 +312,33 @@ class HouseholdMemory:
         )
         conn.commit()
         return self.get(item_id)
+
+    def record_subscription_status(
+        self,
+        item_id: str,
+        status: str,
+        *,
+        effective_date: date | None = None,
+        source: str | None = None,
+        confidence: float = 1.0,
+    ):
+        """Record an active/cancelled status change with its history."""
+        from agent.memory.update_tracker import Fact, FactKind, UpdateTracker
+
+        if status not in {"active", "cancelled", "paused", "expired"}:
+            raise ValueError("unsupported subscription status")
+        fact = UpdateTracker(self).record(Fact(
+            subject=item_id,
+            kind=FactKind.SUBSCRIPTION_STATUS,
+            value=status,
+            valid_from=effective_date or date.today(),
+            source=source,
+            confidence=confidence,
+        ))
+        self.record_event(
+            item_id, "subscription_status", f"{status} effective {fact.valid_from.isoformat()}"
+        )
+        return fact
 
     def record_event(self, item_id: str, event: str, detail: str | None = None) -> None:
         """Append to the handled log.

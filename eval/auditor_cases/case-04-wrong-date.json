@@ -1,0 +1,7 @@
+{
+  "id": "case-04-wrong-date",
+  "description": "Draft states a wrong renewal date.",
+  "expect": "reject",
+  "expected_code": "date_mismatch",
+  "edit": { "replace": ["07 March 2027", "17 March 2027"] }
+}

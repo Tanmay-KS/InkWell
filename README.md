@@ -9,7 +9,7 @@ sandbox with a declarative egress policy, and a privacy router strips your
 personal details from anything that leaves, so the expensive models and
 third-party search engines never see them.
 
-> **Status: Phase 1 built; Phase 2 router implemented; live gateway proof pending.**
+> **Status: Phases 0–4 plus the glass-box upgrade built; live gateway and serverless-job proofs pending.**
 > The stack is de-risked and the decisions are recorded. The Phase 0 exit
 > condition was met by hand on 2026-10-21; the automated verifier has not
 > yet produced a green run, and two Phase 0 benchmark runs disagree about
@@ -17,13 +17,55 @@ third-party search engines never see them.
 > end, but the sandbox leg of its exit condition is outstanding. The Phase 2
 > middleware, guard, audit trail and injection demo are implemented and
 > pass the offline suite; the live gateway leg is blocked by the client
-> certificate and missing Docker daemon recorded in F-030/F-043. See
+> certificate and missing Docker daemon recorded in F-030/F-043. Phase 3
+> has all four numbers — leak 100% → 0%, memory 100% vs a 43.3% baseline,
+> the per-tier cost/latency table, and a 5/5 Auditor catch rate on planted
+> synthetic errors — but the Nebius Serverless Job is implemented, not yet
+> observed firing on a scheduler. Phase 4 packages the result: a loopback
+> web view with a fictional demo, the friction log distilled into
+> [`docs/feedback.md`](docs/feedback.md), and a recorded cross-review in
+> [`docs/packaging-review.md`](docs/packaging-review.md). The upgrade
+> adds a glass-box trace, a **LangGraph role graph** (with a plain-Python
+> fallback), a code Verifier, a rule-based Auditor with a bounded
+> revision loop, a findings-first dashboard, and an opt-in Nemotron Super
+> Drafter. The Auditor is deterministic code, not a Nemotron Ultra call:
+> the model can draft, but it cannot approve its own work. See
 > [`docs/phase0-runbook.md`](docs/phase0-runbook.md) for the infra side,
 > [`docs/ocr-decision.md`](docs/ocr-decision.md) for the model decision
 > and the privacy architecture,
 > [`docs/leak-test.md`](docs/leak-test.md) for the leak measurement,
 > [`docs/phase2-runbook.md`](docs/phase2-runbook.md) for the live router
-> procedure, and [`IMPLEMENTATION.md`](IMPLEMENTATION.md) for the full plan.
+> procedure, [`docs/phase3-runbook.md`](docs/phase3-runbook.md) for the
+> evaluation numbers and the deadline job,
+> [`docs/demo.md`](docs/demo.md) for the five-minute tour, and
+> [`IMPLEMENTATION.md`](IMPLEMENTATION.md) for the full plan.
+
+## Try it in five minutes
+
+```bash
+make demo-web
+# Ledger local interface: http://127.0.0.1:8765
+```
+
+Open <http://127.0.0.1:8765>. The header says **Demo · fictional data**.
+The demo uses a temporary database seeded with five invented items, so it
+never reads or writes the real household sidecar. It opens on a pushed
+finding — two deadlines this week and one likely duplicate charge — and
+shows the glass-box trace: Redactor → Extractor → Verifier → Researcher →
+Drafter → **Auditor rejects a wrong amount** → revision → approved. Cancel
+an item, watch it leave *Coming up*, reactivate it, upload a notice, and
+review the draft Ledger prepared without sending.
+
+```bash
+make demo-web   # fictional data, temporary database, loopback only
+make web        # the real household database, loopback only
+```
+
+The interface binds to `127.0.0.1`, refuses non-loopback `Host` headers and
+rejects cross-origin requests. There is no hosted demo URL: exposing this
+server would put the household database behind no authentication. The
+tour, including what the demo does and does not prove, is in
+[`docs/demo.md`](docs/demo.md).
 
 ### Phase 0 decisions
 
@@ -68,6 +110,69 @@ document's lines, at 1.3s a page, with no egress at all.
 > `8` — tesseract read `2027-03-07` as `2827-83-07` and every number
 > measured on it was wrong. It renders an A4 page at 150 DPI now, which
 > is what a real scan gives you. See F-037 in the friction log.
+
+### The glass-box upgrade — roles, Verifier, Auditor
+
+The upgrade uses **LangGraph** for the role graph. The plan's gate was
+time-boxed to 60 minutes; the graph compiled, ran, and called a real
+Nemotron Super model, so the framework path is what the web view uses.
+The plain-Python orchestrator is kept as the documented fallback and as
+the reference implementation the tests compare against.
+
+```
+START ──► Redactor ──► Extractor ──► Verifier ──► Researcher ──► Drafter
+            (local)      (local)       (code)       (optional)     │
+                                                                   ▼
+                                                               Auditor (code)
+                                                                   │
+                                    reject ──► Drafter (max 2) ◄───┤
+                                                                   │ approve
+                                                                   ▼
+                                                                  END
+```
+
+* **Graph** (`agent/graph.py`) is a `StateGraph` with the shared state and
+  a conditional edge from the Auditor back to the Drafter. The revision
+  is deterministic, so a second round cannot introduce a new
+  hallucination.
+* **Fallback** (`agent/orchestrator.py`) is plain Python with the same
+  state object and edges, for when the framework is unavailable.
+* **Model client** (`agent/model.py`) calls Token Factory only. It
+  resolves `LEDGER_MODEL_*` IDs pinned by `make pin-models` and raises if
+  the key or ID is missing — there is no fallback provider.
+* **Drafter** is a template by default. `LEDGER_USE_MODEL_DRAFTER=1` (or
+  `--model-drafter` on the CLI) asks Nemotron Super for the letter using
+  the **redacted** notice; the real reference is restored from the
+  redaction map inside the sandbox. The deterministic Auditor then checks
+  the model's output exactly as it checks the template.
+* **Verifier** (`agent/verifier.py`) is arithmetic and date subtraction:
+  line items sum to the total, duplicate charges (same vendor and amount,
+  nearby dates), days remaining, and a 14-day expiry flag.
+* **Auditor** (`agent/auditor.py`) is deterministic code with a veto. It
+  rejects a draft whose amount or date disagrees with the Verifier, whose
+  factual assertion has no Verifier fact or source span, that carries
+  personal detail the letter does not need, or that promises an outcome
+  or uses legal-advice phrasing. It takes no other action. Two rejections
+  is the cap; then the status is `needs_human_review`.
+* **Trace** (`agent/trace.py`) writes one JSON line per step to memory and
+  optionally to a JSONL file. Summaries are redacted before they are
+  stored, and egress is recorded as `none`, `allowed:<host>` or
+  `blocked:<host>`. The web view reads the same events. LangSmith tracing
+  is disabled explicitly; `langsmith` is only a transitive dependency.
+
+The user still approves every outbound action: `RunState.status == "ok"`
+means an approved draft is ready for a human, not that anything was sent.
+
+The demo's trace is a real run over fictional data with a planted wrong
+amount, so the rejection and the revision are visible in the UI. The same
+path is measured by `make auditor-eval`, and the framework gate by
+`make langgraph-gate`:
+
+```bash
+make auditor-eval     # 5 planted errors, catch rate, false approves
+make langgraph-gate   # compile the graph + one real Nemotron Super call
+make results          # recompile docs/results.md with all four numbers
+```
 
 ### Phase 2 — the leak test
 
@@ -161,16 +266,24 @@ procedure, rollback, and the current blocker.
 
 ---
 
-## The three claims
+## The claims and the four numbers
 
 | # | Claim | Where it is proven | Phase |
 |---|---|---|---|
 | 1 | Personal details do not leak out of the agent | `eval/leak_test.py` — **100% → 0%** on 200 documents, see [`docs/leak-test.md`](docs/leak-test.md) | 2 |
 | 2 | A prompt-injected agent cannot exfiltrate your data, and the attempt is on the record | `sandbox/middleware/ledger-router/`, `privacy_router/injection_guard.py`, `demo/injection/`, `sandbox/verify_phase2.sh` | 2 |
-| 3 | The agent's memory is right when the facts change, not just when they are recalled | `eval/memory_updates_eval.py` | 3 |
+| 3 | The agent's memory is right when the facts change, not just when they are recalled | `eval/memory_updates_eval.py` — **100% on 30 scenarios** against a 43.3% update-blind baseline, see [`docs/results.md`](docs/results.md) | 3 |
+| 4 | The Auditor rejects a bad draft before a human sees it | `eval/auditor_eval.py` — **5 of 5 planted errors** rejected, 0 false approves, 0 false rejects on the clean control | Upgrade |
 
 Plus a cost/latency table across three model tiers
-(`eval/cost_latency_bench.py`).
+(`eval/cost_latency_bench.py`): **Nano is the cheapest and the slowest** —
+p95 18.4 s against 6.9 s for Super — and Super costs ~6.9× Nano per call
+because it reasons before it answers. The compiled numbers and charts are
+in [`docs/results.md`](docs/results.md).
+
+**All four numbers are synthetic test-set results**, not general
+guarantees. The Auditor number is a deterministic check over five planted
+error classes, not a claim that every real drafting mistake is caught.
 
 ---
 
@@ -294,11 +407,17 @@ ledger/
 │   ├── setup.sh                  idempotent setup; this is the README section
 │   └── verify.sh                 the Phase 0 exit-condition verifier
 │
-├── agent/                        the pipeline
+├── agent/                        the pipeline and the role graph
 │   ├── ingestion/                parse_documents.py, parse_email.py
 │   ├── memory/                   hermes_memory.py, update_tracker.py
 │   ├── deadlines/                flag_deadlines.py
-│   └── actions/                  draft_actions.py
+│   ├── actions/                  draft_actions.py
+│   ├── orchestrator.py           plain-Python fallback roles + RunState
+│   ├── graph.py                  LangGraph StateGraph, conditional Auditor edge
+│   ├── model.py                  Token Factory-only chat client
+│   ├── verifier.py               totals, duplicates, days remaining
+│   ├── auditor.py                deterministic veto + bounded revision
+│   └── trace.py                  JSONL glass-box event log
 │
 ├── privacy_router/               Phase 2 — redaction and guardrails
 │   ├── redact.py                 the redaction library
@@ -308,9 +427,12 @@ ledger/
 │
 ├── search/                       Tavily, routed through the router
 ├── jobs/                         Nebius Serverless Jobs — deadline monitoring
-├── interface/                    Telegram/Slack bot + web view
-├── eval/                         the three proofs + the synthetic corpus
-└── docs/                         runbook, friction log, architecture
+├── interface/                    chat handlers + loopback web view
+│   ├── bot/handlers.py           a renewal message becomes an item
+│   └── web/                      server.py, index.html, app.js
+├── eval/                         the four proofs + the synthetic corpus
+│   └── auditor_cases/            planted synthetic errors for the Auditor
+└── docs/                         runbooks, friction log, feedback, architecture
 ```
 
 Ownership: `sandbox/`, `privacy_router/`, `jobs/`, `search/` are Person A
@@ -338,7 +460,9 @@ make ocr-bench        # which model reads documents best
 make redacted-extract # can the model read redacted text? (the privacy architecture)
 make redaction-audit  # what the deterministic redactor misses
 make bench            # Nemotron tier cost/latency (needs NEBIUS_API_KEY)
-make deadline-monitor-dry-run  # one deadline-monitor pass, no notifications
+make job-dry-run      # one deadline-monitor pass, no notifications
+make auditor-eval     # Auditor catch rate over the planted cases
+make results          # compile all four numbers into docs/results.md
 ```
 
 `make synth` needs Pillow (`make venv` installs it). The corpus is
@@ -359,11 +483,28 @@ comparable across runs.
 - **The agent's state lives in a named Docker volume, not a bind mount.**
   Hermes's WAL-mode SQLite can be silently corrupted by bind mounts that
   cross a VM boundary. See the friction log (F-008).
+- **The upgrade path is LangGraph with a plain-Python fallback.** The
+  framework gate passed: the graph compiles, runs the roles, and calls a
+  real Nemotron Super model (`make langgraph-gate`). The Auditor and
+  Verifier remain deterministic code — no model approves its own work —
+  and third-party tracing is disabled.
+- **The demo is loopback-only and there is no hosted URL.** Exposing it
+  would put the household database behind no authentication. The repo is
+  private and MIT-licensed; the public repo and spending-cap items are
+  still open. POST endpoints are rate-limited (30 requests per 60 seconds
+  per client by default, `LEDGER_RATE_LIMIT` / `LEDGER_RATE_WINDOW`), and
+  the upload cap is 15 MiB.
 
 ---
 
 ## Licence
 
-Apache-2.0 — see [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](LICENSE).
+
+## Feedback
+
+The written submission is [`docs/feedback.md`](docs/feedback.md). The full
+dated record is [`docs/friction_log.md`](docs/friction_log.md),
+F-001 to F-050.
 
 <!-- The friction log, in full, is required in the final submission. -->

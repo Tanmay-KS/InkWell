@@ -283,12 +283,40 @@ def _suffix_for(media_type: str) -> str:
         "image/bmp": ".bmp",
         "image/tiff": ".tif",
         "text/plain": ".txt",
+        "message/rfc822": ".eml",
     }.get(media_type, ".bin")
 
 
 def _extract_local(path: Path, media_type: str) -> tuple[str, list[str]]:
     """Extract text locally. Returns (text, warnings)."""
     warnings: list[str] = []
+
+    if media_type == "message/rfc822":
+        from agent.ingestion.parse_email import parse_email
+
+        parsed = parse_email(path)
+        sections = []
+        if parsed.subject:
+            sections.append(f"Subject: {parsed.subject}")
+        if parsed.body:
+            sections.append(parsed.body)
+        try:
+            for attachment in parsed.attachments:
+                try:
+                    attachment_type = guess_media_type(attachment)
+                    text, attachment_warnings = _extract_local(attachment, attachment_type)
+                    warnings.extend(
+                        f"attachment {attachment.name}: {warning}"
+                        for warning in attachment_warnings
+                    )
+                    if text.strip():
+                        sections.append(text)
+                except Exception as exc:
+                    warnings.append(f"attachment could not be read: {type(exc).__name__}")
+        finally:
+            if parsed.attachments:
+                shutil.rmtree(parsed.attachments[0].parent, ignore_errors=True)
+        return "\n\n".join(sections), warnings
 
     if media_type == "application/pdf":
         text = pdf_text(path).strip()

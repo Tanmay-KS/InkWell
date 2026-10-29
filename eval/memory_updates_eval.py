@@ -31,19 +31,49 @@ Three answer types are scored, because they fail in different ways:
   abstention counts as correct.
 
 The third type is the one most evaluations omit, and it is the one that
-catches an agent that has learned to always produce an answer.
+catches an agent that has learned to always produce an answer. It is also
+why the query runs for every answer type, including `never_stated`: a
+short-circuit that returns "" without asking the store would score 100%
+without testing anything.
 
-The scenarios live in `eval/scenarios/`. Phase 3 implementation.
+Scenarios are also tagged with a category (status, amount, renewal_date,
+holder, contact, preference, confidence, restatement) so the report can
+show *which kind* of update the system handles, not just an overall rate.
+
+The scenarios live in `eval/scenarios/`. See `docs/phase3-runbook.md` §3.
+
+Usage:
+
+    python eval/memory_updates_eval.py
+    python eval/memory_updates_eval.py --scenarios eval/scenarios --json eval/results/memory_eval.json
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
-__all__ = ["Scenario", "ScenarioResult", "main", "run_eval"]
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from agent.memory.hermes_memory import HouseholdMemory
+from agent.memory.update_tracker import Fact, FactKind, UpdateTracker
+
+__all__ = [
+    "Scenario",
+    "ScenarioResult",
+    "load_scenarios",
+    "main",
+    "run_eval",
+    "score",
+    "score_by_category",
+]
+
+DEFAULT_KIND = FactKind.SUBSCRIPTION_STATUS.value
 
 
 @dataclass
@@ -57,6 +87,7 @@ class Scenario:
         expected: The expected answer.
         answer_type: "current" | "superseded" | "never_stated".
         household: The synthetic household the scenario belongs to.
+        metadata: What to query — `subject`, `kind`, `as_of`, `category`.
     """
 
     scenario_id: str
@@ -78,24 +109,108 @@ class ScenarioResult:
     abstained: bool = False
     answer: str = ""
     expected: str = ""
+    category: str = ""
     notes: str = ""
 
 
-def run_eval(
-    scenarios: list[Scenario], *, model: str | None = None
-) -> list[ScenarioResult]:
+def _subject_kind(scenario: Scenario) -> tuple[str, FactKind]:
+    subject = str(scenario.metadata.get("subject", ""))
+    kind = FactKind(str(scenario.metadata.get("kind", DEFAULT_KIND)))
+    return subject, kind
+
+
+def _as_of(scenario: Scenario) -> date | None:
+    raw = scenario.metadata.get("as_of")
+    return date.fromisoformat(raw) if raw else None
+
+
+def _answer(tracker: UpdateTracker, scenario: Scenario) -> str:
+    """Read the store as of the scenario's date.
+
+    Every answer type goes through this. `never_stated` is not a special
+    case that skips the query — the absence of a fact is the thing being
+    tested.
+    """
+    subject, kind = _subject_kind(scenario)
+    if not subject:
+        return ""
+    fact = tracker.current(subject, kind, when=_as_of(scenario))
+    return fact.value if fact else ""
+
+
+def run_eval(scenarios: list[Scenario]) -> list[ScenarioResult]:
     """Run the memory evaluation.
 
     Args:
         scenarios: The scenarios to run.
-        model: The model to evaluate. Defaults to `LEDGER_MODEL_SUPER`.
 
     Returns:
         One result per scenario.
 
-    Phase 3 implementation.
+    The deterministic SQLite tracker is the system under test. This
+    measures update semantics and history, not language-model paraphrase
+    quality — a model in the loop would make the number about the model
+    rather than about the memory layer.
     """
-    raise NotImplementedError("Phase 3 — see IMPLEMENTATION.md")
+    results = []
+    for scenario in scenarios:
+        with TemporaryDirectory(prefix="ledger-memory-eval-") as tmp, HouseholdMemory(
+            Path(tmp) / "memory.db"
+        ) as memory:
+            tracker = UpdateTracker(memory)
+            for statement in scenario.statements:
+                tracker.record(
+                    Fact(
+                        subject=statement["subject"],
+                        kind=FactKind(statement["kind"]),
+                        value=str(statement["value"]),
+                        valid_from=date.fromisoformat(statement["valid_from"]),
+                        source=statement.get("source", scenario.scenario_id),
+                        confidence=float(statement.get("confidence", 1.0)),
+                    )
+                )
+
+            answer = _answer(tracker, scenario)
+            abstained = not answer
+            expected = scenario.expected
+            results.append(
+                ScenarioResult(
+                    scenario_id=scenario.scenario_id,
+                    answer_type=scenario.answer_type,
+                    category=str(scenario.metadata.get("category", "uncategorised")),
+                    correct=(
+                        abstained
+                        if scenario.answer_type == "never_stated"
+                        else answer.casefold() == expected.casefold()
+                    ),
+                    abstained=abstained,
+                    answer=answer,
+                    expected=expected,
+                )
+            )
+    return results
+
+
+def load_scenarios(path: str | Path) -> list[Scenario]:
+    """Load scenarios from a file or every `*.json` in a directory."""
+    source = Path(path)
+    files = sorted(source.glob("*.json")) if source.is_dir() else [source]
+    scenarios = []
+    for file in files:
+        data = json.loads(file.read_text(encoding="utf-8"))
+        rows = data if isinstance(data, list) else data["scenarios"]
+        scenarios.extend(Scenario(**row) for row in rows)
+
+    seen: set[str] = set()
+    for scenario in scenarios:
+        if scenario.scenario_id in seen:
+            raise ValueError(f"duplicate scenario id: {scenario.scenario_id}")
+        seen.add(scenario.scenario_id)
+    return scenarios
+
+
+def _accuracy(flags: list[bool]) -> float:
+    return sum(flags) / len(flags) if flags else 0.0
 
 
 def score(results: list[ScenarioResult]) -> dict[str, float]:
@@ -105,13 +220,69 @@ def score(results: list[ScenarioResult]) -> dict[str, float]:
     as wrong. An abstention counts as correct for that type only.
     """
     by_type: dict[str, list[bool]] = {}
-    for r in results:
-        by_type.setdefault(r.answer_type, []).append(r.correct)
+    for result in results:
+        by_type.setdefault(result.answer_type, []).append(result.correct)
 
-    summary = {f"accuracy_{k}": sum(v) / len(v) for k, v in by_type.items() if v}
-    all_correct = [r.correct for r in results]
-    summary["accuracy_overall"] = sum(all_correct) / len(all_correct) if all_correct else 0.0
+    summary = {f"accuracy_{key}": _accuracy(flags) for key, flags in by_type.items()}
+    summary["accuracy_overall"] = _accuracy([result.correct for result in results])
     return summary
+
+
+def score_by_category(
+    results: list[ScenarioResult],
+) -> dict[str, dict[str, float | int]]:
+    """Accuracy per update category, with the scenario count.
+
+    A category rate over three scenarios is not a rate. The count is part
+    of the result so a reader can see the denominator.
+    """
+    by_category: dict[str, list[bool]] = {}
+    for result in results:
+        by_category.setdefault(result.category or "uncategorised", []).append(result.correct)
+
+    return {
+        category: {
+            "scenarios": len(flags),
+            "correct": sum(flags),
+            "accuracy": _accuracy(flags),
+        }
+        for category, flags in sorted(by_category.items())
+    }
+
+
+def _baseline_results(scenarios: list[Scenario]) -> list[ScenarioResult]:
+    """A recall-only baseline that keeps the first value and cannot revise it.
+
+    This is the number the memory layer has to beat. A system that
+    remembers the first thing it was told is not a system with updates; it
+    is the demo everyone else ships.
+    """
+    baseline = []
+    for scenario in scenarios:
+        seen: dict[tuple[str, str], str] = {}
+        for statement in scenario.statements:
+            seen.setdefault(
+                (statement["subject"], statement["kind"]), str(statement["value"])
+            )
+
+        subject, kind = _subject_kind(scenario)
+        value = seen.get((subject, kind.value), "")
+        baseline.append(
+            ScenarioResult(
+                scenario_id=scenario.scenario_id,
+                answer_type=scenario.answer_type,
+                category=str(scenario.metadata.get("category", "uncategorised")),
+                correct=(
+                    not value
+                    if scenario.answer_type == "never_stated"
+                    else value.casefold() == scenario.expected.casefold()
+                ),
+                abstained=not value,
+                answer=value,
+                expected=scenario.expected,
+            )
+        )
+    return baseline
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -120,10 +291,33 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", dest="json_out", default="eval/results/memory_eval.json")
     args = parser.parse_args(argv)
 
-    print("Phase 3 — not implemented yet. See IMPLEMENTATION.md.")
-    print(f"scenarios would be loaded from {args.scenarios}")
-    print(f"results would be written to {args.json_out}")
-    return 0
+    scenarios = load_scenarios(args.scenarios)
+    results = run_eval(scenarios)
+    report = {
+        "method": "deterministic SQLite fact supersession; no model call",
+        "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "scenario_count": len(results),
+        "scores": score(results),
+        "by_category": score_by_category(results),
+        "results": [result.__dict__ for result in results],
+        "update_blind_baseline": score(_baseline_results(scenarios)),
+    }
+    destination = Path(args.json_out)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+    print(
+        json.dumps(
+            {
+                "scenario_count": report["scenario_count"],
+                **report["scores"],
+            },
+            indent=2,
+        )
+    )
+    for category, stats in report["by_category"].items():
+        print(f"  {category:14s} {stats['correct']}/{stats['scenarios']}  {stats['accuracy']:.1%}")
+    return 0 if results else 1
 
 
 if __name__ == "__main__":

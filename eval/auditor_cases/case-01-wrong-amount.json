@@ -1,0 +1,7 @@
+{
+  "id": "case-01-wrong-amount",
+  "description": "Draft states a wrong amount.",
+  "expect": "reject",
+  "expected_code": "amount_mismatch",
+  "edit": { "replace": ["148.95", "184.95"] }
+}
