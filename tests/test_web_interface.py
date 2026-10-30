@@ -126,7 +126,15 @@ def test_the_page_is_served_with_security_headers(web):
     assert headers["Content-Type"].startswith("text/html")
     assert headers["X-Content-Type-Options"] == "nosniff"
     assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
-    assert b"<h1>Ledger</h1>" in body
+    assert b"Keep the dates." in body
+
+
+def test_the_dashboard_is_served_at_app(web):
+    status, headers, body = _call(web, "GET", "/app")
+
+    assert status == 200
+    assert headers["Content-Type"].startswith("text/html")
+    assert b"Ledger Dashboard" in body
 
 
 def test_the_javascript_is_served_as_javascript(web):

@@ -3,205 +3,142 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Ledger</title>
-    <style>
-      :root {
-        --bg: #0f1115;
-        --panel: #171a21;
-        --line: #262b36;
-        --text: #e6e8ee;
-        --muted: #949bab;
-        --accent: #7aa2f7;
-        --warn: #e0af68;
-        --ok: #9ece6a;
-        --bad: #f7768e;
-        --surface: #202530;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--text);
-        font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-      }
-      a { color: var(--accent); }
-      button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-      button:disabled { opacity: .6; cursor: wait; }
-      header {
-        padding: 20px max(22px, calc((100vw - 940px) / 2));
-        border-bottom: 1px solid var(--line);
-        display: flex;
-        align-items: baseline;
-        gap: 14px;
-      }
-      h1 { font-size: 19px; margin: 0; letter-spacing: 0.2px; }
-      header span { color: var(--muted); font-size: 13px; }
-      main { max-width: 940px; margin: 0 auto; padding: 28px; }
-      .intro { color: var(--muted); max-width: 680px; margin: 0 0 22px; }
-      .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-      .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-      .mode { margin-left: auto; border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; }
-      .panel {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 18px 20px;
-        margin-bottom: 18px;
-      }
-      .panel h2 {
-        font-size: 13px;
-        text-transform: uppercase;
-        letter-spacing: 0.7px;
-        color: var(--muted);
-        margin: 0 0 14px;
-        font-weight: 600;
-      }
-      ul { list-style: none; margin: 0; padding: 0; }
-      li {
-        display: flex;
-        gap: 14px;
-        align-items: baseline;
-        padding: 10px 0;
-        border-top: 1px solid var(--line);
-      }
-      li:first-child { border-top: 0; }
-      .when { font-variant-numeric: tabular-nums; color: var(--accent); min-width: 108px; }
-      .what { flex: 1; }
-      .who { color: var(--muted); font-size: 13px; }
-      .state {
-        font-size: 12px;
-        padding: 2px 8px;
-        border-radius: 999px;
-        border: 1px solid var(--line);
-        color: var(--muted);
-        white-space: nowrap;
-      }
-      .state.soon { color: var(--warn); border-color: var(--warn); }
-      .state.due { color: var(--bad); border-color: var(--bad); }
-      .state.done { color: var(--ok); border-color: var(--ok); }
-      .banner {
-        border: 1px solid var(--warn);
-        color: var(--warn);
-        background: #2a2418;
-        border-radius: 8px;
-        padding: 10px 12px;
-        font-size: 13px;
-        margin: 0 0 18px;
-      }
-      .finding { align-items: flex-start; }
-      .finding .what { display: grid; gap: 3px; }
-      .finding .detail { color: var(--muted); font-size: 13px; }
-      .finding.warn .what strong { color: var(--warn); }
-      .finding.bad .what strong { color: var(--bad); }
-      .finding.ok .what strong { color: var(--ok); }
-      .timeline li { align-items: flex-start; flex-wrap: wrap; }
-      .step-no { color: var(--muted); min-width: 28px; font-variant-numeric: tabular-nums; }
-      .step-agent { min-width: 120px; font-weight: 600; }
-      .step-summary { flex: 1 1 320px; color: var(--muted); font-size: 13px; }
-      .badge {
-        font-size: 11px;
-        padding: 2px 8px;
-        border-radius: 999px;
-        border: 1px solid var(--line);
-        color: var(--muted);
-        white-space: nowrap;
-        text-transform: lowercase;
-      }
-      .badge.ok { color: var(--ok); border-color: var(--ok); }
-      .badge.bad { color: var(--bad); border-color: var(--bad); }
-      .badge.tier { color: var(--accent); border-color: var(--accent); }
-      .empty { color: var(--muted); font-style: italic; }
-      button, input[type="file"] { font: inherit; }
-      button { background: #27334d; color: var(--text); border: 1px solid var(--accent); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
-      .upload { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-      input[type="file"] { max-width: 100%; color: var(--muted); }
-      .privacy-note { background: var(--surface); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
-      .chat-log { display: grid; gap: 10px; max-height: 360px; overflow-y: auto; margin: 12px 0; }
-      .chat-message { max-width: 86%; padding: 10px 12px; border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
-      .chat-message.assistant { background: var(--surface); justify-self: start; }
-      .chat-message.user { background: #27334d; justify-self: end; }
-      .chat-form { display: flex; gap: 10px; }
-      .chat-form input { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 10px; font: inherit; }
-      .suggestions { display: flex; gap: 8px; flex-wrap: wrap; }
-      .notice { color: var(--muted); min-height: 1.5em; }
-      pre { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
-      .draft { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; }
-      footer { color: var(--muted); font-size: 12px; padding: 0 28px 40px; max-width: 940px; margin: 0 auto; }
-      @media (max-width: 640px) {
-        main { padding: 20px 14px; }
-        header { padding: 18px 14px; }
-        .panel { padding: 15px; }
-        li { flex-wrap: wrap; align-items: center; gap: 8px 10px; }
-        .when { min-width: 0; }
-        .what { flex-basis: calc(100% - 110px); }
-        .who { flex: 1; }
-        footer { padding-inline: 14px; }
-      }
-      code {
-        background: #1e222b;
-        padding: 1px 5px;
-        border-radius: 4px;
-        font-size: 12.5px;
-      }
-    </style>
+    <meta name="theme-color" content="#f6f5f0" />
+    <meta name="description" content="Ledger keeps renewals, deadlines, and important paperwork in one private, reviewable place." />
+    <title>Ledger — keep the dates, lose the scramble</title>
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <header>
-      <h1>Ledger</h1>
-      <span>deadlines, renewals, and entitlements</span>
-      <span id="mode" class="mode">Local household</span>
+    <header class="site-header">
+      <a class="wordmark" href="#top" aria-label="Ledger home">LEDGER<span class="wordmark-dot">.</span></a>
+      <nav aria-label="Main navigation">
+        <a href="#overview">Overview</a>
+        <a href="#workflow">How it works</a>
+        <a href="#privacy">Privacy</a>
+        <a href="#architecture">Architecture</a>
+        <a class="nav-cta" href="/app">Open Ledger <span aria-hidden="true">→</span></a>
+      </nav>
     </header>
-    <main>
-      <p class="intro">Keep the paperwork that matters in one place. Ledger finds dates, keeps a history of changes, and prepares drafts you can review.</p>
-      <p class="banner" role="note">Synthetic documents only. Do not upload real personal data.</p>
-      <section class="panel">
-        <div class="section-heading"><h2>Proactive findings</h2><span id="findings-count" class="count"></span></div>
-        <p id="findings-summary" class="intro"></p>
-        <ul id="findings"><li class="empty">Nothing needs attention this week.</li></ul>
-      </section>
-      <section class="panel">
-        <h2>Add a notice</h2>
-        <form id="upload" class="upload">
-          <input id="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.txt,.eml" required />
-          <button type="submit">Process locally</button>
-        </form>
-        <p id="notice" class="notice" role="status">Documents are processed on this machine.</p>
-        <p class="privacy-note">Documents stay on this machine during extraction. Drafts are never sent automatically. Outputs are information, not legal or financial advice.</p>
-        <div id="draft" class="draft" hidden></div>
-      </section>
-      <section class="panel">
-        <div class="section-heading"><h2>Glass-box trace</h2><span id="trace-run" class="count"></span></div>
-        <ul id="trace" class="timeline"><li class="empty">Run a document to see every step.</li></ul>
-      </section>
-      <section class="panel" aria-labelledby="chat-title">
-        <h2 id="chat-title">Ask Ledger</h2>
-        <div id="chat-log" class="chat-log" role="log" aria-live="polite">
-          <div class="chat-message assistant">Hi, I can look up your tracked items and upcoming dates. I can also record a cancellation or reactivation.</div>
+
+    <main id="top">
+      <section class="hero section-wrap" id="overview">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="eyebrow-mark"></span> A PRIVATE PAPERWORK ASSISTANT</p>
+          <h1>Keep the dates.<br />Lose the <em>scramble.</em></h1>
+          <p class="hero-description">Renewals, bills, and the fine print tend to arrive when you’re busy. Ledger tracks what matters, brings deadlines forward, and prepares the next step for you to review.</p>
+          <div class="hero-actions">
+            <a class="button button-dark" href="/app">Open Ledger <span aria-hidden="true">→</span></a>
+            <a class="button button-light" href="#workflow">See how it works</a>
+          </div>
+          <ul class="proof-points" aria-label="Ledger principles">
+            <li>Local-first by design</li>
+            <li>Evidence behind every date</li>
+            <li>You review every action</li>
+          </ul>
         </div>
-        <div class="suggestions">
-          <button type="button" data-prompt="What's coming up?">What's coming up?</button>
-          <button type="button" data-prompt="Show my items">Show my items</button>
+
+        <div class="hero-visual" aria-label="Illustration of Ledger tracking a renewal">
+          <div class="visual-topline"><span>YOUR PAPERWORK, IN VIEW</span><span class="live-pill"><i></i> WATCHING</span></div>
+          <article class="deadline-card">
+            <div class="card-label"><span>UP NEXT · RENEWAL SOON</span><span class="tiny-square"></span></div>
+            <h2>Northstar Auto</h2>
+            <p>Auto insurance renewal</p>
+            <div class="deadline-date"><span>RENEWAL DATE</span><strong>On file</strong></div>
+            <div class="progress-track"><span></span></div>
+            <div class="card-foot"><span>Notice checked</span><span class="check">✓</span></div>
+          </article>
+          <div class="mini-cards">
+            <article class="mini-card">
+              <span class="mini-label">DUPLICATE CHARGE</span>
+              <strong>$148.95 <b>× 2</b></strong>
+              <small>Same provider · 2 days apart</small>
+            </article>
+            <article class="mini-card trace-mini">
+              <span class="mini-label">LEDGER TRACE</span>
+              <strong><i>01</i> Read <span>→</span> <i>02</i> Check <span>→</span> <i>03</i> Review</strong>
+              <small>Every step stays visible</small>
+            </article>
+          </div>
+          <span class="visual-caption">Illustrative demo data · nothing here is a real account</span>
         </div>
-        <form id="chat-form" class="chat-form">
-          <input id="chat-input" type="text" maxlength="2000" autocomplete="off" aria-label="Message Ledger" placeholder="Ask about a renewal or update an item…" required />
-          <button type="submit">Send</button>
-        </form>
-        <p class="notice">Ledger answers from local household data. It does not send messages or contact providers.</p>
-      </section>
-      <section class="panel">
-        <div class="section-heading"><h2>Coming up</h2><span id="due-count" class="count"></span></div>
-        <ul id="due"><li class="empty">Nothing due.</li></ul>
       </section>
 
-      <section class="panel">
-        <div class="section-heading"><h2>Household</h2><span id="item-count" class="count"></span></div>
-        <ul id="items"><li class="empty">Nothing tracked yet.</li></ul>
+      <section class="metrics section-wrap" aria-label="Ledger at a glance">
+        <div><strong>01</strong><span>Place for important dates</span></div>
+        <div><strong>Local</strong><span>Processing stays on your machine</span></div>
+        <div><strong>You</strong><span>Approve every outbound action</span></div>
+      </section>
+
+      <section class="content-section section-wrap" id="workflow">
+        <div class="section-intro">
+          <p class="section-index">01 / WORKFLOW</p>
+          <h2>Notice. Understand.<br />Decide.</h2>
+          <p>One clear path from a document to a decision. Ledger does the organizing; you stay in control of what happens next.</p>
+        </div>
+        <div class="workflow-grid">
+          <article class="workflow-card">
+            <span class="card-number">01</span><span class="workflow-icon icon-document" aria-hidden="true">▤</span>
+            <h3>Bring in a notice</h3>
+            <p>Add a PDF, image, email, or text notice. Ledger reads it and keeps the source context close.</p>
+            <a href="/app">Open intake <span aria-hidden="true">→</span></a>
+          </article>
+          <article class="workflow-card">
+            <span class="card-number">02</span><span class="workflow-icon icon-calendar" aria-hidden="true">◷</span>
+            <h3>See what’s coming</h3>
+            <p>Renewal dates and changes stay together, with a history when an item’s status changes.</p>
+            <a href="/app">View your dates <span aria-hidden="true">→</span></a>
+          </article>
+          <article class="workflow-card">
+            <span class="card-number">03</span><span class="workflow-icon icon-review" aria-hidden="true">✓</span>
+            <h3>Review the next step</h3>
+            <p>Ledger can prepare a draft and show its checks. You decide whether to use or send it.</p>
+            <a href="/app">Explore the dashboard <span aria-hidden="true">→</span></a>
+          </article>
+        </div>
+      </section>
+
+      <section class="privacy-section" id="privacy">
+        <div class="section-wrap privacy-layout">
+          <div>
+            <p class="section-index">02 / PRIVACY & CONTROL</p>
+            <h2>Your paperwork<br />stays <em>yours.</em></h2>
+            <p class="privacy-lede">Ledger is designed to keep personal details inside the local workflow and make every handoff visible.</p>
+          </div>
+          <div class="privacy-points">
+            <article><span class="point-mark">01</span><div><h3>Process locally</h3><p>Documents are extracted and redacted on the machine before any optional model or search step.</p></div></article>
+            <article><span class="point-mark">02</span><div><h3>See the evidence</h3><p>A glass-box trace records the steps, checks, and whether any external service was used.</p></div></article>
+            <article><span class="point-mark">03</span><div><h3>Keep the final say</h3><p>Ledger prepares information and drafts. It never sends a message or approves an action for you.</p></div></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section architecture-section section-wrap" id="architecture">
+        <div class="section-intro">
+          <p class="section-index">03 / UNDER THE HOOD</p>
+          <h2>Useful agents.<br />Visible work.</h2>
+          <p>Each role has a defined job, from reading a notice to checking a draft. The trace makes the work inspectable.</p>
+        </div>
+        <div class="architecture-card">
+          <div class="architecture-head"><span>THE LEDGER PIPELINE</span><span class="live-pill"><i></i> HUMAN IN CONTROL</span></div>
+          <div class="pipeline" aria-label="Document to review pipeline">
+            <div><span class="pipeline-no">01</span><strong>Read</strong><small>Extract & redact</small></div><b aria-hidden="true">→</b>
+            <div><span class="pipeline-no">02</span><strong>Check</strong><small>Verify facts</small></div><b aria-hidden="true">→</b>
+            <div><span class="pipeline-no">03</span><strong>Prepare</strong><small>Draft an action</small></div><b aria-hidden="true">→</b>
+            <div class="pipeline-final"><span class="pipeline-no">04</span><strong>You review</strong><small>Nothing sent</small></div>
+          </div>
+          <p class="architecture-note">Deterministic checks can reject a draft that conflicts with the evidence. A person always decides what to do next.</p>
+        </div>
+      </section>
+
+      <section class="closing-cta section-wrap">
+        <div><p class="section-index">READY WHEN YOU ARE</p><h2>Bring the paperwork<br />back into view.</h2></div>
+        <a class="button button-dark" href="/app">Open Ledger <span aria-hidden="true">→</span></a>
       </section>
     </main>
-    <footer>
-      This local view reads <code>agent/memory/hermes_memory.py</code>.
-      Drafts are for review; Ledger never sends them.
+    <footer class="site-footer section-wrap">
+      <a class="wordmark" href="#top">LEDGER<span class="wordmark-dot">.</span></a>
+      <span>Private by design. Human by default.</span>
+      <a href="/app">Open the local dashboard ↑</a>
     </footer>
-    <script src="app.js"></script>
   </body>
 </html>

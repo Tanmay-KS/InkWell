@@ -204,6 +204,39 @@ async function refresh() {
   render("items", data.items);
 }
 
+const fileInput = document.getElementById("file");
+const uploadDropzone = document.getElementById("upload-dropzone");
+const fileName = document.getElementById("file-name");
+
+fileInput.addEventListener("change", () => {
+  fileName.textContent = fileInput.files[0]?.name || "PDF, image, text, or email · up to 15 MB";
+  uploadDropzone.classList.toggle("has-file", Boolean(fileInput.files[0]));
+});
+
+for (const eventName of ["dragenter", "dragover"]) {
+  uploadDropzone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    uploadDropzone.classList.add("is-dragging");
+  });
+}
+
+uploadDropzone.addEventListener("dragleave", (event) => {
+  if (!event.relatedTarget || !uploadDropzone.contains(event.relatedTarget)) {
+    uploadDropzone.classList.remove("is-dragging");
+  }
+});
+
+uploadDropzone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  uploadDropzone.classList.remove("is-dragging");
+  const droppedFile = event.dataTransfer.files[0];
+  if (!droppedFile) return;
+  const transfer = new DataTransfer();
+  transfer.items.add(droppedFile);
+  fileInput.files = transfer.files;
+  fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+});
+
 document.getElementById("upload").addEventListener("submit", async (event) => {
   event.preventDefault();
   const submit = event.currentTarget.querySelector("button[type=submit]");
