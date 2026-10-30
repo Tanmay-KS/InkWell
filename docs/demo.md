@@ -58,7 +58,7 @@ is not `127.0.0.1`, `::1` or `localhost`, and any cross-origin request. The
 household database is never exposed.
 
 There is a separate **public demo** deployment on Vercel:
-**<https://inkwell-nine-theta.vercel.app>**. It runs the same handler and
+**<https://inkwell-mu-seven.vercel.app>**. It runs the same handler and
 routes through `interface/web/wsgi.py`, but its state is a throwaway
 `/tmp` database seeded with the same fictional fixture. It never reads
 the household sidecar, model drafting stays off, and everything resets

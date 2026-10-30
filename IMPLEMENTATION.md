@@ -139,7 +139,7 @@ in `docs/phase2-runbook.md`. The exit condition is not closed until
 
 ### Person B
 - [x] Polish the chat interface (Telegram) and simple web view — `interface/bot/handlers.py`, the Telegram long-polling adapter in `interface/chat/telegram.py` (`make telegram-bot`), `interface/web/server.py`, `make demo-web`; offline adapter tests in `tests/test_chat_telegram.py`. Telegram was verified live on 2026-10-30 (`@arcky_bot` processed a pending update); Slack is notification-only through an incoming webhook (see `docs/telegram.md`)
-- [x] Test the demo fully logged-out, fix any auth-wall issues — the local demo needs no login or credentials, and the public demo at <https://inkwell-nine-theta.vercel.app> is reachable without authentication (fictional data, deployment protection off; see `docs/demo.md`)
+- [x] Test the demo fully logged-out, fix any auth-wall issues — the local demo needs no login or credentials, and the public demo at <https://inkwell-mu-seven.vercel.app> is reachable without authentication (fictional data, deployment protection off; see `docs/demo.md`)
 
 ### Person A
 - [x] Write README: highlight Nemotron + Token Factory usage, setup steps, architecture overview — `README.md`
@@ -585,7 +585,7 @@ metrics. Report the true sample size.
 
 **Demo URL**
 
-- [x] Works without login. *<https://inkwell-nine-theta.vercel.app> is
+- [x] Works without login. *<https://inkwell-mu-seven.vercel.app> is
       public and needs no account. It runs the same handler against a
       throwaway fictional database; the household view remains loopback-only
       by design. See `docs/demo.md`.*
