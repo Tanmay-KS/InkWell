@@ -139,7 +139,7 @@ in `docs/phase2-runbook.md`. The exit condition is not closed until
 
 ### Person B
 - [x] Polish the chat interface (Telegram) and simple web view — `interface/bot/handlers.py`, the Telegram long-polling adapter in `interface/chat/telegram.py` (`make telegram-bot`), `interface/web/server.py`, `make demo-web`; offline adapter tests in `tests/test_chat_telegram.py`. Telegram was verified live on 2026-10-30 (`@arcky_bot` processed a pending update); Slack is notification-only through an incoming webhook (see `docs/telegram.md`)
-- [x] Test the demo fully logged-out, fix any auth-wall issues — local demo needs no login or credentials; no hosted URL by design (loopback-only, see `docs/demo.md`)
+- [x] Test the demo fully logged-out, fix any auth-wall issues — the local demo needs no login or credentials, and the public demo at <https://ledger-nine-theta.vercel.app> is reachable without authentication (fictional data, deployment protection off; see `docs/demo.md`)
 
 ### Person A
 - [x] Write README: highlight Nemotron + Token Factory usage, setup steps, architecture overview — `README.md`
@@ -272,7 +272,7 @@ nothing in them is replaced.
 > | Phase B — roles and Auditor | **built with LangGraph** — `agent/graph.py` StateGraph + conditional Auditor edge, shared state, code Verifier, deterministic Auditor with veto, 5 planted cases + clean control; the 60-minute gate passed with a live Nemotron Super call. `agent/orchestrator.py` is the plain-Python fallback. A Nemotron Ultra reviewer is still not wired |
 > | Phase C — Verifier/dashboard | **built** — `agent/verifier.py` totals/duplicates/days/expiry, findings dashboard opens first, Watcher pushes the summary |
 > | Phase D — four evals | **4 of 4 measured** — leak, memory, tier cost/latency and Auditor catch rate (5/5, 0 false approves) |
-> | Phase E — submission package | **partial** — README, MIT licence, rate limits, local demo banner/notice and feedback exist; no hosted URL, public repo, video, or Devpost submission |
+> | Phase E — submission package | **partial** — README, MIT licence, rate limits, demo banner/notice, feedback, public repo and a hosted fictional-data demo exist; video and Devpost submission are open |
 >
 > **Checked boxes below mean "already true in this repository", with the
 > evidence path given. Unchecked boxes are open work.** Do not describe a
@@ -585,9 +585,10 @@ metrics. Report the true sample size.
 
 **Demo URL**
 
-- [ ] Works without login. *There is no hosted URL. The local
-      `make demo-web` view has no login and needs no credentials, but it is
-      loopback-only by design; see `docs/demo.md`.*
+- [x] Works without login. *<https://ledger-nine-theta.vercel.app> is
+      public and needs no account. It runs the same handler against a
+      throwaway fictional database; the household view remains loopback-only
+      by design. See `docs/demo.md`.*
 - [x] Banner: "Synthetic documents only. Do not upload real personal data."
       *The local view shows exactly that banner above the upload panel, plus
       the header "Demo · fictional data".*

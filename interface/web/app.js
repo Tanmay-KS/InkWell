@@ -73,23 +73,40 @@ function badge(text, variant) {
 
 function renderFindings(findings) {
   const list = document.getElementById("findings");
-  const summary = document.getElementById("findings-summary");
   list.replaceChildren();
   if (!findings || !findings.findings || !findings.findings.length) {
-    summary.textContent = "No pushed findings yet.";
-    document.getElementById("findings-count").textContent = "0 findings";
+    document.getElementById("findings-count").textContent = "View all (0) →";
     const empty = document.createElement("li");
     empty.className = "empty";
     empty.textContent = "Nothing needs attention this week.";
     list.append(empty);
     return;
   }
-  document.getElementById("findings-count").textContent =
-    `${findings.findings.length} ${findings.findings.length === 1 ? "finding" : "findings"}`;
-  summary.textContent = findings.summary || "";
+  document.getElementById("findings-count").textContent = `View all (${findings.findings.length}) →`;
   for (const finding of findings.findings) {
     const row = document.createElement("li");
     row.className = `finding ${finding.severity || ""}`.trim();
+    const icon = document.createElement("span");
+    icon.className = `finding-icon ${finding.kind || ""}`.trim();
+    icon.setAttribute("aria-hidden", "true");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "1.7");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    const paths = {
+      deadline: ["M10.3 3.8 2.9 17a2 2 0 0 0 1.8 3h14.6a2 2 0 0 0 1.8-3L13.7 3.8a2 2 0 0 0-3.4 0Z", "M12 9v4", "M12 16.5h.01"],
+      duplicate_charge: ["M8 4h10a2 2 0 0 1 2 2v13H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z", "M6 7H4v12a2 2 0 0 0 2 2h12", "M10 9h5", "M10 13h6", "M10 17h3"],
+      clear: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z", "m8.5 12 2.2 2.2 4.8-5"],
+    }[finding.kind] || ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z", "M12 11v5", "M12 8h.01"];
+    for (const d of paths) {
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", d);
+      svg.append(path);
+    }
+    icon.append(svg);
     const what = document.createElement("span");
     what.className = "what";
     const title = document.createElement("strong");
@@ -98,7 +115,11 @@ function renderFindings(findings) {
     detail.className = "detail";
     detail.textContent = finding.detail;
     what.append(title, detail);
-    row.append(what);
+    const arrow = document.createElement("span");
+    arrow.className = "finding-arrow";
+    arrow.setAttribute("aria-hidden", "true");
+    arrow.textContent = "›";
+    row.append(icon, what, arrow);
     list.append(row);
   }
 }

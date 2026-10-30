@@ -66,9 +66,10 @@ rejects cross-origin requests. The household database is never hosted.
 
 A separate **public demo** runs the same handler on Vercel
 (`app.py`, `interface/web/wsgi.py`, `vercel.json`) against a throwaway
-database seeded with the same fictional items. It never reads the
-household sidecar, makes no model calls, and resets when the instance
-recycles. The tour, including what the demo does and does not prove, is in
+database seeded with the same fictional items:
+**<https://ledger-nine-theta.vercel.app>**. It never reads the household
+sidecar, makes no model calls, and resets when the instance recycles. The
+tour, including what the demo does and does not prove, is in
 [`docs/demo.md`](docs/demo.md).
 
 ### Chat: Telegram
@@ -523,12 +524,14 @@ comparable across runs.
   real Nemotron Super model (`make langgraph-gate`). The Auditor and
   Verifier remain deterministic code — no model approves its own work —
   and third-party tracing is disabled.
-- **The demo is loopback-only and there is no hosted URL.** Exposing it
-  would put the household database behind no authentication. The repo is
-  private and MIT-licensed; the public repo and spending-cap items are
-  still open. POST endpoints are rate-limited (30 requests per 60 seconds
-  per client by default, `LEDGER_RATE_LIMIT` / `LEDGER_RATE_WINDOW`), and
-  the upload cap is 15 MiB.
+- **The household view is loopback-only; the hosted demo is fictional.**
+  The real database is never published. A separate public demo runs at
+  <https://ledger-nine-theta.vercel.app> against a throwaway database
+  seeded with invented items, with no model calls. The repo is public and
+  MIT-licensed; the provider-side spending cap is still open. POST
+  endpoints are rate-limited (30 requests per 60 seconds per client by
+  default, `LEDGER_RATE_LIMIT` / `LEDGER_RATE_WINDOW`), and the upload cap
+  is 15 MiB.
 
 ---
 
