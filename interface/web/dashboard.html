@@ -21,7 +21,6 @@
         <a href="/">Overview</a>
         <a href="#coming-up">Coming up</a>
         <a href="#assistant">Ask InkWell</a>
-        <span id="mode" class="mode">Local household</span>
       </nav>
     </header>
     <main class="dashboard-main">
@@ -60,7 +59,10 @@
       <section class="panel panel-chat" id="assistant" aria-labelledby="chat-title">
         <h2 id="chat-title">Ask InkWell</h2>
         <div id="chat-log" class="chat-log" role="log" aria-live="polite">
-          <div class="chat-message assistant">Ask about tracked items, dates, or status changes.</div>
+          <div class="chat-row assistant-row">
+            <span class="chat-avatar" aria-hidden="true"><span></span></span>
+            <div class="chat-message assistant">Ask about tracked items, dates, or status changes.</div>
+          </div>
         </div>
         <div class="suggestions">
           <button type="button" data-prompt="What's coming up?">What's coming up?</button>
@@ -88,6 +90,7 @@
       <span>Private by design. Always your call.</span>
       <a href="/">Back to overview ↑</a>
     </footer>
+    <script src="theme.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

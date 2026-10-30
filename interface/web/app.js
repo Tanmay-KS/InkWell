@@ -1,24 +1,3 @@
-const themeToggle = document.getElementById("theme-toggle");
-const savedTheme = localStorage.getItem("inkwell-theme");
-if (savedTheme === "light") document.body.classList.add("theme-light");
-
-function updateThemeToggle() {
-  const isLight = document.body.classList.contains("theme-light");
-  const nextTheme = isLight ? "dark" : "light";
-  themeToggle.classList.toggle("is-light", isLight);
-  themeToggle.setAttribute("aria-pressed", String(isLight));
-  themeToggle.setAttribute("aria-label", `Switch to ${nextTheme} mode`);
-  themeToggle.title = `Switch to ${nextTheme} mode`;
-}
-
-updateThemeToggle();
-themeToggle.addEventListener("click", () => {
-  document.body.classList.toggle("theme-light");
-  const theme = document.body.classList.contains("theme-light") ? "light" : "dark";
-  localStorage.setItem("inkwell-theme", theme);
-  updateThemeToggle();
-});
-
 async function request(path, options = {}) {
   const response = await fetch(path, options);
   const data = await response.json();
@@ -282,7 +261,18 @@ function addChatMessage(role, text) {
   const bubble = document.createElement("div");
   bubble.className = `chat-message ${role}`;
   bubble.textContent = text;
-  log.append(bubble);
+  if (role === "assistant") {
+    const row = document.createElement("div");
+    row.className = "chat-row assistant-row";
+    const avatar = document.createElement("span");
+    avatar.className = "chat-avatar";
+    avatar.setAttribute("aria-hidden", "true");
+    avatar.append(document.createElement("span"));
+    row.append(avatar, bubble);
+    log.append(row);
+  } else {
+    log.append(bubble);
+  }
   log.scrollTop = log.scrollHeight;
 }
 
@@ -320,8 +310,6 @@ document.querySelectorAll("[data-prompt]").forEach((button) => {
 
 async function refresh() {
   const data = await request("/api/summary");
-  document.getElementById("mode").textContent =
-    data.demo ? "Demo · fictional data" : "Local household";
   renderFindings(data.findings);
   render("due", data.due, true);
   render("items", data.items);

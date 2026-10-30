@@ -113,7 +113,7 @@
 
 .dashboard-header .header-brand{display:flex;align-items:center;gap:14px;flex:0 0 auto}
 .dashboard-header .theme-toggle{position:relative;width:72px;height:38px;display:block;border:1px solid #4b5351;border-radius:999px;background:#292f30;color:var(--dash-muted);padding:0;cursor:pointer;flex:0 0 auto;transition:background .2s,border-color .2s}
-.dashboard-header .theme-thumb{position:absolute;z-index:0;top:3px;right:3px;width:30px;height:30px;border-radius:50%;background:var(--dash-lime);transition:transform .2s,background .2s}
+.dashboard-header .theme-toggle:not(.is-light) .theme-thumb{position:absolute;z-index:0;top:3px;left:auto;right:3px;width:30px;height:30px;border-radius:50%;background:var(--dash-lime);transform:none;transition:transform .2s,background .2s}
 .dashboard-header .theme-icon{position:absolute;z-index:1;top:8px;display:grid;place-items:center;width:20px;height:20px;color:#929a93;transition:color .2s}
 .dashboard-header .theme-icon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .dashboard-header .theme-icon-sun{left:8px}.dashboard-header .theme-icon-moon{right:8px}
@@ -225,3 +225,11 @@
 .theme-light .upload-dropzone small{color:#666a5e}
 .theme-light .panel-upload .upload>button{background:#e4efcf;border-color:#bdd397;color:#405c20}
 .theme-light .panel-upload .upload>button:hover{background:#dce9c7;border-color:#aec884}
+
+/* Give InkWell replies the compact lime avatar shown in the chat reference. */
+.chat-log>.chat-row.assistant-row{display:flex;align-items:flex-start;gap:10px;max-width:90%}
+.chat-avatar{flex:0 0 34px;width:34px;height:34px;margin-top:3px;display:grid;place-items:center;border-radius:50%;background:#303735;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.chat-avatar>span{width:13px;height:13px;border-radius:50%;background:var(--dash-lime);box-shadow:0 0 10px rgba(201,243,107,.3)}
+.chat-row>.chat-message.assistant{max-width:none;min-width:0}
+.theme-light .chat-avatar{background:#e9eee0;box-shadow:0 2px 8px rgba(35,45,24,.1)}
+.theme-light .chat-avatar>span{box-shadow:0 0 8px rgba(126,163,57,.25)}
