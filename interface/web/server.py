@@ -11,16 +11,20 @@ from collections import deque
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from agent.actions.draft_actions import ActionKind, draft_action
 from agent.graph import run_document_graph, run_text_graph
+from agent.mail.inbound import handle_webhook
+from agent.mail.resend import ResendClient, ResendError, WebhookVerificationError
+from agent.mail.store import MailStore
 from agent.memory.hermes_memory import HouseholdItem, HouseholdMemory, TrackedState
 from agent.verifier import inventory_findings
 from interface.bot.handlers import BotMessage, InkWellBot
 
 ROOT = Path(__file__).resolve().parent
 MAX_UPLOAD = 15 * 1024 * 1024
+MAX_WEBHOOK = 1 * 1024 * 1024
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 DEFAULT_RATE_LIMIT = 30
 DEFAULT_RATE_WINDOW = 60.0
@@ -32,6 +36,11 @@ USE_MODEL_DRAFTER = os.environ.get("INKWELL_USE_MODEL_DRAFTER", "").strip() in {
     "true",
     "yes",
 }
+
+
+def _flag(name: str) -> bool:
+    """Read a boolean environment flag (`1`, `true`, `yes`)."""
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes"}
 
 
 class RateLimiter:
@@ -245,6 +254,63 @@ class InkWellHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
         return True
 
+    # --- mail ---------------------------------------------------------------
+
+    def _mail_store(self) -> MailStore:
+        return MailStore(self.memory.connect())
+
+    def _mail_readable(self) -> bool:
+        """Whether the mail read routes are available in this deployment.
+
+        Off on the public demo (see `wsgi.py`) unless explicitly enabled, so
+        a throwaway instance never exposes an inbox. The local server is
+        unaffected: it is loopback-only and reads the household sidecar.
+        """
+        return not getattr(self.server, "public_demo", False) or _flag("INKWELL_MAIL_PUBLIC")
+
+    def _resend_webhook(self) -> None:
+        """Handle one Resend webhook.
+
+        This is the only POST route reachable from outside loopback, so it
+        does not use `_local_request`. The Svix signature is the
+        authentication: an unsigned request never reaches the store.
+        """
+        secret = os.environ.get("RESEND_WEBHOOK_SECRET", "").strip()
+        if not secret:
+            return self._send_json({"error": "resend webhook is not configured"}, 503)
+        if getattr(self.server, "public_demo", False) and not _flag("INKWELL_MAIL_PUBLIC"):
+            # A public deployment must not accumulate real mail in a
+            # throwaway database, and must not become a readable inbox.
+            return self._send_json(
+                {"error": "mail ingestion is disabled on the public demo"}, 503
+            )
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return self._send_json({"error": "invalid Content-Length"}, 400)
+        if length <= 0 or length > MAX_WEBHOOK:
+            return self._send_json(
+                {"error": "request size must be between 1 byte and 1 MiB"}, 413
+            )
+        raw = self.rfile.read(length)
+        headers = {key: value for key, value in self.headers.items()}
+        try:
+            result = handle_webhook(
+                raw,
+                headers,
+                store=self._mail_store(),
+                client=ResendClient(),
+                memory=self.memory,
+                secret=secret,
+            )
+        except WebhookVerificationError as exc:
+            return self._send_json({"error": str(exc)}, 400)
+        except ResendError:
+            # 502 tells Resend to retry. The message is already idempotent,
+            # so a retry either completes the fetch or finds a duplicate.
+            return self._send_json({"error": "resend request failed; retry"}, 502)
+        return self._send_json(result)
+
     def do_GET(self) -> None:
         if not self._local_request():
             return
@@ -265,6 +331,34 @@ class InkWellHandler(BaseHTTPRequestHandler):
             return self._send_json({
                 "run": run,
                 "demo": bool(getattr(self.server, "demo_mode", False)),
+            })
+        if (path == "/api/mail" or path.startswith("/api/mail/")) and not self._mail_readable():
+            # The public demo has no household mail, and it must not become
+            # a readable inbox if one is ever wired to it.
+            self.send_error(404)
+            return
+        if path == "/api/mail":
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                limit = int(query.get("limit", ["20"])[0])
+            except (TypeError, ValueError):
+                limit = 20
+            store = self._mail_store()
+            return self._send_json({
+                "messages": store.list_messages(limit),
+                "summary": store.summary(),
+                "demo": bool(getattr(self.server, "demo_mode", False)),
+            })
+        if path.startswith("/api/mail/"):
+            message_id = unquote(path[len("/api/mail/") :])
+            store = self._mail_store()
+            message = store.get_message(message_id)
+            if message is None:
+                return self._send_json({"error": "message not found"}, 404)
+            return self._send_json({
+                "message": message,
+                "events": store.events_for(message_id),
+                "attachments": store.attachments_for(message_id),
             })
         # Keep the dashboard at a stable, human-readable route while the
         # root page explains the product. Static assets remain at the root
@@ -291,11 +385,13 @@ class InkWellHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self) -> None:
+        path = urlparse(self.path).path
+        if path == "/api/resend/webhook":
+            return self._resend_webhook()
         if not self._local_request():
             return
         if self._rate_limited():
             return
-        path = urlparse(self.path).path
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:

@@ -102,6 +102,26 @@ notification option; there is no interactive Slack bot.
 Setup, privacy boundary and the honest live status are in
 [`docs/telegram.md`](docs/telegram.md).
 
+### Mail: Resend
+
+InkWell can receive household mail through Resend and turn a notice into a
+tracked item. A signed webhook (`POST /api/resend/webhook`) fetches the
+body, redacts it before storing, and records delivery events; the local
+product can instead poll with `python -m agent.mail sync`, so no inbox is
+ever exposed publicly.
+
+```bash
+python -m agent.mail doctor   # key scope, endpoints, local counts
+python -m agent.mail sync     # import new received mail
+python -m agent.mail list
+```
+
+Receiving needs a **full-access** key, not a send-only one: Resend's
+received-email API is unavailable to a send-only key. The public demo
+returns 404 for the mail routes and 503 for the webhook. Setup, the
+stored-data contract and the signature details are in
+[`docs/resend.md`](docs/resend.md).
+
 ### Phase 0 decisions
 
 | Decision | Outcome | Record |
