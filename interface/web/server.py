@@ -195,6 +195,11 @@ class LedgerHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _local_request(self) -> bool:
+        # The loopback server never sets this flag. The Vercel demo state
+        # does, and it only ever holds fictional data in a throwaway
+        # database; see `interface/web/wsgi.py`.
+        if getattr(self.server, "public_demo", False):
+            return True
         host_header = self.headers.get("Host", "")
         parsed_host = urlparse(f"//{host_header}")
         if parsed_host.hostname not in LOOPBACK_HOSTS:
@@ -261,6 +266,11 @@ class LedgerHandler(BaseHTTPRequestHandler):
                 "run": run,
                 "demo": bool(getattr(self.server, "demo_mode", False)),
             })
+        # Keep the dashboard at a stable, human-readable route while the
+        # root page explains the product. Static assets remain at the root
+        # so the existing dashboard JavaScript keeps its same-origin URL.
+        if path == "/app":
+            path = "/dashboard.html"
         target = ROOT / ("index.html" if path == "/" else path.lstrip("/"))
         if target.parent != ROOT or not target.is_file():
             self.send_error(404)

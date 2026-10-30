@@ -8,8 +8,8 @@ make demo-web
 # Ledger local interface: http://127.0.0.1:8765
 ```
 
-Open <http://127.0.0.1:8765>. The header says **Demo · fictional data**.
-The five seeded items are invented; the demo uses a temporary database
+Open <http://127.0.0.1:8765> for the Ledger overview, then choose **Open Ledger** to enter the dashboard at `/app`. The dashboard header says **Demo · fictional data**.
+The six seeded items are invented; the demo uses a temporary database
 that is deleted when the process exits, so it never reads or writes the
 real household sidecar at `~/.hermes/ledger_memory.db`.
 
@@ -53,13 +53,17 @@ draft generator, driven by a deterministic fictional fixture
 (`_seed_demo` in `interface/web/server.py`). The seeded trace is a real
 `run_text_graph` call whose Drafter deliberately plants a wrong amount.
 
-**It is not** a hosted service. The server refuses any `Host` header that
-is not `127.0.0.1`, `::1` or `localhost`, and any cross-origin request. We
-did not publish a public URL because doing so would put the household
-database behind no authentication at all. The honest demo is the one you
-run locally. POST endpoints are rate-limited (30 per 60 seconds per client
-by default; `LEDGER_RATE_LIMIT` and `LEDGER_RATE_WINDOW` change it) and
-uploads are capped at 15 MiB.
+**It is not** the loopback server. The server refuses any `Host` header that
+is not `127.0.0.1`, `::1` or `localhost`, and any cross-origin request. The
+household database is never exposed.
+
+There is a separate **public demo** deployment on Vercel. It runs the same
+handler and routes through `interface/web/wsgi.py`, but its state is a
+throwaway `/tmp` database seeded with the same fictional fixture. It never
+reads the household sidecar, model drafting stays off, and everything
+resets when the instance recycles. Only that entrypoint sets
+`public_demo`, which is the sole reason the host check is bypassed.
+
 
 **It is not** model-backed by default. The template Drafter is
 deterministic and makes no model call, which is why the demo trace shows

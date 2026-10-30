@@ -47,8 +47,8 @@ make demo-web
 # Ledger local interface: http://127.0.0.1:8765
 ```
 
-Open <http://127.0.0.1:8765>. The header says **Demo · fictional data**.
-The demo uses a temporary database seeded with five invented items, so it
+Open <http://127.0.0.1:8765> for the Ledger overview, then choose **Open Ledger** to enter the dashboard at `/app`. The dashboard header says **Demo · fictional data**.
+The demo uses a temporary database seeded with six invented items, so it
 never reads or writes the real household sidecar. It opens on a pushed
 finding — two deadlines this week and one likely duplicate charge — and
 shows the glass-box trace: Redactor → Extractor → Verifier → Researcher →
@@ -62,9 +62,13 @@ make web        # the real household database, loopback only
 ```
 
 The interface binds to `127.0.0.1`, refuses non-loopback `Host` headers and
-rejects cross-origin requests. There is no hosted demo URL: exposing this
-server would put the household database behind no authentication. The
-tour, including what the demo does and does not prove, is in
+rejects cross-origin requests. The household database is never hosted.
+
+A separate **public demo** runs the same handler on Vercel
+(`app.py`, `interface/web/wsgi.py`, `vercel.json`) against a throwaway
+database seeded with the same fictional items. It never reads the
+household sidecar, makes no model calls, and resets when the instance
+recycles. The tour, including what the demo does and does not prove, is in
 [`docs/demo.md`](docs/demo.md).
 
 ### Chat: Telegram
