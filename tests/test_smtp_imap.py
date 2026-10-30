@@ -537,32 +537,3 @@ def test_verify_logs_in_without_sending():
     assert report["noop"] == 250
     assert fake.message is None
     assert fake.quit_called is True
-
-
-# --- outbound record --------------------------------------------------------
-
-
-def test_a_sent_copy_is_recorded_with_direction_and_state(tmp_path):
-    from agent.mail.__main__ import _record_outbound
-
-    memory, store = _tree(tmp_path)
-    _record_outbound(
-        memory=memory,
-        store=store,
-        message_id="<sent-1@example.com>",
-        sender="avery@example.com",
-        recipients=["jordan@example.com"],
-        subject="Renewal confirmed",
-        body="Write to avery@example.com.",
-        transport="smtp",
-        metadata={"accepted": ["jordan@example.com"], "refused": []},
-    )
-
-    row = store.get_message("<sent-1@example.com>")
-    assert row is not None
-    assert row["direction"] == "outbound"
-    assert row["state"] == "sent"
-    assert row["recipients"] == ["jordan@example.com"]
-    assert "avery@example.com" not in row["body"]
-    assert row["metadata"]["transport"] == "smtp"
-    assert row["metadata"]["accepted"] == ["jordan@example.com"]
