@@ -9,7 +9,14 @@
   </head>
   <body class="dashboard-page">
     <header class="site-header dashboard-header">
-      <a class="wordmark" href="/" aria-label="InkWell home">INKWELL<span class="wordmark-dot">.</span></a>
+      <div class="header-brand">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to light mode" title="Switch to light mode" aria-pressed="false">
+          <span class="theme-thumb" aria-hidden="true"></span>
+          <span class="theme-icon theme-icon-sun" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg></span>
+          <span class="theme-icon theme-icon-moon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20.2 15.1A8.5 8.5 0 0 1 8.9 3.8 8.6 8.6 0 1 0 20.2 15.1Z"/></svg></span>
+        </button>
+        <a class="wordmark" href="/" aria-label="InkWell home">INKWELL<span class="wordmark-dot">.</span></a>
+      </div>
       <nav aria-label="Dashboard navigation">
         <a href="/">Overview</a>
         <a href="#coming-up">Coming up</a>
@@ -21,9 +28,9 @@
       <div class="dashboard-intro">
         <p class="section-index">YOUR HOUSEHOLD / DASHBOARD</p>
         <h1>Your paperwork, in <em>view.</em></h1>
-        <p class="intro">Keep renewals, important dates, and next steps together. InkWell organizes the details and leaves every decision to you.</p>
+        <p class="intro">Track renewals, key dates, and next steps in one place.</p>
       </div>
-      <p class="banner" role="note"><span class="privacy-lock" aria-hidden="true">◆</span> Documents are extracted and redacted locally. Optional external model and search steps receive only redacted text; drafts are never sent automatically.</p>
+      <p class="banner" role="note"><span class="privacy-lock" aria-hidden="true">◆</span> Documents are redacted on this device. Optional services receive only redacted text.</p>
       <section class="panel panel-findings">
         <div class="section-heading"><h2>Proactive findings</h2><a id="findings-count" class="findings-view-all" href="#findings">View all (0) <span aria-hidden="true">→</span></a></div>
         <ul id="findings"><li class="empty">Nothing needs attention this week.</li></ul>
@@ -38,12 +45,12 @@
             </svg>
             <strong>Drop a notice here</strong>
             <span>or click to choose a file</span>
-            <small id="file-name">PDF, image, text, or email · up to 15 MB</small>
+            <small id="file-name">PDF, image, text, or email · max 15 MB</small>
           </label>
           <button type="submit">Process locally</button>
         </form>
-        <p id="notice" class="notice" role="status">Documents are processed on this machine.</p>
-        <p class="privacy-note">Documents stay on this machine during extraction. Drafts are never sent automatically. Outputs are information, not legal or financial advice.</p>
+        <p id="notice" class="notice" role="status">Processed on this device. Drafts are never sent.</p>
+        <p class="privacy-note">For review only. Not legal or financial advice.</p>
         <div id="draft" class="draft" hidden></div>
       </section>
       <section class="panel panel-trace">
@@ -53,7 +60,7 @@
       <section class="panel panel-chat" id="assistant" aria-labelledby="chat-title">
         <h2 id="chat-title">Ask InkWell</h2>
         <div id="chat-log" class="chat-log" role="log" aria-live="polite">
-          <div class="chat-message assistant">Hi, I can look up your tracked items and upcoming dates. I can also record a cancellation or reactivation.</div>
+          <div class="chat-message assistant">Ask about tracked items, dates, or status changes.</div>
         </div>
         <div class="suggestions">
           <button type="button" data-prompt="What's coming up?">What's coming up?</button>
@@ -63,22 +70,22 @@
           <input id="chat-input" type="text" maxlength="2000" autocomplete="off" aria-label="Message InkWell" placeholder="Ask about a renewal or update an item…" required />
           <button type="submit">Send</button>
         </form>
-        <p class="notice">InkWell answers from local household data. It does not send messages or contact providers.</p>
+        <p class="notice">Answers use your local household data. No messages are sent.</p>
       </section>
       <section class="panel panel-due" id="coming-up">
         <div class="section-heading"><h2>Coming up</h2><a id="due-count" class="findings-view-all" href="#due">View all (0) <span aria-hidden="true">→</span></a></div>
         <ul id="due"><li class="empty">Nothing due.</li></ul>
       </section>
 
-      <section class="panel panel-household">
+      <section class="panel panel-household" id="household">
         <div class="section-heading"><h2>Household</h2><span id="item-count" class="count"></span></div>
-        <p class="household-hint">Click a row to change its status.</p>
+        <p class="household-hint">Select a row to change its status.</p>
         <ul id="items"><li class="empty">Nothing tracked yet.</li></ul>
       </section>
     </main>
     <footer class="dashboard-footer">
       <a class="wordmark" href="/">INKWELL<span class="wordmark-dot">.</span></a>
-      <span>Drafts are for review. InkWell never sends them.</span>
+      <span>Private by design. Always your call.</span>
       <a href="/">Back to overview ↑</a>
     </footer>
     <script src="app.js"></script>

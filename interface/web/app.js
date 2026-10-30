@@ -1,3 +1,24 @@
+const themeToggle = document.getElementById("theme-toggle");
+const savedTheme = localStorage.getItem("inkwell-theme");
+if (savedTheme === "light") document.body.classList.add("theme-light");
+
+function updateThemeToggle() {
+  const isLight = document.body.classList.contains("theme-light");
+  const nextTheme = isLight ? "dark" : "light";
+  themeToggle.classList.toggle("is-light", isLight);
+  themeToggle.setAttribute("aria-pressed", String(isLight));
+  themeToggle.setAttribute("aria-label", `Switch to ${nextTheme} mode`);
+  themeToggle.title = `Switch to ${nextTheme} mode`;
+}
+
+updateThemeToggle();
+themeToggle.addEventListener("click", () => {
+  document.body.classList.toggle("theme-light");
+  const theme = document.body.classList.contains("theme-light") ? "light" : "dark";
+  localStorage.setItem("inkwell-theme", theme);
+  updateThemeToggle();
+});
+
 async function request(path, options = {}) {
   const response = await fetch(path, options);
   const data = await response.json();
@@ -68,7 +89,7 @@ function render(listId, items, due = false) {
   if (!items.length) {
     const empty = document.createElement("li");
     empty.className = "empty";
-    empty.textContent = due ? "Nothing due in the next 30 days." : "Nothing tracked yet.";
+    empty.textContent = due ? "Nothing due soon." : "No items yet.";
     list.append(empty);
     return;
   }
@@ -160,7 +181,7 @@ function renderFindings(findings) {
     document.getElementById("findings-count").textContent = "View all (0) →";
     const empty = document.createElement("li");
     empty.className = "empty";
-    empty.textContent = "Nothing needs attention this week.";
+    empty.textContent = "Nothing needs attention.";
     list.append(empty);
     return;
   }
@@ -197,9 +218,12 @@ function renderFindings(findings) {
     detail.className = "detail";
     detail.textContent = finding.detail;
     what.append(title, detail);
-    const arrow = document.createElement("span");
+    const arrow = document.createElement("a");
     arrow.className = "finding-arrow";
-    arrow.setAttribute("aria-hidden", "true");
+    arrow.href = finding.kind === "deadline" ? "#coming-up" : "#household";
+    arrow.setAttribute("aria-label", finding.kind === "deadline"
+      ? "View upcoming dates"
+      : "View household items");
     arrow.textContent = "›";
     row.append(icon, what, arrow);
     list.append(row);
@@ -214,35 +238,31 @@ function renderTrace(run) {
     label.textContent = "";
     const empty = document.createElement("li");
     empty.className = "empty";
-    empty.textContent = "Run a document to see every step.";
+    empty.textContent = "Process a document to see its steps.";
     list.append(empty);
     return;
   }
   label.textContent = `${run.trace.length} steps · ${run.status}`;
+  const taskLabels = {
+    Redactor: "Sensitive data redacted",
+    Extractor: "Document parsed",
+    Verifier: "Entities identified",
+    Researcher: "Relevant information checked",
+    Drafter: "Suggestions generated",
+    Auditor: "Suggestions reviewed",
+    Orchestrator: "Document processed",
+  };
   for (const step of run.trace) {
     const row = document.createElement("li");
-    const number = document.createElement("span");
-    number.className = "step-no";
-    number.textContent = step.step;
-    const agent = document.createElement("span");
-    agent.className = "step-agent";
-    agent.textContent = step.agent;
-    const summary = document.createElement("span");
-    summary.className = "step-summary";
-    const details = [step.output_summary];
-    if (step.model) details.push(step.model);
-    details.push(`${step.latency_ms} ms`);
-    summary.textContent = details.filter(Boolean).join(" · ");
-    const tier = badge(step.tier || "code", "tier");
-    const egress = badge(
-      step.egress === "none" ? "no egress" : step.egress,
-      step.egress.startsWith("allowed") ? "bad" : "ok",
-    );
-    const status = badge(
-      step.status,
-      step.status === "ok" ? "ok" : "bad",
-    );
-    row.append(number, agent, summary, tier, egress, status);
+    row.className = `trace-step${step.status === "ok" ? " is-complete" : " is-error"}`;
+    const check = document.createElement("span");
+    check.className = "trace-check";
+    check.setAttribute("aria-hidden", "true");
+    check.textContent = step.status === "ok" ? "✓" : "!";
+    const task = document.createElement("span");
+    task.className = "trace-task";
+    task.textContent = taskLabels[step.agent] || "Document processed";
+    row.append(check, task);
     list.append(row);
   }
 }
@@ -312,7 +332,7 @@ const uploadDropzone = document.getElementById("upload-dropzone");
 const fileName = document.getElementById("file-name");
 
 fileInput.addEventListener("change", () => {
-  fileName.textContent = fileInput.files[0]?.name || "PDF, image, text, or email · up to 15 MB";
+  fileName.textContent = fileInput.files[0]?.name || "PDF, image, text, or email · max 15 MB";
   uploadDropzone.classList.toggle("has-file", Boolean(fileInput.files[0]));
 });
 
