@@ -10,10 +10,6 @@
           "@playwright/mcp@latest"
         ]
       },
-      "github": {
-        "type": "remote",
-        "url": "https://api.githubcopilot.com/mcp/"
-      },
       "devrelay": {
         "type": "remote",
         "url": "https://api.devrelay.so/mcp"
