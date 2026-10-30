@@ -111,8 +111,8 @@ product can instead poll with `python -m agent.mail sync`, so no inbox is
 ever exposed publicly.
 
 ```bash
-python -m agent.mail doctor --online   # key scope, endpoints, transport logins
-python -m agent.mail sync              # import new received mail
+python -m agent.mail doctor   # key scope, endpoints, local counts
+python -m agent.mail sync     # import new received mail
 python -m agent.mail list
 ```
 
@@ -121,29 +121,6 @@ received-email API is unavailable to a send-only key. The public demo
 returns 404 for the mail routes and 503 for the webhook. Setup, the
 stored-data contract and the signature details are in
 [`docs/resend.md`](docs/resend.md).
-
-### Mail: SMTP and IMAP
-
-A real mailbox can be used instead of, or alongside, Resend. Sending goes
-through SMTP after the user approves the message; receiving imports over a
-read-only IMAP connection, so the mailbox is not marked, moved or changed.
-
-```bash
-python -m agent.mail doctor --online   # log in to every configured transport
-python -m agent.mail imap-sync         # import new mail, newest 20 by default
-python -m agent.mail send --transport smtp \
-  --to jordan@example.com --subject "Renewal confirmed" --text "..."
-python -m agent.mail list --direction outbound
-```
-
-IMAP is opened `readonly=True` and fetched with `BODY.PEEK[]`; progress is a
-local `(UIDVALIDITY, UID)` watermark rather than a server flag. Bodies and
-outbound copies are redacted before storage, and attachments go through the
-same document graph as an upload. TLS is required by default (IMAP 993 SSL,
-SMTP 587 STARTTLS); plaintext needs an explicit `INKWELL_*_INSECURE=1` escape
-hatch for a local test server. App passwords are supported; OAuth is not.
-Setup, provider settings and limitations are in
-[`docs/smtp-imap.md`](docs/smtp-imap.md).
 
 ### Phase 0 decisions
 

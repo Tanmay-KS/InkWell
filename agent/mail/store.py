@@ -65,15 +65,6 @@ CREATE TABLE IF NOT EXISTS mail_attachment (
     detail         TEXT,
     created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
-
-CREATE TABLE IF NOT EXISTS mail_sync_state (
-    account      TEXT NOT NULL,
-    mailbox      TEXT NOT NULL,
-    uidvalidity  INTEGER,
-    last_uid     INTEGER NOT NULL DEFAULT 0,
-    updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (account, mailbox)
-);
 """
 
 
@@ -280,45 +271,6 @@ class MailStore:
             (message_id,),
         ).fetchall()
         return [dict(row) for row in rows]
-
-    # --- IMAP watermarks ---------------------------------------------------
-
-    def get_sync_state(self, account: str, mailbox: str) -> dict[str, Any] | None:
-        """The last UID imported from one mailbox, if it was ever read.
-
-        Storing this separately from the messages is what makes a second
-        `imap-sync` cheap and a mailbox reset (a new `UIDVALIDITY`) safe:
-        the watermark is discarded rather than applied to unrelated UIDs.
-        """
-        row = self.connection.execute(
-            """
-            SELECT account, mailbox, uidvalidity, last_uid, updated_at
-            FROM mail_sync_state WHERE account = ? AND mailbox = ?
-            """,
-            (account, mailbox),
-        ).fetchone()
-        return dict(row) if row is not None else None
-
-    def set_sync_state(
-        self,
-        account: str,
-        mailbox: str,
-        *,
-        uidvalidity: int | None,
-        last_uid: int,
-    ) -> None:
-        self.connection.execute(
-            """
-            INSERT INTO mail_sync_state (account, mailbox, uidvalidity, last_uid, updated_at)
-            VALUES (?, ?, ?, ?, datetime('now'))
-            ON CONFLICT (account, mailbox) DO UPDATE SET
-                uidvalidity = excluded.uidvalidity,
-                last_uid = excluded.last_uid,
-                updated_at = excluded.updated_at
-            """,
-            (account, mailbox, uidvalidity, int(last_uid)),
-        )
-        self.connection.commit()
 
     def summary(self) -> dict[str, Any]:
         totals = self.connection.execute(
