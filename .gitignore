@@ -66,6 +66,11 @@ tls/
 # committed.
 sandbox/host-bootstrap.sh
 
+# --- Local OCR test fixture ------------------------------------------------
+# A hand-generated, image-only PDF used to check the OCR path on this
+# machine. It contains fictional data only and is not part of the product.
+/ocr-test-notice.pdf
+
 # --- Editors / OS ----------------------------------------------------------
 .DS_Store
 .idea/
