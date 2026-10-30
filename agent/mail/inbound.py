@@ -30,6 +30,7 @@ from privacy_router.redact import redacted_text
 
 MAX_ATTACHMENTS = max(0, int(os.environ.get("INKWELL_MAIL_MAX_ATTACHMENTS", "3")))
 MAX_BODY_CHARS = 200_000
+MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
 
 _SUFFIX_BY_TYPE = {
     "application/pdf": ".pdf",
@@ -51,7 +52,7 @@ def _safe_suffix(filename: str | None, content_type: str | None) -> str:
     return _SUFFIX_BY_TYPE.get((content_type or "").lower(), ".bin")
 
 
-def _redact_body(body: str, memory: HouseholdMemory | None) -> str:
+def redact_body(body: str, memory: HouseholdMemory | None) -> str:
     """Redact before the body is written down.
 
     A redaction failure must not fall back to storing the raw text. The
@@ -63,6 +64,74 @@ def _redact_body(body: str, memory: HouseholdMemory | None) -> str:
     except Exception:  # the privacy boundary must not fail open
         return ""
     return redacted
+
+
+def process_attachment_bytes(
+    *,
+    attachment_id: str,
+    message_id: str,
+    filename: str | None,
+    content_type: str | None,
+    payload: bytes,
+    store: MailStore,
+    memory: HouseholdMemory | None,
+    warnings: list[str],
+) -> str | None:
+    """Parse one attachment and record the result.
+
+    Shared by the Resend download path and the IMAP import path: both end
+    up with bytes and a filename, and both must redact and delete the
+    temporary file the same way.
+    """
+    if memory is None or MAX_ATTACHMENTS == 0:
+        return None
+    if len(payload) > MAX_ATTACHMENT_BYTES:
+        warnings.append(f"attachment {filename or attachment_id}: over the 15 MiB limit")
+        store.record_attachment(
+            attachment_id=attachment_id,
+            message_id=message_id,
+            filename=filename,
+            content_type=content_type,
+            size=len(payload),
+            state="skipped",
+            detail="over the 15 MiB limit",
+        )
+        return None
+
+    suffix = _safe_suffix(filename, content_type)
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="inkwell-mail-", suffix=suffix, delete=False
+        ) as handle:
+            handle.write(payload)
+            path = Path(handle.name)
+        try:
+            state = run_document_graph(path, memory=memory)
+        finally:
+            path.unlink(missing_ok=True)
+        item_id = state.item.item_id if state.item is not None else None
+        store.record_attachment(
+            attachment_id=attachment_id,
+            message_id=message_id,
+            filename=filename,
+            content_type=content_type,
+            size=len(payload),
+            item_id=item_id,
+            state="processed" if item_id else "read",
+        )
+        return item_id
+    except (OSError, ValueError) as exc:
+        warnings.append(f"attachment {filename or attachment_id}: {type(exc).__name__}")
+        store.record_attachment(
+            attachment_id=attachment_id,
+            message_id=message_id,
+            filename=filename,
+            content_type=content_type,
+            size=len(payload),
+            state="error",
+            detail=type(exc).__name__,
+        )
+        return None
 
 
 def _process_attachments(
@@ -98,30 +167,7 @@ def _process_attachments(
             continue
         try:
             payload = client.download(str(url))
-            suffix = _safe_suffix(filename if isinstance(filename, str) else None,
-                                  content_type if isinstance(content_type, str) else None)
-            with tempfile.NamedTemporaryFile(
-                prefix="inkwell-mail-", suffix=suffix, delete=False
-            ) as handle:
-                handle.write(payload)
-                path = Path(handle.name)
-            try:
-                state = run_document_graph(path, memory=memory)
-            finally:
-                path.unlink(missing_ok=True)
-            item_id = state.item.item_id if state.item is not None else None
-            if item_id:
-                item_ids.append(item_id)
-            store.record_attachment(
-                attachment_id=attachment_id,
-                message_id=email_id,
-                filename=filename if isinstance(filename, str) else None,
-                content_type=content_type if isinstance(content_type, str) else None,
-                size=len(payload),
-                item_id=item_id,
-                state="processed" if item_id else "read",
-            )
-        except (ResendError, OSError, ValueError) as exc:
+        except ResendError as exc:
             warnings.append(f"attachment {filename or attachment_id}: {type(exc).__name__}")
             store.record_attachment(
                 attachment_id=attachment_id,
@@ -131,10 +177,23 @@ def _process_attachments(
                 state="error",
                 detail=type(exc).__name__,
             )
+            continue
+        item_id = process_attachment_bytes(
+            attachment_id=attachment_id,
+            message_id=email_id,
+            filename=filename if isinstance(filename, str) else None,
+            content_type=content_type if isinstance(content_type, str) else None,
+            payload=payload,
+            store=store,
+            memory=memory,
+            warnings=warnings,
+        )
+        if item_id:
+            item_ids.append(item_id)
     return item_ids
 
 
-def _item_from_text(body: str, memory: HouseholdMemory | None, warnings: list[str]) -> str | None:
+def item_from_text(body: str, memory: HouseholdMemory | None, warnings: list[str]) -> str | None:
     if not body or memory is None:
         return None
     try:
@@ -205,7 +264,7 @@ def _receive(
     body = strip_quoted_chain(str(body))[:MAX_BODY_CHARS]
 
     warnings: list[str] = []
-    stored_body = _redact_body(body, memory) if body else ""
+    stored_body = redact_body(body, memory) if body else ""
     if body and not stored_body:
         warnings.append("the body could not be redacted and was not stored")
 
@@ -228,7 +287,7 @@ def _receive(
     if not created:
         return {"status": "duplicate", "message_id": email_id}
 
-    item_ids = [item for item in [_item_from_text(body, memory, warnings)] if item]
+    item_ids = [item for item in [item_from_text(body, memory, warnings)] if item]
     item_ids.extend(
         _process_attachments(
             email_id=email_id,
