@@ -67,6 +67,36 @@ server would put the household database behind no authentication. The
 tour, including what the demo does and does not prove, is in
 [`docs/demo.md`](docs/demo.md).
 
+### Chat: Telegram
+
+The Telegram adapter runs the same `LedgerBot` and the same household
+database as the web view, so chat and browser see the same state.
+
+```bash
+make telegram-bot   # long polling, no public URL or webhook
+```
+
+`TELEGRAM_BOT_TOKEN` is the only required value. `TELEGRAM_CHAT_ID` is only
+for proactive notices from the deadline monitor. The adapter accepts a text
+command or a PDF/text notice dropped into the chat:
+
+* `/due` — what is coming up in the next 30 days
+* `/cancel ITEM_ID [YYYY-MM-DD]` and `/active ITEM_ID [YYYY-MM-DD]`
+* `help` / `/start` — the command list
+* natural questions such as “When does Orchard Fitness renew?”
+
+An attachment is downloaded to a temporary file, parsed locally, stored in
+the household memory, and deleted. The reply is a status line plus a
+redacted draft preview; the full draft stays in the loopback web view.
+Ledger never sends a letter from chat.
+
+Proactive deadline notices are separate: `jobs/deadline_monitor.py` posts
+to `TELEGRAM_CHAT_ID`. A Slack incoming webhook remains a one-way
+notification option; there is no interactive Slack bot.
+
+Setup, privacy boundary and the honest live status are in
+[`docs/telegram.md`](docs/telegram.md).
+
 ### Phase 0 decisions
 
 | Decision | Outcome | Record |
@@ -429,6 +459,7 @@ ledger/
 ├── jobs/                         Nebius Serverless Jobs — deadline monitoring
 ├── interface/                    chat handlers + loopback web view
 │   ├── bot/handlers.py           a renewal message becomes an item
+│   ├── chat/telegram.py          long polling -> LedgerBot -> reply
 │   └── web/                      server.py, index.html, app.js
 ├── eval/                         the four proofs + the synthetic corpus
 │   └── auditor_cases/            planted synthetic errors for the Auditor

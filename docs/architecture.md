@@ -255,4 +255,6 @@ model. The router handles personal data, which no existing layer touches.
       is the primary interface and the web view is a loopback-only demo
       (`make demo-web`), not a hosted URL. The demo has no authentication
       and reads a fictional database; publishing it would put the household
-      sidecar behind no access control. See `docs/demo.md`.
+      sidecar behind no access control. See `docs/demo.md`. The
+      Telegram bot (long polling) is implemented in `interface/chat/` and
+      needs no public URL; Slack is notification-only via a webhook.

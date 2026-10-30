@@ -66,7 +66,7 @@ class LedgerBot:
             return "Ledger memory is not configured."
         command = message.text.strip()
         lowered = command.casefold()
-        if lowered in {"/help", "help"}:
+        if lowered in {"/help", "/start", "help"}:
             return "Commands: /due, /cancel ITEM_ID [YYYY-MM-DD], /active ITEM_ID [YYYY-MM-DD]."
         if lowered in {"/due", "due"}:
             return self.daily_briefing(message.chat_id)

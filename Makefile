@@ -268,6 +268,10 @@ web: ## Run the local web view against the household database (loopback only)
 demo-web: ## Run the web view with isolated fictional demo data
 	$(PY) -m interface.web.server --demo
 
+.PHONY: telegram-bot
+telegram-bot: ## Run the Telegram bot over long polling (needs TELEGRAM_BOT_TOKEN)
+	$(PY) -m interface.chat
+
 .PHONY: results
 results: ## Phase 3 + Upgrade — compile the four numbers into docs/results.md + charts
 	$(PY) $(EVAL)/results_pack.py

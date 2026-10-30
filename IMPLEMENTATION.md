@@ -138,7 +138,7 @@ in `docs/phase2-runbook.md`. The exit condition is not closed until
 **Goal:** Make the project submittable by a stranger.
 
 ### Person B
-- [x] Polish the chat interface (Telegram/Slack) and simple web view — `interface/bot/handlers.py`, `interface/web/server.py`, `make demo-web`; 35 interface tests
+- [x] Polish the chat interface (Telegram) and simple web view — `interface/bot/handlers.py`, the Telegram long-polling adapter in `interface/chat/telegram.py` (`make telegram-bot`), `interface/web/server.py`, `make demo-web`; offline adapter tests in `tests/test_chat_telegram.py`. Telegram was verified live on 2026-10-30 (`@arcky_bot` processed a pending update); Slack is notification-only through an incoming webhook (see `docs/telegram.md`)
 - [x] Test the demo fully logged-out, fix any auth-wall issues — local demo needs no login or credentials; no hosted URL by design (loopback-only, see `docs/demo.md`)
 
 ### Person A
@@ -221,8 +221,10 @@ ledger/
 │   └── tavily_client.py
 │
 ├── interface/                     # Chat + web view (Person B)
-│   ├── bot/                       # Telegram/Slack bot
+│   ├── bot/                       # platform-independent conversation
 │   │   └── handlers.py
+│   ├── chat/                      # Telegram long polling
+│   │   └── telegram.py
 │   └── web/                       # Simple web view
 │       ├── index.html
 │       └── app.js

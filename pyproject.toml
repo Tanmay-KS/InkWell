@@ -49,6 +49,7 @@ packages = [
     "eval",
     "interface",
     "interface.bot",
+    "interface.chat",
     "interface.web",
 ]
 

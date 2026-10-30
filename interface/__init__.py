@@ -2,13 +2,13 @@
 
 Phase 4 — Person B.
 
-    bot/   Telegram / Slack handlers
-    web/   a simple web view
+    bot/   platform-independent conversation (commands, briefings)
+    chat/  Telegram long-polling transport
+    web/   a loopback web view
 
 Both talk to the same core: the agent pipeline in `agent/`, with the
-household state in `agent/memory/hermes_memory.py`. Neither interface
-holds logic of its own — the chat platform and the browser are two windows
-onto the same thing.
+household state in `agent/memory/hermes_memory.py`. No interface holds
+logic of its own — chat and browser are two windows onto the same thing.
 """
 
-__all__ = ["bot", "web"]
+__all__ = ["bot", "chat", "web"]
