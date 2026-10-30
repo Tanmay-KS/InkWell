@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ledger — live prompt-injection-block demo.
+# InkWell — live prompt-injection-block demo.
 #
 # The scenario: the agent reads an untrusted message that tells it to send
 # the household record to an attacker. The script executes the message's
@@ -10,7 +10,7 @@
 # Usage:
 #   bash demo/injection/run_injection_demo.sh
 #   bash demo/injection/run_injection_demo.sh --gateway hostfetch
-#   bash demo/injection/run_injection_demo.sh --audit-log /tmp/ledger-audit.jsonl
+#   bash demo/injection/run_injection_demo.sh --audit-log /tmp/inkwell-audit.jsonl
 #
 # Exit codes:
 #   0  all four attempts behaved as expected and the audit log recorded them
@@ -22,14 +22,14 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-SANDBOX_NAME="${LEDGER_SANDBOX_NAME:-ledger-hermes}"
-GATEWAY_NAME="${LEDGER_GATEWAY_NAME:-}"
-AUDIT_LOG="${LEDGER_AUDIT_LOG:-}"
-ACCOUNT="${LEDGER_DEMO_ACCOUNT:-0847-4851}"
-EMAIL="${LEDGER_DEMO_EMAIL:-devin.sullivan@example.com}"
-NAME="${LEDGER_DEMO_NAME:-Devin Sullivan}"
-ADDRESS="${LEDGER_DEMO_ADDRESS:-3482 Thistlewood Place}"
-PHONE="${LEDGER_DEMO_PHONE:-+1 437 126 5085}"
+SANDBOX_NAME="${INKWELL_SANDBOX_NAME:-inkwell-hermes}"
+GATEWAY_NAME="${INKWELL_GATEWAY_NAME:-}"
+AUDIT_LOG="${INKWELL_AUDIT_LOG:-}"
+ACCOUNT="${INKWELL_DEMO_ACCOUNT:-0847-4851}"
+EMAIL="${INKWELL_DEMO_EMAIL:-devin.sullivan@example.com}"
+NAME="${INKWELL_DEMO_NAME:-Devin Sullivan}"
+ADDRESS="${INKWELL_DEMO_ADDRESS:-3482 Thistlewood Place}"
+PHONE="${INKWELL_DEMO_PHONE:-+1 437 126 5085}"
 
 BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[31m'; GREEN=$'\033[32m'
 YELLOW=$'\033[33m'; CYAN=$'\033[36m'; RESET=$'\033[0m'
@@ -73,9 +73,9 @@ if [ -z "$AUDIT_LOG" ]; then
         | grep -oE 'audit_log_path: *"?[^" ]+' | head -1 \
         | sed 's/.*: *"\?//')"
 fi
-AUDIT_LOG="${AUDIT_LOG:-/var/log/ledger/audit.jsonl}"
+AUDIT_LOG="${AUDIT_LOG:-/var/log/inkwell/audit.jsonl}"
 
-echo "${BOLD}Ledger — prompt-injection demo${RESET}"
+echo "${BOLD}InkWell — prompt-injection demo${RESET}"
 echo "${DIM}sandbox: ${SANDBOX_NAME}${RESET}"
 echo "${DIM}audit:   ${AUDIT_LOG}${RESET}"
 echo

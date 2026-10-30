@@ -4,7 +4,7 @@ Phase 4 — Person B.
 
 Hermes already speaks to Telegram, Discord, Slack, WhatsApp and twenty
 other platforms through its messaging gateway. This module is the thin
-Ledger-specific layer on top: how a renewal notice arriving in a chat
+InkWell-specific layer on top: how a renewal notice arriving in a chat
 becomes a household item, and how a flagged deadline becomes a message.
 
 Chat is an external destination. Status messages contain only the provider
@@ -28,7 +28,7 @@ from typing import Any
 
 from agent.pipeline import process_document
 
-__all__ = ["BotMessage", "LedgerBot"]
+__all__ = ["BotMessage", "InkWellBot"]
 
 
 @dataclass(slots=True)
@@ -43,8 +43,8 @@ class BotMessage:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-class LedgerBot:
-    """Ledger's behaviour inside a chat platform.
+class InkWellBot:
+    """InkWell's behaviour inside a chat platform.
 
     Attributes:
         allow_attachments: Whether inbound attachments are ingested. Their
@@ -63,7 +63,7 @@ class LedgerBot:
         unsupported requests are answered with the available capabilities.
         """
         if self._memory is None:
-            return "Ledger memory is not configured."
+            return "InkWell memory is not configured."
         command = message.text.strip()
         lowered = command.casefold()
         if lowered in {"/help", "/start", "help"}:
@@ -194,7 +194,7 @@ class LedgerBot:
         if not self.allow_attachments:
             return "Document uploads are disabled."
         if self._memory is None:
-            return "Ledger memory is not configured."
+            return "InkWell memory is not configured."
         replies = []
         for attachment in message.attachments:
             path = Path(attachment)
@@ -214,13 +214,13 @@ class LedgerBot:
     def daily_briefing(self, chat_id: str) -> str:
         """The proactive message: what is coming due.
 
-        This is the message that makes Ledger worth having — it arrives
+        This is the message that makes InkWell worth having — it arrives
         without the user asking anything.
 
         Lists upcoming items from the household sidecar.
         """
         if self._memory is None:
-            return "Ledger memory is not configured."
+            return "InkWell memory is not configured."
         due = self._memory.due_within(30)
         if not due:
             return "Nothing is due in the next 30 days."

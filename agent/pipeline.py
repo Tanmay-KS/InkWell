@@ -346,7 +346,7 @@ def process_document(
     try:
         document = parse_document(
             path,
-            model=os.environ.get("LEDGER_MODEL_OCR", "") or None,
+            model=os.environ.get("INKWELL_MODEL_OCR", "") or None,
             transport=transport,
             household_names=names,
             redact=redact,

@@ -151,7 +151,7 @@ class EgressCapture:
 
 
 _active: contextvars.ContextVar[EgressCapture | None] = contextvars.ContextVar(
-    "ledger_egress_capture", default=None
+    "inkwell_egress_capture", default=None
 )
 
 
@@ -223,7 +223,7 @@ def http_transport(
 
         content = f"{request.prompt}\n\n{request.payload}" if request.prompt else request.payload
         body = {
-            "model": request.model or os.environ.get("LEDGER_MODEL_REDACT", ""),
+            "model": request.model or os.environ.get("INKWELL_MODEL_REDACT", ""),
             "messages": [{"role": "user", "content": content}],
             "max_tokens": max_tokens,
             "temperature": 0.0,

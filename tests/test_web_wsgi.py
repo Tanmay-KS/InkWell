@@ -30,7 +30,7 @@ def _call(method: str, path: str, *, body: bytes = b"", headers: dict | None = N
         "CONTENT_LENGTH": str(len(body)),
         "REMOTE_ADDR": "203.0.113.9",
         "SERVER_PROTOCOL": "HTTP/1.1",
-        "HTTP_HOST": "ledger.vercel.app",
+        "HTTP_HOST": "inkwell.vercel.app",
     }
     for key, value in (headers or {}).items():
         environ["HTTP_" + key.upper().replace("-", "_")] = value

@@ -5,11 +5,66 @@ async function request(path, options = {}) {
   return data;
 }
 
+function createCategoryIcon(kind) {
+  const value = String(kind || "").toLowerCase();
+  const category = /car|auto|vehicle|motor/.test(value) ? "auto"
+    : /medical|health|dental|prescription/.test(value) ? "health"
+      : /home|house|rent|property/.test(value) ? "home"
+        : /license|licence|passport|identity|card/.test(value) ? "identity"
+          : /subscription|membership|gym|fitness/.test(value) ? "subscription"
+            : "calendar";
+  const paths = {
+    auto: ["M5 16l1.5-5h11L19 16", "M4 16h16v4H4z", "M7 20v1", "M17 20v1", "M7 16h.01", "M17 16h.01"],
+    health: ["M20.8 8.8c0 5.2-8.8 10-8.8 10s-8.8-4.8-8.8-10A4.8 4.8 0 0 1 12 6.5a4.8 4.8 0 0 1 8.8 2.3Z", "M12 8v6", "M9 11h6"],
+    home: ["m3 10 9-7 9 7", "M5 9v11h14V9", "M9 20v-6h6v6"],
+    identity: ["M4 5h16v14H4z", "M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z", "M6 15c.5-2 3.5-2 4 0", "M13 9h4", "M13 13h4", "M13 16h3"],
+    subscription: ["M20 7v5h-5", "M4 17v-5h5", "M5.6 9A7 7 0 0 1 18 6l2 2", "M18.4 15A7 7 0 0 1 6 18l-2-2"],
+    calendar: ["M5 5h14v16H5z", "M8 3v4", "M16 3v4", "M5 10h14", "M9 14h2", "M13 14h2", "M9 17h2"],
+  }[category];
+  const icon = document.createElement("span");
+  icon.className = `upcoming-icon ${category}`;
+  icon.setAttribute("aria-hidden", "true");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.6");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  for (const d of paths) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  icon.append(svg);
+  return icon;
+}
+
+function formatRenewalDate(value) {
+  if (!value) return "Renewal date not set";
+  const date = new Date(`${value}T00:00:00Z`);
+  return `Renews ${new Intl.DateTimeFormat(undefined, {
+    day: "numeric", month: "short", year: "numeric", timeZone: "UTC",
+  }).format(date)}`;
+}
+
+function daysUntil(value) {
+  if (!value) return "Date pending";
+  const target = new Date(`${value}T00:00:00Z`);
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const days = Math.round((target.getTime() - today) / 86400000);
+  if (days < 0) return `${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} overdue`;
+  if (days === 0) return "Due today";
+  return `In ${days} ${days === 1 ? "day" : "days"}`;
+}
+
 function render(listId, items, due = false) {
   const list = document.getElementById(listId);
   list.replaceChildren();
-  document.getElementById(due ? "due-count" : "item-count").textContent =
-    `${items.length} ${items.length === 1 ? "item" : "items"}`;
+  document.getElementById(due ? "due-count" : "item-count").textContent = due
+    ? `View all (${items.length}) →`
+    : `${items.length} ${items.length === 1 ? "item" : "items"}`;
   if (!items.length) {
     const empty = document.createElement("li");
     empty.className = "empty";
@@ -19,43 +74,70 @@ function render(listId, items, due = false) {
   }
   for (const item of items) {
     const row = document.createElement("li");
+    if (due) {
+      row.className = "upcoming-row";
+      const icon = createCategoryIcon(item.kind);
+      const what = document.createElement("span");
+      what.className = "what";
+      what.textContent = item.provider;
+      const who = document.createElement("span");
+      who.className = "who upcoming-detail";
+      who.textContent = `${item.kind} · ${formatRenewalDate(item.renewal_date)}`;
+      const copy = document.createElement("span");
+      copy.className = "upcoming-copy";
+      copy.append(what, who);
+      const state = document.createElement("span");
+      state.className = "state soon";
+      state.textContent = daysUntil(item.renewal_date);
+      row.append(icon, copy, state);
+      list.append(row);
+      continue;
+    }
+    row.className = `household-item ${item.state === "cancelled" ? "cancelled" : "active"}`;
+    row.setAttribute("role", "button");
+    row.tabIndex = 0;
+    row.setAttribute("aria-label", `${item.provider}, currently ${item.state}. Click to change status.`);
     const when = document.createElement("span");
     when.className = "when";
-    when.textContent = due ? item.renewal_date : (item.renewal_date ? `renews ${item.renewal_date}` : "no date");
+    when.textContent = item.renewal_date ? `renews ${item.renewal_date}` : "no date";
     const what = document.createElement("span");
     what.className = "what";
     what.textContent = `${item.provider} · ${item.kind}`;
     const who = document.createElement("span");
     who.className = "who";
     who.textContent = item.holder || "";
-    const state = document.createElement("span");
-    state.className = `state ${item.state === "cancelled" ? "done" : "soon"}`;
-    state.textContent = item.state;
-    row.append(when, what, who, state);
-    if (!due) {
-      const action = document.createElement("button");
-      action.type = "button";
-      action.textContent = item.state === "cancelled" ? "Mark active" : "Mark cancelled";
-      action.addEventListener("click", async () => {
-        try {
-          await request("/api/status", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              item_id: item.item_id,
-              status: item.state === "cancelled" ? "active" : "cancelled",
-            }),
-          });
-          await refresh();
-        } catch (error) {
-          message(error.message);
-        }
-      });
-      row.append(action);
-      const id = document.createElement("code");
-      id.textContent = item.item_id;
-      row.append(id);
-    }
+    const status = document.createElement("span");
+    status.className = `household-status ${item.state === "cancelled" ? "cancelled" : "active"}`;
+    status.textContent = item.state === "cancelled" ? "Cancelled" : "Active";
+    row.append(when, what, who, status);
+    const changeStatus = async () => {
+      if (row.classList.contains("updating")) return;
+      row.classList.add("updating");
+      row.setAttribute("aria-busy", "true");
+      try {
+        await request("/api/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            item_id: item.item_id,
+            status: item.state === "cancelled" ? "active" : "cancelled",
+          }),
+        });
+        await refresh();
+      } catch (error) {
+        message(error.message);
+      } finally {
+        row.classList.remove("updating");
+        row.removeAttribute("aria-busy");
+      }
+    };
+    row.addEventListener("click", changeStatus);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        changeStatus();
+      }
+    });
     list.append(row);
   }
 }

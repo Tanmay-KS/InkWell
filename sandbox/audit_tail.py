@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Print the decision fields of a Ledger audit JSONL, never the payload.
+"""Print the decision fields of a InkWell audit JSONL, never the payload.
 
-    python3 sandbox/audit_tail.py --path /var/log/ledger/audit.jsonl --last 10
+    python3 sandbox/audit_tail.py --path /var/log/inkwell/audit.jsonl --last 10
     python3 sandbox/audit_tail.py --path audit.jsonl --since-line 42
     python3 sandbox/audit_tail.py --path audit.jsonl --forbid 0847-4851
 

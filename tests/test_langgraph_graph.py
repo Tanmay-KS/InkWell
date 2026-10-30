@@ -167,7 +167,7 @@ def test_no_api_key_raises_instead_of_calling_another_provider(monkeypatch, tmp_
 
 def test_a_missing_pinned_model_is_a_clear_error(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("LEDGER_MODEL_SUPER", raising=False)
+    monkeypatch.delenv("INKWELL_MODEL_SUPER", raising=False)
 
-    with pytest.raises(RuntimeError, match="LEDGER_MODEL_SUPER"):
+    with pytest.raises(RuntimeError, match="INKWELL_MODEL_SUPER"):
         pinned_model("super")

@@ -487,7 +487,7 @@ def run_text(text: str, **kwargs: object) -> RunState:
     import tempfile
 
     with tempfile.NamedTemporaryFile(
-        "w", prefix="ledger-orchestrator-", suffix=".txt", delete=True, encoding="utf-8"
+        "w", prefix="inkwell-orchestrator-", suffix=".txt", delete=True, encoding="utf-8"
     ) as handle:
         handle.write(text)
         handle.flush()

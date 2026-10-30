@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ledger — Phase 2 egress enforcement probe.
+# InkWell — Phase 2 egress enforcement probe.
 #
 # Proves the OpenShell network policy from inside the sandbox, not from the
 # host. Three positive/negative pairs:
@@ -13,7 +13,7 @@
 # Usage:
 #   bash sandbox/egress_probe.sh
 #   bash sandbox/egress_probe.sh --gateway hostfetch
-#   LEDGER_SANDBOX_NAME=ledger-hermes bash sandbox/egress_probe.sh
+#   INKWELL_SANDBOX_NAME=inkwell-hermes bash sandbox/egress_probe.sh
 #
 # Exit codes:
 #   0  every check passed
@@ -29,9 +29,9 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-SANDBOX_NAME="${LEDGER_SANDBOX_NAME:-ledger-hermes}"
-GATEWAY_NAME="${LEDGER_GATEWAY_NAME:-}"
-CURL_TIMEOUT="${LEDGER_CURL_TIMEOUT:-15}"
+SANDBOX_NAME="${INKWELL_SANDBOX_NAME:-inkwell-hermes}"
+GATEWAY_NAME="${INKWELL_GATEWAY_NAME:-}"
+CURL_TIMEOUT="${INKWELL_CURL_TIMEOUT:-15}"
 QUIET=0
 
 BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[31m'; GREEN=$'\033[32m'
@@ -100,7 +100,7 @@ run_curl() {
     local method="$1" url="$2" body="${3:-}"
     local -a args=(
         /usr/bin/curl -sS --max-time "$CURL_TIMEOUT" -X "$method"
-        -w '\n__LEDGER_HTTP_CODE__:%{http_code}\n'
+        -w '\n__INKWELL_HTTP_CODE__:%{http_code}\n'
     )
     if [ -n "$body" ]; then
         args+=(-H 'content-type: application/json' --data-binary "$body")
@@ -111,7 +111,7 @@ run_curl() {
 }
 
 http_code() {
-    printf '%s\n' "$1" | sed -n 's/.*__LEDGER_HTTP_CODE__:\([0-9][0-9]*\).*/\1/p' | tail -1
+    printf '%s\n' "$1" | sed -n 's/.*__INKWELL_HTTP_CODE__:\([0-9][0-9]*\).*/\1/p' | tail -1
 }
 
 denial_marker() {
@@ -173,7 +173,7 @@ expect_denied() {
 }
 
 if [ "$QUIET" -eq 0 ]; then
-    say "${BOLD}Ledger — Phase 2 egress enforcement${RESET}"
+    say "${BOLD}InkWell — Phase 2 egress enforcement${RESET}"
     say "${DIM}sandbox: ${SANDBOX_NAME}${RESET}"
     say ""
 fi

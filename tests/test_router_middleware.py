@@ -72,7 +72,7 @@ def router(tmp_path):
 def evaluate(stub, *, host, path, body, config, body_bytes=None):
     request = pb.HttpRequestEvaluation(
         phase=pb.SUPERVISOR_MIDDLEWARE_PHASE_PRE_CREDENTIALS,
-        context=pb.RequestContext(request_id="req-1", sandbox="ledger-hermes"),
+        context=pb.RequestContext(request_id="req-1", sandbox="inkwell-hermes"),
         config=as_struct(config),
         target=pb.HttpRequestTarget(host=host, port=443, method="POST", path=path),
         body=body_bytes if body_bytes is not None else json.dumps(body).encode(),

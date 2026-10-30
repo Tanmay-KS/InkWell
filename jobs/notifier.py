@@ -121,7 +121,7 @@ def command_notifier(command: str, *, timeout: float = 30.0) -> Notifier:
 def format_notice_markdown(notice: Mapping[str, Any]) -> str:
     """Format notice into Markdown for human chat platforms."""
     lines = [
-        "🔔 *Ledger Deadline Alert*",
+        "🔔 *InkWell Deadline Alert*",
         f"• *Provider:* {notice.get('provider', 'Unknown')}",
         f"• *Kind:* {notice.get('kind', 'Obligation')}",
     ]
@@ -196,11 +196,11 @@ def webhook_notifier(
 ) -> Notifier:
     """Return a notifier that posts deadline notices to a webhook URL (Slack / generic).
 
-    Accepts LEDGER_WEBHOOK_URL or SLACK_WEBHOOK_URL from the environment if url is omitted.
+    Accepts INKWELL_WEBHOOK_URL or SLACK_WEBHOOK_URL from the environment if url is omitted.
     """
     target_url = (
         url
-        or os.environ.get("LEDGER_WEBHOOK_URL", "")
+        or os.environ.get("INKWELL_WEBHOOK_URL", "")
         or os.environ.get("SLACK_WEBHOOK_URL", "")
     ).strip()
     if not target_url:

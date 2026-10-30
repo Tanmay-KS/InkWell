@@ -1,5 +1,5 @@
 [project]
-name = "ledger"
+name = "inkwell"
 version = "0.1.0"
 description = "Privacy-routed personal agent for deadlines, renewals, and entitlements"
 readme = "README.md"

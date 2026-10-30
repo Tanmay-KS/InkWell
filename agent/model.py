@@ -5,7 +5,7 @@ Upgrade Phase B (LangGraph).
 Every model call in this module goes to **Nebius Token Factory**, using a
 model ID pinned by `make pin-models` in `.env`:
 
-    LEDGER_MODEL_NANO, LEDGER_MODEL_SUPER, LEDGER_MODEL_ULTRA, ...
+    INKWELL_MODEL_NANO, INKWELL_MODEL_SUPER, INKWELL_MODEL_ULTRA, ...
 
 There is no fallback provider. If the key or the pinned ID is missing,
 `complete()` raises instead of quietly calling something else. That is the
@@ -63,10 +63,10 @@ def pinned_model(role: str) -> str:
     """The model ID pinned for a role, or a clear error.
 
     Roles are `nano`, `super`, `ultra`, `redact`, `ocr`. The ID comes from
-    `LEDGER_MODEL_<ROLE>`, which `make pin-models` writes from the live
+    `INKWELL_MODEL_<ROLE>`, which `make pin-models` writes from the live
     catalog. Guessing an ID here would defeat the point of pinning it.
     """
-    name = f"LEDGER_MODEL_{role.upper()}"
+    name = f"INKWELL_MODEL_{role.upper()}"
     value = os.environ.get(name, "").strip()
     if value:
         return value

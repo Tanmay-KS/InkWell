@@ -31,7 +31,7 @@ the review started.
   `http://127.0.0.1:8765`.
 - The header says **Demo · fictional data**; the seeded providers are
   invented and the database is a temporary directory.
-- The demo never reads `~/.hermes/ledger_memory.db`; `serve(..., demo=True)`
+- The demo never reads `~/.hermes/inkwell_memory.db`; `serve(..., demo=True)`
   creates its own database and deletes it on exit.
 - `Host: evil.example` returns 403. A cross-origin `Origin` returns 403.
   `GET /../pyproject.toml` and `/%2e%2e/server.py` return 404.
@@ -86,7 +86,7 @@ A cold reader, no context, no credentials:
 
 | Minute | What they do | What they should understand |
 |---|---|---|
-| 0:00 | Open the README. | What Ledger is, that it is privacy-routed, and that the live sandbox proofs are pending. |
+| 0:00 | Open the README. | What InkWell is, that it is privacy-routed, and that the live sandbox proofs are pending. |
 | 0:45 | `make demo-web`, open the URL. | The product: upcoming dates, a household list, a chat box, an upload box. |
 | 1:30 | Cancel Orchard Fitness. | Memory with updates: the item leaves *Coming up* but stays in history. |
 | 2:15 | Upload a notice. | Local extraction, local redaction, a draft the user reviews. |

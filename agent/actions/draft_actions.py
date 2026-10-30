@@ -7,7 +7,7 @@ draft actions are a cancellation email and a refund request.
 
 Two rules shape this module:
 
-* **A draft, not an action.** Ledger never sends anything. It produces
+* **A draft, not an action.** InkWell never sends anything. It produces
   text the user reads, edits, and sends. This is not only a safety
   property — it is what makes the agent trustworthy enough to hold a
   household's renewal dates.
@@ -41,7 +41,7 @@ from agent.memory.hermes_memory import HouseholdItem
 
 
 class ActionKind(StrEnum):
-    """The kinds of action Ledger knows how to draft."""
+    """The kinds of action InkWell knows how to draft."""
 
     CANCEL = "cancel"
     REFUND = "refund"
@@ -256,7 +256,7 @@ def draft_action(
     Args:
         deadline: The `Deadline` to act on.
         context: The household item and any prior related correspondence.
-        model: Defaults to `LEDGER_MODEL_SUPER`. Unused on the template
+        model: Defaults to `INKWELL_MODEL_SUPER`. Unused on the template
             path, which is the primary one.
         kind: Force a kind of action. By default it is inferred from the
             deadline's kind.

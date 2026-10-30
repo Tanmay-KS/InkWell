@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that the Ledger privacy router middleware is live and sane.
+"""Check that the InkWell privacy router middleware is live and sane.
 
 Run this on the gateway host before registering the service, and again after
 starting it:

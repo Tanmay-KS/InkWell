@@ -3,6 +3,6 @@
 Phase 4 — Person B.
 """
 
-from interface.bot.handlers import BotMessage, LedgerBot
+from interface.bot.handlers import BotMessage, InkWellBot
 
-__all__ = ["BotMessage", "LedgerBot"]
+__all__ = ["BotMessage", "InkWellBot"]

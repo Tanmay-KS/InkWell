@@ -12,7 +12,7 @@ from jobs.seed_due_item import main, seed_due_item
 
 
 def test_seed_due_item_creates_due_item(tmp_path: Path):
-    db_path = tmp_path / "ledger_memory.db"
+    db_path = tmp_path / "inkwell_memory.db"
     today = date(2026, 10, 20)
 
     result = seed_due_item(
@@ -46,7 +46,7 @@ def test_seed_due_item_creates_due_item(tmp_path: Path):
 
 
 def test_seed_due_item_runs_with_deadline_monitor(tmp_path: Path):
-    db_path = tmp_path / "ledger_memory.db"
+    db_path = tmp_path / "inkwell_memory.db"
     today = date(2026, 10, 20)
 
     result = seed_due_item(
@@ -101,7 +101,7 @@ def test_seed_due_item_runs_with_deadline_monitor(tmp_path: Path):
 
 
 def test_seed_cli(tmp_path: Path, capsys):
-    db_path = tmp_path / "ledger_memory.db"
+    db_path = tmp_path / "inkwell_memory.db"
     ret = main([
         "--memory-db", str(db_path),
         "--days-ahead", "4",

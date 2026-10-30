@@ -59,11 +59,11 @@ ROLE_MODEL_IDS = {
 }
 
 ENV_KEYS = {
-    "nano": "LEDGER_MODEL_NANO",
-    "super": "LEDGER_MODEL_SUPER",
-    "ultra": "LEDGER_MODEL_ULTRA",
-    "ocr": "LEDGER_MODEL_OCR",
-    "redact": "LEDGER_MODEL_REDACT",
+    "nano": "INKWELL_MODEL_NANO",
+    "super": "INKWELL_MODEL_SUPER",
+    "ultra": "INKWELL_MODEL_ULTRA",
+    "ocr": "INKWELL_MODEL_OCR",
+    "redact": "INKWELL_MODEL_REDACT",
 }
 
 # The decision record needs to survive edits to the constants above, so
@@ -85,7 +85,7 @@ def update_env(env_path: Path, values: dict[str, str]) -> list[str]:
     if env_path.exists():
         lines = env_path.read_text(encoding="utf-8").splitlines()
     else:
-        lines = ["# Ledger — environment template. Copy from .env.example."]
+        lines = ["# InkWell — environment template. Copy from .env.example."]
 
     notes: list[str] = []
     remaining = dict(values)

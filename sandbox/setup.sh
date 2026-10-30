@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ledger — OpenShell + Hermes + Token Factory setup.
+# InkWell — OpenShell + Hermes + Token Factory setup.
 #
 # Idempotent: safe to re-run at any point. Each step checks whether it has
 # already been done and skips it if so.
@@ -27,11 +27,11 @@ POLICY_YAML="${SCRIPT_DIR}/policy.yaml"
 PROVIDER_DIR="${SCRIPT_DIR}/providers"
 DOCKERFILE="${SCRIPT_DIR}/Dockerfile.hermes"
 
-IMAGE_NAME="${LEDGER_IMAGE_NAME:-ledger-hermes:local}"
-VOLUME_NAME="${LEDGER_VOLUME_NAME:-ledger-hermes-data}"
-SANDBOX_NAME="${LEDGER_SANDBOX_NAME:-ledger-hermes}"
-GATEWAY_NAME="${LEDGER_GATEWAY_NAME:-local}"
-GATEWAY_URL="${LEDGER_GATEWAY_URL:-https://127.0.0.1:17670}"
+IMAGE_NAME="${INKWELL_IMAGE_NAME:-inkwell-hermes:local}"
+VOLUME_NAME="${INKWELL_VOLUME_NAME:-inkwell-hermes-data}"
+SANDBOX_NAME="${INKWELL_SANDBOX_NAME:-inkwell-hermes}"
+GATEWAY_NAME="${INKWELL_GATEWAY_NAME:-local}"
+GATEWAY_URL="${INKWELL_GATEWAY_URL:-https://127.0.0.1:17670}"
 OPENSHELL_VERSION="${OPENSHELL_VERSION:-v0.1.4}"
 
 # --- behaviour --------------------------------------------------------------
@@ -638,7 +638,7 @@ print_status() {
 main() {
     printf '%s\n' "$BOLD"
     cat <<'BANNER'
-  Ledger — OpenShell + Hermes + Nebius Token Factory
+  InkWell — OpenShell + Hermes + Nebius Token Factory
 BANNER
     printf '%s%s\n' "$RESET" ""
 

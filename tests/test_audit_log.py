@@ -37,9 +37,9 @@ def http_event(**overrides):
             },
         },
         "dst_endpoint": {"domain": "api.tokenfactory.nebius.com", "port": 443},
-        "firewall_rule": {"name": "ledger-hermes", "type": "middleware"},
+        "firewall_rule": {"name": "inkwell-hermes", "type": "middleware"},
         "unmapped": {"transformed": False, "failed": False},
-        "message": "MIDDLEWARE ledger-router ledger/privacy-router decision=Allow",
+        "message": "MIDDLEWARE ledger-router inkwell/privacy-router decision=Allow",
     }
     record.update(overrides)
     return record

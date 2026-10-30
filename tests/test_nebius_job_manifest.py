@@ -20,7 +20,7 @@ def test_nebius_job_manifest_valid_yaml():
 
     assert data["apiVersion"] == "batch.nebius.ai/v1alpha1"
     assert data["kind"] == "Job"
-    assert data["metadata"]["name"] == "ledger-deadline-monitor"
+    assert data["metadata"]["name"] == "inkwell-deadline-monitor"
 
     spec = data["spec"]
     assert "schedule" in spec
@@ -29,9 +29,9 @@ def test_nebius_job_manifest_valid_yaml():
     assert "ghcr.io" in container["image"]
 
     env_map = {item["name"]: item.get("value") for item in container.get("env", []) if "value" in item}
-    assert env_map.get("LEDGER_MEMORY_DB") == "/data/ledger_memory.db"
-    assert env_map.get("LEDGER_STATE_PATH") == "/data/state/job_state.json"
-    assert env_map.get("LEDGER_NOTIFY") == "1"
+    assert env_map.get("INKWELL_MEMORY_DB") == "/data/inkwell_memory.db"
+    assert env_map.get("INKWELL_STATE_PATH") == "/data/state/job_state.json"
+    assert env_map.get("INKWELL_NOTIFY") == "1"
 
     mounts = container.get("volumeMounts", [])
     assert any(m["mountPath"] == "/data" for m in mounts)
@@ -49,7 +49,7 @@ def test_nebius_deploy_script_dry_run():
     )
     assert "[DRY-RUN] Manifest verified" in result.stdout
     assert "nebius ai job create" in result.stdout
-    assert "--name ledger-deadline-monitor" in result.stdout
+    assert "--name inkwell-deadline-monitor" in result.stdout
 
 
 def test_nebius_deploy_script_trigger_dry_run():

@@ -38,6 +38,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import date
@@ -48,7 +49,11 @@ from pathlib import Path
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 
 # The structured sidecar lives beside the Hermes state, on the same volume.
-SIDECAR_PATH = Path(os.environ.get("LEDGER_MEMORY_DB", HERMES_HOME / "ledger_memory.db"))
+SIDECAR_PATH = Path(os.environ.get("INKWELL_MEMORY_DB", HERMES_HOME / "inkwell_memory.db"))
+
+# The database was called this before the InkWell rename. `connect` moves
+# it once, so an existing household does not silently start empty.
+LEGACY_DB_NAME = "ledger_memory.db"
 
 
 class TrackedState(StrEnum):
@@ -130,12 +135,24 @@ class HouseholdMemory:
         if self._conn is not None:
             return self._conn
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self.path == SIDECAR_PATH:
+            self._migrate_legacy()
         self._conn = sqlite3.connect(self.path)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._init_schema()
         return self._conn
+
+    def _migrate_legacy(self) -> None:
+        """Move the pre-rename database, including its WAL sidecars."""
+        legacy = self.path.with_name(LEGACY_DB_NAME)
+        if self.path.exists() or not legacy.exists():
+            return
+        for suffix in ("", "-wal", "-shm"):
+            source = legacy.with_name(LEGACY_DB_NAME + suffix)
+            if source.exists():
+                shutil.move(str(source), str(self.path.with_name(self.path.name + suffix)))
 
     def _init_schema(self) -> None:
         conn = self._conn

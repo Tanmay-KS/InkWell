@@ -259,7 +259,7 @@ real document.
 hand-type a model ID.
 **Fix:** `make pin-models` reads the catalog; `eval/ocr_bench.py` compares
 the two vision models that actually exist; the OCR model is pinned in
-`.env` as `LEDGER_MODEL_OCR`.
+`.env` as `INKWELL_MODEL_OCR`.
 
 ### F-025 · A reasoning model will spend the whole completion budget thinking
 **Owner:** Person B · **Phase:** 0/1 · **Status:** fixed

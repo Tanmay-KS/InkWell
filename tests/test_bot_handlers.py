@@ -1,6 +1,6 @@
 """Tests for the chat interface.
 
-The bot is the part of Ledger a person talks to, so its failures are
+The bot is the part of InkWell a person talks to, so its failures are
 visible. These tests cover the two things that were wrong before Phase 4:
 slash commands being swallowed by the natural-language keyword check, and
 a status change that did not carry the effective date the user gave.
@@ -13,7 +13,7 @@ from datetime import date, timedelta
 import pytest
 
 from agent.memory.hermes_memory import HouseholdItem, HouseholdMemory
-from interface.bot.handlers import BotMessage, LedgerBot
+from interface.bot.handlers import BotMessage, InkWellBot
 
 TODAY = date.today()
 
@@ -48,11 +48,11 @@ def memory(tmp_path):
         yield store
 
 
-def _bot(memory, **kwargs) -> LedgerBot:
-    return LedgerBot(memory, **kwargs)
+def _bot(memory, **kwargs) -> InkWellBot:
+    return InkWellBot(memory, **kwargs)
 
 
-def _say(bot: LedgerBot, text: str) -> str:
+def _say(bot: InkWellBot, text: str) -> str:
     return bot.on_message(BotMessage(text=text, chat_id="test-chat", message_id="m-1"))
 
 
@@ -177,6 +177,6 @@ def test_a_document_attachment_is_tracked_and_the_preview_is_redacted(memory, tm
 
 
 def test_no_memory_is_an_explicit_error():
-    assert LedgerBot().on_message(BotMessage(text="/due", chat_id="c")) == (
-        "Ledger memory is not configured."
+    assert InkWellBot().on_message(BotMessage(text="/due", chat_id="c")) == (
+        "InkWell memory is not configured."
     )

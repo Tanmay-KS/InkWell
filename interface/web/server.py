@@ -1,4 +1,4 @@
-"""Loopback-only HTTP interface for the Ledger household database."""
+"""Loopback-only HTTP interface for the InkWell household database."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from agent.actions.draft_actions import ActionKind, draft_action
 from agent.graph import run_document_graph, run_text_graph
 from agent.memory.hermes_memory import HouseholdItem, HouseholdMemory, TrackedState
 from agent.verifier import inventory_findings
-from interface.bot.handlers import BotMessage, LedgerBot
+from interface.bot.handlers import BotMessage, InkWellBot
 
 ROOT = Path(__file__).resolve().parent
 MAX_UPLOAD = 15 * 1024 * 1024
@@ -26,8 +26,8 @@ DEFAULT_RATE_LIMIT = 30
 DEFAULT_RATE_WINDOW = 60.0
 
 # Model drafting is opt-in. The demo is deterministic by default; set
-# LEDGER_USE_MODEL_DRAFTER=1 to route the Drafter through Nemotron Super.
-USE_MODEL_DRAFTER = os.environ.get("LEDGER_USE_MODEL_DRAFTER", "").strip() in {
+# INKWELL_USE_MODEL_DRAFTER=1 to route the Drafter through Nemotron Super.
+USE_MODEL_DRAFTER = os.environ.get("INKWELL_USE_MODEL_DRAFTER", "").strip() in {
     "1",
     "true",
     "yes",
@@ -55,11 +55,11 @@ class RateLimiter:
     @classmethod
     def from_env(cls) -> RateLimiter:
         try:
-            limit = int(os.environ.get("LEDGER_RATE_LIMIT", DEFAULT_RATE_LIMIT))
+            limit = int(os.environ.get("INKWELL_RATE_LIMIT", DEFAULT_RATE_LIMIT))
         except ValueError:
             limit = DEFAULT_RATE_LIMIT
         try:
-            window = float(os.environ.get("LEDGER_RATE_WINDOW", DEFAULT_RATE_WINDOW))
+            window = float(os.environ.get("INKWELL_RATE_WINDOW", DEFAULT_RATE_WINDOW))
         except ValueError:
             window = DEFAULT_RATE_WINDOW
         return cls(limit=limit, window_seconds=window)
@@ -176,8 +176,8 @@ def _demo_trace_state():
     )
 
 
-class LedgerHandler(BaseHTTPRequestHandler):
-    server_version = "LedgerLocal/1.0"
+class InkWellHandler(BaseHTTPRequestHandler):
+    server_version = "InkWellLocal/1.0"
 
     @property
     def memory(self) -> HouseholdMemory:
@@ -309,7 +309,7 @@ class LedgerHandler(BaseHTTPRequestHandler):
                 text = str(data.get("text", "")).strip()
                 if not text or len(text) > 2000:
                     return self._send_json({"error": "message must be between 1 and 2000 characters"}, 400)
-                reply = LedgerBot(self.memory).on_message(
+                reply = InkWellBot(self.memory).on_message(
                     BotMessage(text=text, chat_id="local-web")
                 )
                 return self._send_json({"reply": reply})
@@ -337,7 +337,7 @@ class LedgerHandler(BaseHTTPRequestHandler):
             suffix = Path(filename).suffix[:12] or ".bin"
             temp_path = None
             try:
-                with tempfile.NamedTemporaryFile(prefix="ledger-upload-", suffix=suffix, delete=False) as tmp:
+                with tempfile.NamedTemporaryFile(prefix="inkwell-upload-", suffix=suffix, delete=False) as tmp:
                     tmp.write(body)
                     temp_path = Path(tmp.name)
                 try:
@@ -384,22 +384,22 @@ class LedgerHandler(BaseHTTPRequestHandler):
 def serve(host: str = "127.0.0.1", port: int = 8765, *, demo: bool = False) -> None:
     if host not in LOOPBACK_HOSTS:
         raise ValueError("the local interface must bind to loopback")
-    temp_dir = tempfile.TemporaryDirectory(prefix="ledger-demo-") if demo else None
+    temp_dir = tempfile.TemporaryDirectory(prefix="inkwell-demo-") if demo else None
     db_path = (
         Path(temp_dir.name) / "memory.db"
         if temp_dir
-        else Path(os.environ.get("LEDGER_MEMORY_DB", str(Path.home() / ".hermes" / "ledger_memory.db")))
+        else Path(os.environ.get("INKWELL_MEMORY_DB", str(Path.home() / ".hermes" / "inkwell_memory.db")))
     )
     memory = HouseholdMemory(db_path)
     memory.connect()
     if demo:
         _seed_demo(memory)
-    server = HTTPServer((host, port), LedgerHandler)
+    server = HTTPServer((host, port), InkWellHandler)
     server.memory = memory  # type: ignore[attr-defined]
     server.demo_mode = demo  # type: ignore[attr-defined]
     server.last_run = None  # type: ignore[attr-defined]
     server.demo_trace = _demo_trace_state().to_dict() if demo else None  # type: ignore[attr-defined]
-    print(f"Ledger local interface: http://{host}:{port}")
+    print(f"InkWell local interface: http://{host}:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

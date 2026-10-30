@@ -154,7 +154,7 @@ def run_eval(scenarios: list[Scenario]) -> list[ScenarioResult]:
     """
     results = []
     for scenario in scenarios:
-        with TemporaryDirectory(prefix="ledger-memory-eval-") as tmp, HouseholdMemory(
+        with TemporaryDirectory(prefix="inkwell-memory-eval-") as tmp, HouseholdMemory(
             Path(tmp) / "memory.db"
         ) as memory:
             tracker = UpdateTracker(memory)

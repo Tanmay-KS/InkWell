@@ -3,7 +3,7 @@
     python -m interface.chat
     make telegram-bot
 
-The adapter shares `LedgerBot` and the household database with the web
+The adapter shares `InkWellBot` and the household database with the web
 view, so a message in chat and a click in the browser see the same state.
 Credentials come from `.env` or the environment:
 
@@ -21,7 +21,7 @@ import sys
 from dotenv import load_dotenv
 
 from agent.memory.hermes_memory import HouseholdMemory
-from interface.bot.handlers import LedgerBot
+from interface.bot.handlers import InkWellBot
 from interface.chat.telegram import TelegramAPI, TelegramBot, TelegramError
 
 __all__ = ["main"]
@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--memory",
         default="",
-        help="household database path (default: $LEDGER_MEMORY_DB or the sidecar)",
+        help="household database path (default: $INKWELL_MEMORY_DB or the sidecar)",
     )
     parser.add_argument(
         "--poll-timeout",
@@ -54,14 +54,14 @@ def main(argv: list[str] | None = None) -> int:
 
     memory = HouseholdMemory(args.memory or None)
     memory.connect()
-    bot = LedgerBot(memory, allow_attachments=not args.no_attachments)
+    bot = InkWellBot(memory, allow_attachments=not args.no_attachments)
 
     try:
         adapter = TelegramBot(bot, TelegramAPI())
-        print("ledger: Telegram bot polling; press Ctrl-C to stop", flush=True)
+        print("inkwell: Telegram bot polling; press Ctrl-C to stop", flush=True)
         adapter.run_forever(timeout=args.poll_timeout)
     except (TelegramError, ValueError) as exc:
-        print(f"ledger: {exc}", file=sys.stderr)
+        print(f"inkwell: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         pass

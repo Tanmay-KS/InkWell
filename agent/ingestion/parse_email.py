@@ -191,7 +191,7 @@ def _extract_attachments(message: EmailMessage) -> list[Path]:
     if not message.is_multipart():
         return attachments
 
-    out_dir = Path(tempfile.mkdtemp(prefix="ledger-attachments-"))
+    out_dir = Path(tempfile.mkdtemp(prefix="inkwell-attachments-"))
 
     for index, part in enumerate(message.walk()):
         if part.is_multipart():

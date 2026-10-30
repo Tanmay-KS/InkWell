@@ -58,7 +58,7 @@ generated:
 ## Prerequisites
 
 1. A working Phase 0/1 gateway: `bash sandbox/verify.sh` passes on the
-   gateway host, and `openshell sandbox list` shows `ledger-hermes`.
+   gateway host, and `openshell sandbox list` shows `inkwell-hermes`.
 2. The middleware dependencies in the interpreter that will run the service:
 
    ```bash
@@ -72,7 +72,7 @@ generated:
 3. A writable audit directory:
 
    ```bash
-   sudo install -d -o "$USER" -g "$USER" /var/log/ledger
+   sudo install -d -o "$USER" -g "$USER" /var/log/inkwell
    ```
 
    The service writes the audit JSONL on the **host**, not inside the
@@ -93,7 +93,7 @@ or as a systemd unit; the rest can be one shell.
 ### 1. Start the service
 
 ```bash
-LEDGER_ROUTER_AUDIT_LOG=/var/log/ledger/audit.jsonl \
+LEDGER_ROUTER_AUDIT_LOG=/var/log/inkwell/audit.jsonl \
   bash sandbox/middleware/ledger-router/run.sh
 ```
 
@@ -143,13 +143,13 @@ nothing. The real run:
    backup and restarts.
 
 If the gateway is not systemd-managed, set
-`LEDGER_GATEWAY_RESTART_CMD='...'` or use `--no-restart` and restart it
+`INKWELL_GATEWAY_RESTART_CMD='...'` or use `--no-restart` and restart it
 yourself.
 
 ### 4. Attach the policy
 
 ```bash
-bash sandbox/router_on.sh --audit-log /var/log/ledger/audit.jsonl
+bash sandbox/router_on.sh --audit-log /var/log/inkwell/audit.jsonl
 ```
 
 This generates the router-enabled policy, applies it with `--wait`, turns on
@@ -162,16 +162,16 @@ would be worse than not starting.
 The output ends with:
 
 ```
-ROUTER ON  ledger-hermes
+ROUTER ON  inkwell-hermes
 Next
-  bash sandbox/verify_phase2.sh --audit-log /var/log/ledger/audit.jsonl
-  bash demo/injection/run_injection_demo.sh --audit-log /var/log/ledger/audit.jsonl
+  bash sandbox/verify_phase2.sh --audit-log /var/log/inkwell/audit.jsonl
+  bash demo/injection/run_injection_demo.sh --audit-log /var/log/inkwell/audit.jsonl
 ```
 
 ### 5. Verify
 
 ```bash
-bash sandbox/verify_phase2.sh --audit-log /var/log/ledger/audit.jsonl
+bash sandbox/verify_phase2.sh --audit-log /var/log/inkwell/audit.jsonl
 ```
 
 The six checks, in execution order:
@@ -193,7 +193,7 @@ log with prior events, so it will fail on a fresh audit path).
 ### 6. The demo, on its own
 
 ```bash
-bash demo/injection/run_injection_demo.sh --audit-log /var/log/ledger/audit.jsonl
+bash demo/injection/run_injection_demo.sh --audit-log /var/log/inkwell/audit.jsonl
 ```
 
 The scenario:
@@ -240,7 +240,7 @@ still attaches it (use `--force` only if the sandbox is gone).
 
 The middleware appends one JSON object per inspected request to the path in
 the policy's `config.audit_log_path` (default
-`/var/log/ledger/audit.jsonl`). The stable shape:
+`/var/log/inkwell/audit.jsonl`). The stable shape:
 
 ```json
 {

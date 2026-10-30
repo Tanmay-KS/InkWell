@@ -383,7 +383,7 @@ def flag_deadlines(
             detection.
         today: The reference date, for "in 30 days" style language and for
             deciding which deadlines are already past.
-        model: The model to use. Defaults to `LEDGER_MODEL_SUPER` — this
+        model: The model to use. Defaults to `INKWELL_MODEL_SUPER` — this
             stage needs real reasoning, not the cheap tier. Unused on the
             deterministic path, which is the primary one.
 

@@ -142,7 +142,7 @@ class AuditLog:
 def from_ocsf(records: Iterable[dict[str, Any]]) -> list[AuditEvent]:
     """Normalise OpenShell OCSF records into audit events.
 
-    The input is what ``openshell settings set ledger-hermes --key
+    The input is what ``openshell settings set inkwell-hermes --key
     ocsf_json_enabled --value true`` produces: one JSON object per line,
     with the OCSF classes OpenShell emits for HTTP Activity (4002), Network
     Activity (4001) and Detection Finding (2004).

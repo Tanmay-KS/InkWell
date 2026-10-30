@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from agent.memory.hermes_memory import HouseholdItem, HouseholdMemory
-from interface.bot.handlers import LedgerBot
+from interface.bot.handlers import InkWellBot
 from interface.chat.telegram import (
     TelegramAPI,
     TelegramAuthError,
@@ -96,7 +96,7 @@ def _update(text: str = "", *, update_id: int = 1, chat_id: int = 42, **message)
 
 def test_a_text_message_is_answered_in_the_same_chat(memory):
     api = FakeTelegramAPI([_update("/due")])
-    adapter = TelegramBot(LedgerBot(memory), api)  # type: ignore[arg-type]
+    adapter = TelegramBot(InkWellBot(memory), api)  # type: ignore[arg-type]
 
     assert adapter.poll_once() == 2
 
@@ -110,7 +110,7 @@ def test_a_document_is_downloaded_and_ingested(memory):
     api = FakeTelegramAPI(
         [_update(document={"file_id": "file-1", "file_name": "notice.txt"})]
     )
-    adapter = TelegramBot(LedgerBot(memory), api)  # type: ignore[arg-type]
+    adapter = TelegramBot(InkWellBot(memory), api)  # type: ignore[arg-type]
 
     reply = adapter.handle_update(api.updates[0])
 
@@ -128,7 +128,7 @@ def test_a_failed_download_is_reported_without_stopping_the_poll(memory):
         ],
         fails={"bad"},
     )
-    adapter = TelegramBot(LedgerBot(memory), api)  # type: ignore[arg-type]
+    adapter = TelegramBot(InkWellBot(memory), api)  # type: ignore[arg-type]
 
     offset = adapter.poll_once()
 
@@ -140,7 +140,7 @@ def test_a_failed_download_is_reported_without_stopping_the_poll(memory):
 
 def test_updates_without_a_chat_are_ignored(memory):
     api = FakeTelegramAPI([{"update_id": 3, "callback_query": {"id": "x"}}])
-    adapter = TelegramBot(LedgerBot(memory), api)  # type: ignore[arg-type]
+    adapter = TelegramBot(InkWellBot(memory), api)  # type: ignore[arg-type]
 
     assert adapter.poll_once() == 4
     assert api.sent == []
@@ -148,7 +148,7 @@ def test_updates_without_a_chat_are_ignored(memory):
 
 def test_the_offset_is_not_sent_when_it_is_zero(memory):
     api = FakeTelegramAPI([])
-    adapter = TelegramBot(LedgerBot(memory), api)  # type: ignore[arg-type]
+    adapter = TelegramBot(InkWellBot(memory), api)  # type: ignore[arg-type]
 
     adapter.poll_once(0)
 
@@ -198,7 +198,7 @@ def test_the_poller_does_not_retry_a_rejected_token(memory):
         raise TelegramAuthError("Telegram getUpdates failed: Unauthorized")
 
     api.get_updates = rejected  # type: ignore[method-assign]
-    adapter = TelegramBot(LedgerBot(memory), api)  # type: ignore[arg-type]
+    adapter = TelegramBot(InkWellBot(memory), api)  # type: ignore[arg-type]
 
     with pytest.raises(TelegramAuthError):
         adapter.run_forever(backoff=0)

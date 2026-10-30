@@ -1,4 +1,4 @@
-# Ledger — architecture
+# InkWell — architecture
 
 Status: stub. This file becomes the source for the README's architecture
 section and the video's diagram (Phase 4). The shape below is the one the
@@ -8,7 +8,7 @@ Phase 0 research settled on; it will be updated as phases land.
 
 ## The one-paragraph version
 
-Ledger is a personal agent that reads your documents and tells you what is
+InkWell is a personal agent that reads your documents and tells you what is
 about to expire, renew, or lapse — and drafts the action. It runs inside an
 NVIDIA OpenShell sandbox with a declarative egress policy, and every request
 that leaves the sandbox passes through a privacy router that strips personal
@@ -83,7 +83,7 @@ household memory, a messaging gateway, and a skills system.
    The local extractor is the primary path, not the fallback: on the corpus
    it recovers 100% of the fields and 100% of the document's lines, it
    costs nothing, and it has no egress at all. The vision model of record
-   (`nvidia/Nemotron-3.5-Super-VL`, pinned via `LEDGER_MODEL_OCR`) is
+   (`nvidia/Nemotron-3.5-Super-VL`, pinned via `INKWELL_MODEL_OCR`) is
    there for what local extraction cannot read and for the semantic work.
 3. `agent/memory/hermes_memory.py` records what the household already knows
    and what has already been handled, and it is where the household's names
@@ -167,7 +167,7 @@ The shared state is:
 ```
 
 `agent/model.py` is the only model client. It calls Token Factory with a
-pinned `LEDGER_MODEL_*` ID and raises rather than falling back to another
+pinned `INKWELL_MODEL_*` ID and raises rather than falling back to another
 provider. The model Drafter reads the redacted notice and resolves the
 real reference from the redaction map inside the sandbox; the
 deterministic Auditor then reviews the result. LangSmith tracing is

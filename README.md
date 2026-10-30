@@ -1,8 +1,8 @@
-# Ledger
+# InkWell
 
 **A privacy-routed personal agent for deadlines, renewals, and entitlements.**
 
-Ledger reads the documents that come at you — insurance policies, gym
+InkWell reads the documents that come at you — insurance policies, gym
 memberships, subscriptions, licence renewals, medical renewals — notices
 what is about to lapse, tells you, and drafts the action. It runs inside a
 sandbox with a declarative egress policy, and a privacy router strips your
@@ -44,17 +44,17 @@ third-party search engines never see them.
 
 ```bash
 make demo-web
-# Ledger local interface: http://127.0.0.1:8765
+# InkWell local interface: http://127.0.0.1:8765
 ```
 
-Open <http://127.0.0.1:8765> for the Ledger overview, then choose **Open Ledger** to enter the dashboard at `/app`. The dashboard header says **Demo · fictional data**.
+Open <http://127.0.0.1:8765> for the InkWell overview, then choose **Open InkWell** to enter the dashboard at `/app`. The dashboard header says **Demo · fictional data**.
 The demo uses a temporary database seeded with six invented items, so it
 never reads or writes the real household sidecar. It opens on a pushed
 finding — two deadlines this week and one likely duplicate charge — and
 shows the glass-box trace: Redactor → Extractor → Verifier → Researcher →
 Drafter → **Auditor rejects a wrong amount** → revision → approved. Cancel
 an item, watch it leave *Coming up*, reactivate it, upload a notice, and
-review the draft Ledger prepared without sending.
+review the draft InkWell prepared without sending.
 
 ```bash
 make demo-web   # fictional data, temporary database, loopback only
@@ -67,14 +67,14 @@ rejects cross-origin requests. The household database is never hosted.
 A separate **public demo** runs the same handler on Vercel
 (`app.py`, `interface/web/wsgi.py`, `vercel.json`) against a throwaway
 database seeded with the same fictional items:
-**<https://ledger-nine-theta.vercel.app>**. It never reads the household
+**<https://inkwell-nine-theta.vercel.app>**. It never reads the household
 sidecar, makes no model calls, and resets when the instance recycles. The
 tour, including what the demo does and does not prove, is in
 [`docs/demo.md`](docs/demo.md).
 
 ### Chat: Telegram
 
-The Telegram adapter runs the same `LedgerBot` and the same household
+The Telegram adapter runs the same `InkWellBot` and the same household
 database as the web view, so chat and browser see the same state.
 
 ```bash
@@ -93,7 +93,7 @@ command or a PDF/text notice dropped into the chat:
 An attachment is downloaded to a temporary file, parsed locally, stored in
 the household memory, and deleted. The reply is a status line plus a
 redacted draft preview; the full draft stays in the loopback web view.
-Ledger never sends a letter from chat.
+InkWell never sends a letter from chat.
 
 Proactive deadline notices are separate: `jobs/deadline_monitor.py` posts
 to `TELEGRAM_CHAT_ID`. A Slack incoming webhook remains a one-way
@@ -173,9 +173,9 @@ START ──► Redactor ──► Extractor ──► Verifier ──► Resear
 * **Fallback** (`agent/orchestrator.py`) is plain Python with the same
   state object and edges, for when the framework is unavailable.
 * **Model client** (`agent/model.py`) calls Token Factory only. It
-  resolves `LEDGER_MODEL_*` IDs pinned by `make pin-models` and raises if
+  resolves `INKWELL_MODEL_*` IDs pinned by `make pin-models` and raises if
   the key or ID is missing — there is no fallback provider.
-* **Drafter** is a template by default. `LEDGER_USE_MODEL_DRAFTER=1` (or
+* **Drafter** is a template by default. `INKWELL_USE_MODEL_DRAFTER=1` (or
   `--model-drafter` on the CLI) asks Nemotron Super for the letter using
   the **redacted** notice; the real reference is restored from the
   redaction map inside the sandbox. The deterministic Auditor then checks
@@ -351,8 +351,8 @@ bash sandbox/setup.sh
 bash sandbox/verify.sh
 
 # 4. check that model calls really route to Token Factory
-openshell policy get ledger-hermes --full
-openshell logs ledger-hermes --tail
+openshell policy get inkwell-hermes --full
+openshell logs inkwell-hermes --tail
 openshell term                   # live view: gateways, providers, sandboxes, blocked traffic
 ```
 
@@ -425,7 +425,7 @@ friction log. Reproduce with `make ocr-bench`.
 ## Repository layout
 
 ```
-ledger/
+inkwell/
 ├── README.md                     this file
 ├── IMPLEMENTATION.md             the phase plan this repo is built against
 ├── .env.example                  every variable, documented
@@ -464,7 +464,7 @@ ledger/
 ├── jobs/                         Nebius Serverless Jobs — deadline monitoring
 ├── interface/                    chat handlers + loopback web view
 │   ├── bot/handlers.py           a renewal message becomes an item
-│   ├── chat/telegram.py          long polling -> LedgerBot -> reply
+│   ├── chat/telegram.py          long polling -> InkWellBot -> reply
 │   └── web/                      server.py, index.html, app.js
 ├── eval/                         the four proofs + the synthetic corpus
 │   └── auditor_cases/            planted synthetic errors for the Auditor
@@ -526,11 +526,11 @@ comparable across runs.
   and third-party tracing is disabled.
 - **The household view is loopback-only; the hosted demo is fictional.**
   The real database is never published. A separate public demo runs at
-  <https://ledger-nine-theta.vercel.app> against a throwaway database
+  <https://inkwell-nine-theta.vercel.app> against a throwaway database
   seeded with invented items, with no model calls. The repo is public and
   MIT-licensed; the provider-side spending cap is still open. POST
   endpoints are rate-limited (30 requests per 60 seconds per client by
-  default, `LEDGER_RATE_LIMIT` / `LEDGER_RATE_WINDOW`), and the upload cap
+  default, `INKWELL_RATE_LIMIT` / `INKWELL_RATE_WINDOW`), and the upload cap
   is 15 MiB.
 
 ---

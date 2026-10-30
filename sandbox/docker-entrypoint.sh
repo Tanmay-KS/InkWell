@@ -1,5 +1,5 @@
 #!/bin/sh
-# Ledger — direct Hermes entrypoint for the OpenShell sandbox.
+# InkWell — direct Hermes entrypoint for the OpenShell sandbox.
 #
 # WHY THIS EXISTS
 # ---------------
@@ -34,8 +34,8 @@ set -e
 HERMES_BIN=/opt/hermes/.venv/bin/hermes
 
 if [ ! -x "$HERMES_BIN" ]; then
-    echo "[ledger] FATAL: $HERMES_BIN is missing or not executable." >&2
-    echo "[ledger] The base image must be nousresearch/hermes-agent (or a derivative of it)." >&2
+    echo "[inkwell] FATAL: $HERMES_BIN is missing or not executable." >&2
+    echo "[inkwell] The base image must be nousresearch/hermes-agent (or a derivative of it)." >&2
     exit 127
 fi
 

@@ -1,4 +1,4 @@
-# Ledger — Phase 1 runbook
+# InkWell — Phase 1 runbook
 
 **Phase 1 — Core Pipeline (Oct 21–23)**
 **Goal:** a working end-to-end agent loop: document in → deadline flagged → draft action out.
@@ -32,21 +32,21 @@ allowlist.
 
 | | |
 |---|---|
-| Location | inside the `ledger-hermes` OpenShell sandbox |
+| Location | inside the `inkwell-hermes` OpenShell sandbox |
 | Identity | UID 10000, group 10000 (`hermes`). **Not root** — OpenShell rejects a root workload outright |
 | Working directory | `/sandbox` (the image's WORKDIR) |
 | Python | `/opt/hermes/.venv/bin/python` — the venv interpreter is the real path the OpenShell proxy matches when it binds a credential to a binary |
 
-Ledger's own code is **packaged at build time**, never uploaded. The image
+InkWell's own code is **packaged at build time**, never uploaded. The image
 (`sandbox/Dockerfile.hermes`) copies `agent/`, `privacy_router/` and
-`sandbox/ledger_runner.py` to `/opt/ledger`, which `policy.yaml` mounts
+`sandbox/inkwell_runner.py` to `/opt/inkwell`, which `policy.yaml` mounts
 read-only. OpenShell strips `PYTHONPATH`, so the pipeline is launched as:
 
 ```
-/opt/hermes/.venv/bin/python /opt/ledger/ledger_runner.py <document>
+/opt/hermes/.venv/bin/python /opt/inkwell/inkwell_runner.py <document>
 ```
 
-The launcher puts `/opt/ledger` on `sys.path` and refuses to start if
+The launcher puts `/opt/inkwell` on `sys.path` and refuses to start if
 `agent` resolves anywhere else — the upstream image ships its own `agent`
 package, so that collision is silent otherwise. `run_pipeline.sh --check`
 asserts the resolved path before the pipeline is allowed to run. A code
@@ -59,9 +59,9 @@ change therefore needs an image rebuild, not an upload.
   boundary, and only for `api.tokenfactory.nebius.com:443`.
 - The same placeholder sent anywhere else is refused with
   `credential_endpoint_mismatch`. That is the enforcement, not an accident.
-- **Model IDs come from the environment** (`LEDGER_MODEL_NANO`,
-  `LEDGER_MODEL_SUPER`, `LEDGER_MODEL_ULTRA`, `LEDGER_MODEL_OCR`,
-  `LEDGER_MODEL_REDACT`). Never hard-code one; the ID spelling is not
+- **Model IDs come from the environment** (`INKWELL_MODEL_NANO`,
+  `INKWELL_MODEL_SUPER`, `INKWELL_MODEL_ULTRA`, `INKWELL_MODEL_OCR`,
+  `INKWELL_MODEL_REDACT`). Never hard-code one; the ID spelling is not
   stable across Nebius's own sources (F-002, F-017, F-024).
 - **Do not set `NEBIUS_BASE_URL` inside the sandbox.** It makes Hermes aim
   at another host, which the credential is not bound to. That is a useful
@@ -205,7 +205,7 @@ Person B's files, in dependency order. Each row is a checklist item.
 
 ### 2.5 `agent/actions/draft_actions.py` — deadline → a draft the user can send
 
-- [ ] A **draft, never an action**. Ledger does not send anything.
+- [ ] A **draft, never an action**. InkWell does not send anything.
 - [ ] The body is written to be sent as-is: no `[YOUR_NAME]`, no
       meta-commentary, a specific ask with a date attached
 - [ ] The placeholders are resolved **here**, inside the sandbox, at the
@@ -251,7 +251,7 @@ capture point is the outbound request, not the pipeline's return value.
       is ahead of the code, which is the right way round: a host the code
       cannot reach is not a leak
 - [x] Run `bash sandbox/run_pipeline.sh <doc> --check` on the gateway host
-      — Passed 2026-10-22: gateway reachable, sandbox `ledger-hermes`
+      — Passed 2026-10-22: gateway reachable, sandbox `inkwell-hermes`
       present, the nebius provider attached, a real model call from inside
       the sandbox (`MODEL-OK OK`), and `/opt/data` writable. The first
       attempt failed on a null `content` in the model's reply — a harness

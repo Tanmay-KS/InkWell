@@ -52,8 +52,8 @@ A local CLI run with an isolated SQLite database produced:
 {"days_until": 3, "event": "deadline_notification", "household_id": "default",
  "item_id": "item-2ddd23d7689df759", "kind": "subscription",
  "provider": "Smoke Provider", "renewal_date": "2026-10-23"}
-ledger: flagged 1 item(s) for default
-ledger: flagged 0 item(s) for default
+inkwell: flagged 1 item(s) for default
+inkwell: flagged 0 item(s) for default
 ```
 
 The second line is the important one: the handled-event table made the
@@ -62,8 +62,8 @@ not appear in the notification output or the state file.
 
 ### Live container proof
 
-The container image `ledger-deadline-monitor:local` was built from `jobs/Dockerfile`
-and executed against a persistent data volume (`ledger-proof-data`) mounted at `/data`.
+The container image `inkwell-deadline-monitor:local` was built from `jobs/Dockerfile`
+and executed against a persistent data volume (`inkwell-proof-data`) mounted at `/data`.
 
 **Run 1 (Initial detection & notification):**
 - **Container / Run ID:** `33413ae464c4a239811fca9fc6b216b01cbc8a892e32a13f587ef93342bc5672`
@@ -71,7 +71,7 @@ and executed against a persistent data volume (`ledger-proof-data`) mounted at `
 - **Logs:**
 ```text
 {"days_until": 5, "event": "deadline_notification", "household_id": "default", "item_id": "item-bdec956f5ff667a4", "kind": "insurance", "provider": "Lakeshore Health", "renewal_date": "2026-11-03"}
-ledger: flagged 1 item(s) for default
+inkwell: flagged 1 item(s) for default
 ```
 
 **Run 2 (Idempotency verification):**
@@ -79,7 +79,7 @@ ledger: flagged 1 item(s) for default
 - **Exit Status:** `0` (Success)
 - **Logs:**
 ```text
-ledger: flagged 0 item(s) for default
+inkwell: flagged 0 item(s) for default
 ```
 
 **State verification (`/data/state/job_state.json`):**
@@ -96,7 +96,7 @@ ledger: flagged 0 item(s) for default
 }
 ```
 
-The handled-event table in `/data/ledger_memory.db` recorded `deadline_notified`
+The handled-event table in `/data/inkwell_memory.db` recorded `deadline_notified`
 for item `item-bdec956f5ff667a4` during Run 1, rendering Run 2 quiet. Neither the
 holder name nor the account reference appeared in the stdout log or state metadata.
 

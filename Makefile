@@ -1,4 +1,4 @@
-# Ledger — developer entry points.
+# InkWell — developer entry points.
 #
 # `make help` lists everything. Every target is safe to re-run.
 
@@ -69,11 +69,11 @@ sandbox-up: ## Create the Hermes sandbox and attach the Token Factory provider
 
 .PHONY: sandbox-down
 sandbox-down: ## Delete the sandbox
-	openshell sandbox delete ledger-hermes || true
+	openshell sandbox delete inkwell-hermes || true
 
 .PHONY: sandbox-logs
 sandbox-logs: ## Tail sandbox logs (shows denied connections)
-	openshell logs ledger-hermes --tail
+	openshell logs inkwell-hermes --tail
 
 .PHONY: verify
 verify: ## Run the Phase 0 exit verification (pass/fail table)
@@ -98,7 +98,7 @@ gateway-preflight: ## Validate sandbox/gateway.toml with the real OpenShell bina
 
 .PHONY: sandbox-policy
 sandbox-policy: ## Show the effective policy (base + provider rules)
-	openshell policy get ledger-hermes --full
+	openshell policy get inkwell-hermes --full
 
 .PHONY: pin-models
 pin-models: ## Pin the live model catalog into .env and write docs/model-catalog.md
@@ -148,7 +148,7 @@ ocr-bench: ## Compare OCR models on a sample of the corpus
 # --- Phase 2: the privacy router -------------------------------------------
 
 ROUTER_DIR := sandbox/middleware/ledger-router
-AUDIT_LOG ?= /var/log/ledger/audit.jsonl
+AUDIT_LOG ?= /var/log/inkwell/audit.jsonl
 
 .PHONY: router-probe
 router-probe: ## Describe + redaction self-test against the running middleware

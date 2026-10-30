@@ -40,7 +40,7 @@ Measured 2026-10-28T16:57:14+00:00 at `https://api.tokenfactory.nebius.com/v1`, 
 
 ![Memory accuracy by question type](results/memory-accuracy.svg)
 
-| Question type | Ledger | Update-blind baseline |
+| Question type | InkWell | Update-blind baseline |
 |---|---:|---:|
 | current fact after a supersession | 100.0% | 15.8% |
 | the superseded fact, at a point in time | 100.0% | 83.3% |

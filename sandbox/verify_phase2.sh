@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ledger — Phase 2 exit verification.
+# InkWell — Phase 2 exit verification.
 #
 # One command for the Phase 2 exit condition:
 #
@@ -17,7 +17,7 @@
 # Usage:
 #   bash sandbox/verify_phase2.sh
 #   bash sandbox/verify_phase2.sh --gateway hostfetch --no-demo
-#   bash sandbox/verify_phase2.sh --audit-log /tmp/ledger-audit.jsonl
+#   bash sandbox/verify_phase2.sh --audit-log /tmp/inkwell-audit.jsonl
 #
 # Exit codes:
 #   0  every required check passed
@@ -33,16 +33,16 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 . "${SCRIPT_DIR}/select_python.sh"
 PROBE_PYTHON="$ROUTER_PYTHON"
 
-SANDBOX_NAME="${LEDGER_SANDBOX_NAME:-ledger-hermes}"
-GATEWAY_NAME="${LEDGER_GATEWAY_NAME:-}"
+SANDBOX_NAME="${INKWELL_SANDBOX_NAME:-inkwell-hermes}"
+GATEWAY_NAME="${INKWELL_GATEWAY_NAME:-}"
 ROUTER_ENDPOINT="${LEDGER_ROUTER_ENDPOINT:-127.0.0.1:50051}"
-AUDIT_LOG="${LEDGER_AUDIT_LOG:-}"
+AUDIT_LOG="${INKWELL_AUDIT_LOG:-}"
 RUN_DEMO=1
-DEMO_ACCOUNT="${LEDGER_DEMO_ACCOUNT:-0847-4851}"
-DEMO_EMAIL="${LEDGER_DEMO_EMAIL:-devin.sullivan@example.com}"
-DEMO_NAME="${LEDGER_DEMO_NAME:-Devin Sullivan}"
-DEMO_ADDRESS="${LEDGER_DEMO_ADDRESS:-3482 Thistlewood Place}"
-DEMO_PHONE="${LEDGER_DEMO_PHONE:-+1 437 126 5085}"
+DEMO_ACCOUNT="${INKWELL_DEMO_ACCOUNT:-0847-4851}"
+DEMO_EMAIL="${INKWELL_DEMO_EMAIL:-devin.sullivan@example.com}"
+DEMO_NAME="${INKWELL_DEMO_NAME:-Devin Sullivan}"
+DEMO_ADDRESS="${INKWELL_DEMO_ADDRESS:-3482 Thistlewood Place}"
+DEMO_PHONE="${INKWELL_DEMO_PHONE:-+1 437 126 5085}"
 
 BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[31m'; GREEN=$'\033[32m'
 YELLOW=$'\033[33m'; RESET=$'\033[0m'
@@ -67,7 +67,7 @@ if [ -n "$GATEWAY_NAME" ]; then
     export OPENSHELL_GATEWAY="$GATEWAY_NAME"
 fi
 # Child probes use the environment, not the parent's local.
-export LEDGER_SANDBOX_NAME="$SANDBOX_NAME"
+export INKWELL_SANDBOX_NAME="$SANDBOX_NAME"
 case ":$PATH:" in
     *":$HOME/.local/bin:"*) ;;
     *) PATH="$HOME/.local/bin:$PATH"; export PATH ;;
@@ -91,7 +91,7 @@ record() {
     [ -n "$detail" ] && printf '  %-6s %-8s %s%s%s\n' "" "" "$DIM" "$detail" "$RESET"
 }
 
-echo "${BOLD}Ledger — Phase 2 exit verification${RESET}"
+echo "${BOLD}InkWell — Phase 2 exit verification${RESET}"
 echo "${DIM}sandbox: ${SANDBOX_NAME}${RESET}"
 echo
 
@@ -114,7 +114,7 @@ if [ -z "$AUDIT_LOG" ]; then
         | grep -oE 'audit_log_path: *"?[^" ]+' | head -1 \
         | sed 's/.*: *"\?//')"
 fi
-AUDIT_LOG="${AUDIT_LOG:-/var/log/ledger/audit.jsonl}"
+AUDIT_LOG="${AUDIT_LOG:-/var/log/inkwell/audit.jsonl}"
 
 # 1. The contract the gateway validates at startup.
 PROBE_OUT="$("$PROBE_PYTHON" "${SCRIPT_DIR}/middleware/ledger-router/probe.py" \

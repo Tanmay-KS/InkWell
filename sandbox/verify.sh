@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ledger — Phase 0 exit verification.
+# InkWell — Phase 0 exit verification.
 #
 # One command, one pass/fail table. This is the artifact that proves the
 # Phase 0 exit condition:
@@ -29,7 +29,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-SANDBOX_NAME="${LEDGER_SANDBOX_NAME:-ledger-hermes}"
+SANDBOX_NAME="${INKWELL_SANDBOX_NAME:-inkwell-hermes}"
 TOKEN_FACTORY_HOST="api.tokenfactory.nebius.com"
 # A host the policy allows but that the Token Factory credential is NOT
 # bound to. Sending the Token Factory placeholder here must be refused.
@@ -37,7 +37,7 @@ UNBOUND_HOST="api.tavily.com"
 UNBOUND_PATH="/search"
 
 QUIET=0
-GATEWAY_NAME="${LEDGER_GATEWAY_NAME:-}"
+GATEWAY_NAME="${INKWELL_GATEWAY_NAME:-}"
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --quiet) QUIET=1; shift ;;
@@ -83,7 +83,7 @@ if [ -f "${REPO_ROOT}/.env" ]; then
     set +a
 fi
 
-MODEL_NANO="${LEDGER_MODEL_NANO:-nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B}"
+MODEL_NANO="${INKWELL_MODEL_NANO:-nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B}"
 
 # --- output -----------------------------------------------------------------
 
@@ -242,7 +242,7 @@ check_model_call() {
     say "${BOLD}3. A real model call succeeds from inside the sandbox${RESET}"
 
     if [ -z "${NEBIUS_API_KEY:-}" ]; then
-        record required "model call returns LEDGER-OK" FAIL \
+        record required "model call returns INKWELL-OK" FAIL \
             "NEBIUS_API_KEY is not set in the environment or .env"
         return
     fi
@@ -251,12 +251,12 @@ check_model_call() {
     out="$(timeout 45s openshell sandbox exec -n "$SANDBOX_NAME" --no-login-shell -- \
         /opt/hermes/.venv/bin/hermes chat --oneshot \
     --provider nebius --model "$MODEL_NANO" \
-    -q 'Reply with exactly: LEDGER-OK' 2>&1)"
+    -q 'Reply with exactly: INKWELL-OK' 2>&1)"
 
-    if echo "$out" | grep -q 'LEDGER-OK'; then
-        record required "model call returns LEDGER-OK" PASS "model ${MODEL_NANO}"
+    if echo "$out" | grep -q 'INKWELL-OK'; then
+        record required "model call returns INKWELL-OK" PASS "model ${MODEL_NANO}"
     else
-        record required "model call returns LEDGER-OK" FAIL \
+        record required "model call returns INKWELL-OK" FAIL \
             "$(echo "$out" | tail -3 | tr '\n' ' ' | cut -c1-160)"
     fi
 }
@@ -420,7 +420,7 @@ skip_all_dependent() {
         "policy shows a credential binding" \
         "workload runs as UID 10000 (not root)" \
         "connection observed in the sandbox log" \
-        "model call returns LEDGER-OK" \
+        "model call returns INKWELL-OK" \
         "placeholder refused on an unbound host" \
         "off-host base URL refused" \
         "no unexpected hosts in the allowlist" ; do
@@ -429,7 +429,7 @@ skip_all_dependent() {
 }
 
 main() {
-    say "${BOLD}Ledger — Phase 0 exit verification${RESET}"
+    say "${BOLD}InkWell — Phase 0 exit verification${RESET}"
     local active
     active="$(openshell gateway list 2>/dev/null | awk '$1=="*" {print $2}')"
     if [ -n "$active" ]; then

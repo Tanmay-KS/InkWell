@@ -5,7 +5,7 @@ The loopback server in `server.py` is the real interface: it binds to
 sidecar. Vercel cannot run that server, and exposing it would contradict
 the privacy design.
 
-This module reuses the exact same `LedgerHandler` and routes, but the
+This module reuses the exact same `InkWellHandler` and routes, but the
 state it hands the handler is deliberately narrow:
 
 * the database is a throwaway file in `/tmp`, seeded with the fictional
@@ -33,7 +33,7 @@ from pathlib import Path
 
 from agent.memory.hermes_memory import HouseholdMemory
 from interface.web.server import (
-    LedgerHandler,
+    InkWellHandler,
     RateLimiter,
     _demo_trace_state,
     _seed_demo,
@@ -42,11 +42,11 @@ from interface.web.server import (
 __all__ = ["PUBLIC_DEMO", "app"]
 
 PUBLIC_DEMO = (
-    os.environ.get("LEDGER_PUBLIC_DEMO", "").strip().lower() in {"1", "true", "yes"}
+    os.environ.get("INKWELL_PUBLIC_DEMO", "").strip().lower() in {"1", "true", "yes"}
     or bool(os.environ.get("VERCEL"))
 )
 
-_DB_PATH = Path(tempfile.mkdtemp(prefix="ledger-vercel-")) / "memory.db"
+_DB_PATH = Path(tempfile.mkdtemp(prefix="inkwell-vercel-")) / "memory.db"
 _SEED_LOCK = threading.Lock()
 _SEEDED = False
 _LOCAL = threading.local()
@@ -80,7 +80,7 @@ def _seed(memory: HouseholdMemory) -> None:
 
 
 class _DemoState:
-    """The `self.server` attributes `LedgerHandler` expects."""
+    """The `self.server` attributes `InkWellHandler` expects."""
 
     demo_mode = True
     server_port = 443
@@ -109,7 +109,7 @@ class _DemoState:
 _STATE = _DemoState()
 
 
-class _CapturingHandler(LedgerHandler):
+class _CapturingHandler(InkWellHandler):
     """A handler that records the response instead of writing a socket."""
 
     def send_response_only(self, code: int, message: str | None = None) -> None:

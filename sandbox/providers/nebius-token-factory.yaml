@@ -13,7 +13,7 @@
 # Credential scope: NEBIUS_API_KEY, sent as a bearer authorization header to
 #                   api.tokenfactory.nebius.com and nowhere else.
 # Endpoint access:  api.tokenfactory.nebius.com, read-write, L7 enforced.
-# Smoke test:       openshell sandbox exec -n ledger-hermes --no-login-shell -- \
+# Smoke test:       openshell sandbox exec -n inkwell-hermes --no-login-shell -- \
 #                     curl -sS https://api.tokenfactory.nebius.com/v1/models
 #
 # The host MUST match Hermes's built-in nebius-token-factory provider

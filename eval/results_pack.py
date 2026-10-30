@@ -451,7 +451,7 @@ def render_report(
         lines += [
             "![Memory accuracy by question type](results/memory-accuracy.svg)",
             "",
-            "| Question type | Ledger | Update-blind baseline |",
+            "| Question type | InkWell | Update-blind baseline |",
             "|---|---:|---:|",
         ]
         for key, label in (
@@ -628,7 +628,7 @@ def main(argv: list[str] | None = None) -> int:
         charts["memory-accuracy.svg"] = bar_chart(
             categories=[label for _key, label in keys],
             series=[
-                ("Ledger", [float(scores.get(key, 0)) * 100 for key, _ in keys], PALETTE["blue"]),
+                ("InkWell", [float(scores.get(key, 0)) * 100 for key, _ in keys], PALETTE["blue"]),
                 (
                     "update-blind",
                     [float(baseline.get(key, 0)) * 100 for key, _ in keys],

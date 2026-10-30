@@ -246,16 +246,16 @@ def write_snapshot(models: list[dict], path: str | Path, api_key: str) -> Path:
 
 
 def read_pinned_roles(env_path: str | Path = ".env") -> dict[str, str]:
-    """Read the `LEDGER_MODEL_*` roles out of `.env`."""
+    """Read the `INKWELL_MODEL_*` roles out of `.env`."""
     roles: dict[str, str] = {}
     path = Path(env_path)
     if not path.exists():
         return roles
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
-        if stripped.startswith("LEDGER_MODEL_") and "=" in stripped:
+        if stripped.startswith("INKWELL_MODEL_") and "=" in stripped:
             key, value = stripped.split("=", 1)
-            roles[key.removeprefix("LEDGER_MODEL_").lower()] = value.strip().strip("'\"")
+            roles[key.removeprefix("INKWELL_MODEL_").lower()] = value.strip().strip("'\"")
     return roles
 
 

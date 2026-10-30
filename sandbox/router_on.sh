@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Attach the Ledger privacy router to a live sandbox.
+# Attach the InkWell privacy router to a live sandbox.
 #
 # Prerequisites, in this order:
 #   1. the middleware service is running and reachable from the gateway host
@@ -13,7 +13,7 @@
 #
 # Usage:
 #   bash sandbox/router_on.sh
-#   bash sandbox/router_on.sh --gateway hostfetch --audit-log /tmp/ledger-audit.jsonl
+#   bash sandbox/router_on.sh --gateway hostfetch --audit-log /tmp/inkwell-audit.jsonl
 #   bash sandbox/router_on.sh --escalate          # needs NEBIUS_API_KEY on the service host
 
 set -uo pipefail
@@ -25,9 +25,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 . "${SCRIPT_DIR}/select_python.sh"
 PROBE_PYTHON="$ROUTER_PYTHON"
 
-SANDBOX_NAME="${LEDGER_SANDBOX_NAME:-ledger-hermes}"
-GATEWAY_NAME="${LEDGER_GATEWAY_NAME:-}"
-AUDIT_LOG="${LEDGER_AUDIT_LOG:-/var/log/ledger/audit.jsonl}"
+SANDBOX_NAME="${INKWELL_SANDBOX_NAME:-inkwell-hermes}"
+GATEWAY_NAME="${INKWELL_GATEWAY_NAME:-}"
+AUDIT_LOG="${INKWELL_AUDIT_LOG:-/var/log/inkwell/audit.jsonl}"
 ROUTER_ENDPOINT="${LEDGER_ROUTER_ENDPOINT:-127.0.0.1:50051}"
 ESCALATE=0
 SKIP_PROBE=0
@@ -81,7 +81,7 @@ else
     echo "${YELLOW}skipping the service probe (--skip-probe)${RESET}"
 fi
 
-TMP_POLICY="$(mktemp "${TMPDIR:-/tmp}/ledger-policy-router-XXXXXX.yaml")"
+TMP_POLICY="$(mktemp "${TMPDIR:-/tmp}/inkwell-policy-router-XXXXXX.yaml")"
 trap 'rm -f "$TMP_POLICY"' EXIT
 
 echo "${BOLD}2. Generate the router-enabled policy${RESET}"

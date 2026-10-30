@@ -782,7 +782,7 @@ def redact(
 
     Args:
         text: The text to redact.
-        model: The redaction model. Defaults to `LEDGER_MODEL_REDACT`.
+        model: The redaction model. Defaults to `INKWELL_MODEL_REDACT`.
         transport: How to send the escalation request. Defaults to a real
             HTTP call. The leak test passes a capturing transport, so the
             measurement never leaves the machine.
@@ -818,7 +818,7 @@ def redact(
         kind="redact_call",
         payload=local.text,
         prompt=RESIDUAL_PROMPT,
-        model=model or os.environ.get("LEDGER_MODEL_REDACT", ""),
+        model=model or os.environ.get("INKWELL_MODEL_REDACT", ""),
         detail="residual personal-detail detection",
     )
     try:

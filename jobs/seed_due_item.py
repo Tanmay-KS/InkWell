@@ -1,4 +1,4 @@
-"""Seed a due item into the Ledger memory database for testing or live proof.
+"""Seed a due item into the InkWell memory database for testing or live proof.
 
 Phase 3 — Reproducible proof helper.
 
@@ -45,7 +45,7 @@ def seed_due_item(
 
     Args:
         memory_path: Path to the SQLite memory database. Defaults to
-            LEDGER_MEMORY_DB environment variable or standard sidecar path.
+            INKWELL_MEMORY_DB environment variable or standard sidecar path.
         days_ahead: Number of days from `today` until the item renews.
         today: Reference date (defaults to date.today()).
         provider: Organization name.
@@ -65,7 +65,7 @@ def seed_due_item(
     path = (
         Path(memory_path)
         if memory_path
-        else Path(os.environ.get("LEDGER_MEMORY_DB", "/data/ledger_memory.db"))
+        else Path(os.environ.get("INKWELL_MEMORY_DB", "/data/inkwell_memory.db"))
     )
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -114,12 +114,12 @@ def seed_due_item(
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Seed a due item into the Ledger memory sidecar."
+        description="Seed a due item into the InkWell memory sidecar."
     )
     parser.add_argument(
         "--memory-db",
-        default=os.environ.get("LEDGER_MEMORY_DB", "/data/ledger_memory.db"),
-        help="SQLite database path (default: $LEDGER_MEMORY_DB or /data/ledger_memory.db)",
+        default=os.environ.get("INKWELL_MEMORY_DB", "/data/inkwell_memory.db"),
+        help="SQLite database path (default: $INKWELL_MEMORY_DB or /data/inkwell_memory.db)",
     )
     parser.add_argument(
         "--days-ahead",

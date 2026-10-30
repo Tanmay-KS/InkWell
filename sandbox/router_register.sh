@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Register the Ledger privacy router with the OpenShell gateway.
+# Register the InkWell privacy router with the OpenShell gateway.
 #
 # The gateway calls every registered middleware at startup and REFUSES TO
 # START if one is unavailable. So this script, in order:
@@ -19,7 +19,7 @@
 #   bash sandbox/middleware/ledger-router/run.sh
 #
 # The gateway restart command can be overridden for a non-systemd host:
-#   LEDGER_GATEWAY_RESTART_CMD='launchctl kickstart -k gui/$(id -u)/openshell-gateway' ...
+#   INKWELL_GATEWAY_RESTART_CMD='launchctl kickstart -k gui/$(id -u)/openshell-gateway' ...
 
 set -uo pipefail
 
@@ -30,10 +30,10 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 . "${SCRIPT_DIR}/select_python.sh"
 PROBE_PYTHON="$ROUTER_PYTHON"
 
-GATEWAY_NAME="${LEDGER_GATEWAY_NAME:-}"
-CONFIG="${LEDGER_GATEWAY_CONFIG:-${HOME}/.config/openshell/gateway.toml}"
+GATEWAY_NAME="${INKWELL_GATEWAY_NAME:-}"
+CONFIG="${INKWELL_GATEWAY_CONFIG:-${HOME}/.config/openshell/gateway.toml}"
 ROUTER_ENDPOINT="${LEDGER_ROUTER_ENDPOINT:-127.0.0.1:50051}"
-RESTART_CMD="${LEDGER_GATEWAY_RESTART_CMD:-systemctl --user restart openshell-gateway}"
+RESTART_CMD="${INKWELL_GATEWAY_RESTART_CMD:-systemctl --user restart openshell-gateway}"
 DRY_RUN=0
 NO_RESTART=0
 
@@ -68,7 +68,7 @@ die() { echo "${RED}${*}${RESET}" >&2; exit 1; }
 command -v openshell >/dev/null 2>&1 || die "openshell is not on PATH"
 command -v openshell-gateway >/dev/null 2>&1 || die "openshell-gateway is not on PATH"
 
-TMP_CONFIG="$(mktemp "${TMPDIR:-/tmp}/ledger-gateway-router-XXXXXX.toml")"
+TMP_CONFIG="$(mktemp "${TMPDIR:-/tmp}/inkwell-gateway-router-XXXXXX.toml")"
 BACKUP=""
 cleanup() {
     if [ "$DRY_RUN" -eq 0 ]; then

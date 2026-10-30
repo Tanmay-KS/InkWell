@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Deploy or trigger the Ledger Deadline Monitor on Nebius Serverless Jobs.
+# Deploy or trigger the InkWell Deadline Monitor on Nebius Serverless Jobs.
 #
 # Usage:
 #   bash jobs/deploy_nebius_job.sh [options]
 #
 # Options:
 #   --manifest PATH     Path to job YAML manifest (default: jobs/nebius-job.yaml)
-#   --image IMAGE       Container image URI (default: ghcr.io/tanmay-ks/ledger-deadline-monitor:latest)
+#   --image IMAGE       Container image URI (default: ghcr.io/tanmay-ks/inkwell-deadline-monitor:latest)
 #   --dry-run           Print generated command/manifest without executing
 #   --trigger           Trigger an immediate manual run of an existing job
 #   --help              Show this message
@@ -17,9 +17,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 MANIFEST_PATH="${SCRIPT_DIR}/nebius-job.yaml"
-JOB_NAME="ledger-deadline-monitor"
-IMAGE_URI="${LEDGER_JOB_IMAGE:-ghcr.io/tanmay-ks/ledger-deadline-monitor:latest}"
-STORAGE_CLAIM="${LEDGER_STORAGE_CLAIM:-ledger-shared-storage}"
+JOB_NAME="inkwell-deadline-monitor"
+IMAGE_URI="${INKWELL_JOB_IMAGE:-ghcr.io/tanmay-ks/inkwell-deadline-monitor:latest}"
+STORAGE_CLAIM="${INKWELL_STORAGE_CLAIM:-inkwell-shared-storage}"
 DRY_RUN=0
 TRIGGER_ONLY=0
 
@@ -84,10 +84,10 @@ CMD=(
   --cpu "1"
   --memory "1Gi"
   --mount-volume "claim=${STORAGE_CLAIM},path=/data"
-  --env "LEDGER_LOOK_AHEAD_DAYS=14"
-  --env "LEDGER_MEMORY_DB=/data/ledger_memory.db"
-  --env "LEDGER_STATE_PATH=/data/state/job_state.json"
-  --env "LEDGER_NOTIFY=1"
+  --env "INKWELL_LOOK_AHEAD_DAYS=14"
+  --env "INKWELL_MEMORY_DB=/data/inkwell_memory.db"
+  --env "INKWELL_STATE_PATH=/data/state/job_state.json"
+  --env "INKWELL_NOTIFY=1"
 )
 
 if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]; then
@@ -97,8 +97,8 @@ if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]; then
   )
 fi
 
-if [[ -n "${LEDGER_WEBHOOK_URL:-}" ]]; then
-  CMD+=(--env "LEDGER_WEBHOOK_URL=${LEDGER_WEBHOOK_URL}")
+if [[ -n "${INKWELL_WEBHOOK_URL:-}" ]]; then
+  CMD+=(--env "INKWELL_WEBHOOK_URL=${INKWELL_WEBHOOK_URL}")
 fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then

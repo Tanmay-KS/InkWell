@@ -1,9 +1,9 @@
-# Ledger — deadline monitor job image.
+# InkWell — deadline monitor job image.
 #
 # Phase 3 — Person A.
 #
 # Build from the repository root:
-#   docker build -f jobs/Dockerfile -t ledger-deadline-monitor .
+#   docker build -f jobs/Dockerfile -t inkwell-deadline-monitor .
 #
 # The image contains only the modules the monitor imports. It deliberately
 # does not inherit the Hermes sandbox image: this job reads the SQLite sidecar
@@ -18,8 +18,8 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-RUN groupadd --gid 10000 ledger && \
-    useradd --uid 10000 --gid 10000 --create-home ledger && \
+RUN groupadd --gid 10000 inkwell && \
+    useradd --uid 10000 --gid 10000 --create-home inkwell && \
     mkdir -p /data/state && \
     chown -R 10000:10000 /data
 
@@ -29,8 +29,8 @@ COPY agent/__init__.py /app/agent/
 COPY agent/memory/__init__.py agent/memory/hermes_memory.py /app/agent/memory/
 COPY jobs/__init__.py jobs/deadline_monitor.py jobs/notifier.py jobs/seed_due_item.py /app/jobs/
 
-ENV LEDGER_MEMORY_DB=/data/ledger_memory.db \
-    LEDGER_STATE_PATH=/data/state/job_state.json
+ENV INKWELL_MEMORY_DB=/data/inkwell_memory.db \
+    INKWELL_STATE_PATH=/data/state/job_state.json
 
 USER 10000:10000
 

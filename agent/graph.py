@@ -659,7 +659,7 @@ def run_text_graph(text: str, **kwargs: object) -> RunState:
     import tempfile
 
     with tempfile.NamedTemporaryFile(
-        "w", prefix="ledger-graph-", suffix=".txt", delete=True, encoding="utf-8"
+        "w", prefix="inkwell-graph-", suffix=".txt", delete=True, encoding="utf-8"
     ) as handle:
         handle.write(text)
         handle.flush()

@@ -53,11 +53,11 @@ from privacy_router.redact import RedactionMap, redacted_text
 # Model ID for document understanding. Pinned from the live Token Factory
 # catalog — see `make pin-models`. Never hand-type a model ID: the casing
 # is inconsistent across Nebius's own documentation.
-DEFAULT_OCR_MODEL = os.environ.get("LEDGER_MODEL_OCR", "")
+DEFAULT_OCR_MODEL = os.environ.get("INKWELL_MODEL_OCR", "")
 
 # The redaction tier. Cheapest model that is good enough to strip personal
 # details out of a span we could not classify locally.
-DEFAULT_REDACT_MODEL = os.environ.get("LEDGER_MODEL_REDACT", "")
+DEFAULT_REDACT_MODEL = os.environ.get("INKWELL_MODEL_REDACT", "")
 
 TOKEN_FACTORY_BASE_URL = os.environ.get(
     "NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1"
@@ -406,7 +406,7 @@ def parse_document(
 
     Args:
         path: The file to read.
-        model: Override the OCR model. Defaults to `LEDGER_MODEL_OCR`.
+        model: Override the OCR model. Defaults to `INKWELL_MODEL_OCR`.
             Unused on the local path, which is the point: the local
             extractor is tried first and the model is only reached for
             what it cannot read.

@@ -20,7 +20,7 @@ import pytest
 from agent.memory.hermes_memory import HouseholdMemory
 from interface.web.server import (
     MAX_UPLOAD,
-    LedgerHandler,
+    InkWellHandler,
     RateLimiter,
     _seed_demo,
     serve,
@@ -41,7 +41,7 @@ Policy holder: Taylor Reed
 
 @pytest.fixture
 def web(tmp_path):
-    httpd = HTTPServer(("127.0.0.1", 0), LedgerHandler)
+    httpd = HTTPServer(("127.0.0.1", 0), InkWellHandler)
     httpd.daemon_threads = True
     ready = threading.Event()
     closed = threading.Event()
@@ -134,7 +134,7 @@ def test_the_dashboard_is_served_at_app(web):
 
     assert status == 200
     assert headers["Content-Type"].startswith("text/html")
-    assert b"Ledger Dashboard" in body
+    assert b"InkWell Dashboard" in body
 
 
 def test_the_javascript_is_served_as_javascript(web):

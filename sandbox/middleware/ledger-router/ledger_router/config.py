@@ -1,4 +1,4 @@
-"""Configuration for the Ledger privacy router middleware.
+"""Configuration for the InkWell privacy router middleware.
 
 The same object is built twice:
 
@@ -84,7 +84,7 @@ class RouterConfig(BaseModel):
     deliberately not a config list: the policy file is committed, and the
     household's names are not."""
 
-    audit_log_path: str = "/var/log/ledger/audit.jsonl"
+    audit_log_path: str = "/var/log/inkwell/audit.jsonl"
     """Append-only JSONL audit trail, written on the service host."""
 
     @field_validator("deny_threshold")

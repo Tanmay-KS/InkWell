@@ -1,4 +1,4 @@
-"""Ledger privacy router — OpenShell supervisor middleware.
+"""InkWell privacy router — OpenShell supervisor middleware.
 
 The service is deliberately small: the decision logic lives in
 `privacy_router` (shared with the in-process pipeline and the leak test),

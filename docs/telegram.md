@@ -1,7 +1,7 @@
 # Telegram adapter
 
 `interface/chat/telegram.py` is a thin transport around the same
-`LedgerBot` (`interface/bot/handlers.py`) and the same household database
+`InkWellBot` (`interface/bot/handlers.py`) and the same household database
 as the web view. It answers questions, records a cancellation or
 reactivation, and ingests a notice dropped into chat.
 
@@ -62,7 +62,7 @@ Chat is an external destination, so the adapter is deliberately narrow:
   the full letter;
 * the chat path does not call a model, so a notice sent over Telegram is
   not sent to Token Factory by this adapter;
-* Ledger never sends a letter from chat. An approved draft is something a
+* InkWell never sends a letter from chat. An approved draft is something a
   person sends themselves.
 
 The bot treats inbound text as data. The injection guard is still the

@@ -1,4 +1,4 @@
-"""Run the Ledger privacy router middleware.
+"""Run the InkWell privacy router middleware.
 
     python -m ledger_router --bind 0.0.0.0 --port 50051
 
@@ -18,7 +18,7 @@ from ledger_router.service import _configure_logging, serve
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Ledger privacy router middleware")
+    parser = argparse.ArgumentParser(description="InkWell privacy router middleware")
     parser.add_argument("--bind", default="0.0.0.0", help="address to bind (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=50051, help="port (default: 50051)")
     parser.add_argument("--max-workers", type=int, default=8, help="gRPC worker threads")

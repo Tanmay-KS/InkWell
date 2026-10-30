@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ledger — run the pipeline inside the OpenShell sandbox.
+# InkWell — run the pipeline inside the OpenShell sandbox.
 #
 # This is the harness for Person A's first Phase 1 task: "wire Hermes/OpenShell
 # so B's pipeline runs on the real sandbox from day one, not bolted on later".
@@ -21,7 +21,7 @@
 # ------------------------
 # The pipeline is invoked as:
 #
-#   $LEDGER_PIPELINE_CMD <document-path> [...]
+#   $INKWELL_PIPELINE_CMD <document-path> [...]
 #
 # The default entry point is `agent.demo`, which is the Phase 1
 # exit-condition runner: it takes document paths as positional arguments,
@@ -51,16 +51,16 @@
 # has to be visible. The leak-review checklist in
 # docs/phase1-runbook.md §4 is written against this shape.
 #
-# Override the entry point with LEDGER_PIPELINE_CMD.
+# Override the entry point with INKWELL_PIPELINE_CMD.
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-SANDBOX_NAME="${LEDGER_SANDBOX_NAME:-ledger-hermes}"
+SANDBOX_NAME="${INKWELL_SANDBOX_NAME:-inkwell-hermes}"
 INBOX="/sandbox/inbox"
-PIPELINE_CMD="${LEDGER_PIPELINE_CMD:-/opt/hermes/.venv/bin/python /opt/ledger/ledger_runner.py}"
+PIPELINE_CMD="${INKWELL_PIPELINE_CMD:-/opt/hermes/.venv/bin/python /opt/inkwell/inkwell_runner.py}"
 PYTHON_BIN="/opt/hermes/.venv/bin/python"
 
 BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[31m'; GREEN=$'\033[32m'
@@ -155,7 +155,7 @@ run_plumbing_check() {
 import json, os, urllib.request
 
 key = os.environ.get("NEBIUS_API_KEY", "")
-model = os.environ.get("LEDGER_MODEL_NANO", "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B")
+model = os.environ.get("INKWELL_MODEL_NANO", "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B")
 req = urllib.request.Request(
     "https://api.tokenfactory.nebius.com/v1/chat/completions",
     data=json.dumps({"model": model, "max_tokens": 64,
@@ -203,14 +203,14 @@ PY
     # allowed to run. The launcher's --where prints the imported file.
     local imports
     imports="$(openshell sandbox exec -n "$SANDBOX_NAME" --no-login-shell -- \
-        "$PYTHON_BIN" /opt/ledger/ledger_runner.py --where 2>&1)"
-    if echo "$imports" | grep -qx '/opt/ledger/agent/__init__.py'; then
-        ok "Ledger packages resolve from /opt/ledger"
+        "$PYTHON_BIN" /opt/inkwell/inkwell_runner.py --where 2>&1)"
+    if echo "$imports" | grep -qx '/opt/inkwell/agent/__init__.py'; then
+        ok "InkWell packages resolve from /opt/inkwell"
     else
         fail "the sandbox resolves 'agent' from the wrong place"
         echo "$imports" | sed 's/^/      /'
-        info "expected /opt/ledger/agent/__init__.py — the image is stale or"
-        info "was built without the Ledger packages; rebuild it"
+        info "expected /opt/inkwell/agent/__init__.py — the image is stale or"
+        info "was built without the InkWell packages; rebuild it"
         die "import check failed"
     fi
 
@@ -241,7 +241,7 @@ run_pipeline() {
         if echo "$out" | grep -q "No module named agent"; then
             info "the pipeline entry point does not exist inside the sandbox."
             info "Expected: ${PIPELINE_CMD}"
-            info "agent/ and privacy_router/ belong at /opt/ledger in the image;"
+            info "agent/ and privacy_router/ belong at /opt/inkwell in the image;"
             info "run: bash sandbox/setup.sh   (rebuilds the image and sandbox)"
         fi
         return "$rc"
@@ -280,7 +280,7 @@ show_egress() {
 
 main() {
     printf '%s\n' "$BOLD"
-    echo "  Ledger — pipeline in the sandbox"
+    echo "  InkWell — pipeline in the sandbox"
     printf '%s%s\n\n' "$RESET" ""
 
     check_sandbox

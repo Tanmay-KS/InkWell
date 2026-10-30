@@ -35,7 +35,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE_NAME: ledger-deadline-monitor
+  IMAGE_NAME: inkwell-deadline-monitor
 
 jobs:
   build:
@@ -57,7 +57,7 @@ jobs:
       - name: Plant decoy secrets in the build context
         run: |
           set -eu
-          printf 'LEDGER_CI_SENTINEL=do-not-copy-this-value\n' > .env
+          printf 'INKWELL_CI_SENTINEL=do-not-copy-this-value\n' > .env
           printf '%s\n' \
             '-----BEGIN PRIVATE KEY-----' \
             'do-not-copy-this-value' \
@@ -125,7 +125,7 @@ jobs:
             --tmpfs /data:uid=10000,gid=10000,mode=700 \
             "${IMAGE_NAME}:ci" \
             --dry-run --today 2026-10-20 \
-            --memory-db /data/ledger_memory.db \
+            --memory-db /data/inkwell_memory.db \
             --state-path /data/state/job_state.json
 
   publish:
@@ -146,7 +146,7 @@ jobs:
         run: |
           set -eu
           owner="${GITHUB_REPOSITORY_OWNER,,}"
-          echo "name=ghcr.io/${owner}/ledger-deadline-monitor" >> "$GITHUB_OUTPUT"
+          echo "name=ghcr.io/${owner}/inkwell-deadline-monitor" >> "$GITHUB_OUTPUT"
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3

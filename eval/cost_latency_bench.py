@@ -287,7 +287,7 @@ def resolve_tiers(
 
     Args:
         models: The catalog records, as returned by `fetch_models`.
-        pinned: The `LEDGER_MODEL_*` roles from `.env`, if any. A pinned
+        pinned: The `INKWELL_MODEL_*` roles from `.env`, if any. A pinned
             role wins when the exact ID still exists in the catalog,
             because that is the model the agent actually calls.
 

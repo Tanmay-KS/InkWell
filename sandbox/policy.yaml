@@ -1,12 +1,12 @@
-# Ledger — OpenShell sandbox policy.
+# InkWell — OpenShell sandbox policy.
 #
 # Apply with:
-#   openshell sandbox create --name ledger-hermes \
-#     --from ledger-hermes:local --policy sandbox/policy.yaml \
+#   openshell sandbox create --name inkwell-hermes \
+#     --from inkwell-hermes:local --policy sandbox/policy.yaml \
 #     -- /usr/local/bin/hermes-direct chat
 #
 # Replace on a running sandbox with:
-#   openshell policy set ledger-hermes --policy sandbox/policy.yaml --wait
+#   openshell policy set inkwell-hermes --policy sandbox/policy.yaml --wait
 #
 # IMPORTANT: `openshell policy set` REPLACES every section. OpenShell enriches
 # the base policy at startup with baseline filesystem paths and can reject a
@@ -14,9 +14,9 @@
 # already include every baseline path. Do not trim them when editing.
 #
 # Verify what the sandbox actually enforces:
-#   openshell policy get ledger-hermes --base    # what we set
-#   openshell policy get ledger-hermes --full    # base + provider-contributed rules
-#   openshell policy list ledger-hermes          # revision status ("Loaded")
+#   openshell policy get inkwell-hermes --base    # what we set
+#   openshell policy get inkwell-hermes --full    # base + provider-contributed rules
+#   openshell policy list inkwell-hermes          # revision status ("Loaded")
 #
 # ---------------------------------------------------------------------------
 # Filesystem
@@ -41,7 +41,7 @@ filesystem_policy:
     - /proc
     - /dev/urandom
     - /opt/hermes
-    - /opt/ledger
+    - /opt/inkwell
   read_write:
     - /sandbox
     - /opt/data
@@ -147,7 +147,7 @@ network_policies:
 #   2. bring sandbox/middleware/ledger-router up and make it reachable from
 #      both the gateway host and the sandbox supervisors
 #   3. uncomment the block below
-#   4. openshell policy set ledger-hermes --policy sandbox/policy.yaml --wait
+#   4. openshell policy set inkwell-hermes --policy sandbox/policy.yaml --wait
 #
 # ROUTER ON / OFF for the Phase 2 leak test is the PRESENCE OF THIS ENTRY.
 # Router OFF = no `network_middlewares` entry at all. Router ON = the entry is
@@ -156,7 +156,7 @@ network_policies:
 #
 # network_middlewares:
 #   ledger_router:
-#     name: Ledger privacy router
+#     name: InkWell privacy router
 #     middleware: ledger-router
 #     order: 10
 #     on_error: fail_closed
@@ -167,7 +167,7 @@ network_policies:
 #         - nvidia/Nemotron-3-Ultra-550b-a55b
 #       redact_hosts:
 #         - api.tavily.com
-#       audit_log_path: /var/log/ledger/audit.jsonl
+#       audit_log_path: /var/log/inkwell/audit.jsonl
 #     endpoints:
 #       include:
 #         - api.tokenfactory.nebius.com

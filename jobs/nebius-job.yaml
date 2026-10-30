@@ -1,12 +1,12 @@
 apiVersion: batch.nebius.ai/v1alpha1
 kind: Job
 metadata:
-  name: ledger-deadline-monitor
+  name: inkwell-deadline-monitor
   namespace: default
   labels:
-    app.kubernetes.io/name: ledger
+    app.kubernetes.io/name: inkwell
     app.kubernetes.io/component: deadline-monitor
-    app.kubernetes.io/part-of: ledger
+    app.kubernetes.io/part-of: inkwell
 spec:
   # Daily trigger at 08:00 UTC
   schedule: "0 8 * * *"
@@ -22,7 +22,7 @@ spec:
         fsGroup: 10000
       containers:
         - name: deadline-monitor
-          image: ghcr.io/tanmay-ks/ledger-deadline-monitor:latest
+          image: ghcr.io/tanmay-ks/inkwell-deadline-monitor:latest
           imagePullPolicy: IfNotPresent
           command: ["python", "-m", "jobs.deadline_monitor"]
           resources:
@@ -33,35 +33,35 @@ spec:
               cpu: "1000m"
               memory: "1Gi"
           env:
-            - name: LEDGER_LOOK_AHEAD_DAYS
+            - name: INKWELL_LOOK_AHEAD_DAYS
               value: "14"
-            - name: LEDGER_MEMORY_DB
-              value: "/data/ledger_memory.db"
-            - name: LEDGER_STATE_PATH
+            - name: INKWELL_MEMORY_DB
+              value: "/data/inkwell_memory.db"
+            - name: INKWELL_STATE_PATH
               value: "/data/state/job_state.json"
-            - name: LEDGER_NOTIFY
+            - name: INKWELL_NOTIFY
               value: "1"
             # Optional Telegram delivery configuration
             # - name: TELEGRAM_BOT_TOKEN
             #   valueFrom:
             #     secretKeyRef:
-            #       name: ledger-secrets
+            #       name: inkwell-secrets
             #       key: telegram-bot-token
             # - name: TELEGRAM_CHAT_ID
             #   valueFrom:
             #     secretKeyRef:
-            #       name: ledger-secrets
+            #       name: inkwell-secrets
             #       key: telegram-chat-id
             # Optional Slack / Generic webhook configuration
-            # - name: LEDGER_WEBHOOK_URL
+            # - name: INKWELL_WEBHOOK_URL
             #   valueFrom:
             #     secretKeyRef:
-            #       name: ledger-secrets
+            #       name: inkwell-secrets
             #       key: webhook-url
           volumeMounts:
-            - name: ledger-storage
+            - name: inkwell-storage
               mountPath: /data
       volumes:
-        - name: ledger-storage
+        - name: inkwell-storage
           persistentVolumeClaim:
-            claimName: ledger-shared-storage
+            claimName: inkwell-shared-storage

@@ -50,7 +50,7 @@ __all__ = ["LedgerRouterServicer", "serve"]
 LOG = logging.getLogger("ledger_router")
 
 SERVICE_NAME = "ledger-router"
-IMPLEMENTATION_NAME = "ledger/privacy-router"
+IMPLEMENTATION_NAME = "inkwell/privacy-router"
 IMPLEMENTATION_VERSION = "0.1.0"
 CONTRACT_CAPABILITY = "openshell.supervisor-middleware.contract"
 
@@ -288,7 +288,7 @@ class LedgerRouterServicer(pb_grpc.SupervisorMiddlewareServicer):
             return pb.HttpRequestResult(
                 decision=pb.DECISION_DENY,
                 reason_code=REASON_BINARY_BODY,
-                reason="request denied by the Ledger privacy router",
+                reason="request denied by the InkWell privacy router",
             )
 
         verdict = evaluate_request(
@@ -334,7 +334,7 @@ class LedgerRouterServicer(pb_grpc.SupervisorMiddlewareServicer):
                 pb.HttpRequestResult(
                     decision=pb.DECISION_DENY,
                     reason_code=_safe_reason_code(guard_code),
-                    reason="request denied by the Ledger privacy router",
+                    reason="request denied by the InkWell privacy router",
                 ),
             )
 
@@ -346,7 +346,7 @@ class LedgerRouterServicer(pb_grpc.SupervisorMiddlewareServicer):
                 pb.HttpRequestResult(
                     decision=pb.DECISION_DENY,
                     reason_code=_safe_reason_code(guard_code),
-                    reason="request denied by the Ledger privacy router",
+                    reason="request denied by the InkWell privacy router",
                 ),
             )
 
@@ -359,7 +359,7 @@ class LedgerRouterServicer(pb_grpc.SupervisorMiddlewareServicer):
                     pb.HttpRequestResult(
                         decision=pb.DECISION_DENY,
                         reason_code=REASON_BINARY_BODY,
-                        reason="request denied by the Ledger privacy router",
+                        reason="request denied by the InkWell privacy router",
                     ),
                 )
             if not result.changed:
@@ -370,7 +370,7 @@ class LedgerRouterServicer(pb_grpc.SupervisorMiddlewareServicer):
                     pb.HttpRequestResult(
                         decision=pb.DECISION_DENY,
                         reason_code=REASON_REDACTION_NOT_APPLIED,
-                        reason="request denied by the Ledger privacy router",
+                        reason="request denied by the InkWell privacy router",
                     ),
                 )
             return (
@@ -381,7 +381,7 @@ class LedgerRouterServicer(pb_grpc.SupervisorMiddlewareServicer):
                     decision=pb.DECISION_ALLOW,
                     body=bytes(result.body),
                     has_body=True,
-                    reason="request body redacted by the Ledger privacy router",
+                    reason="request body redacted by the InkWell privacy router",
                     reason_code=_safe_reason_code(guard_code),
                 ),
             )

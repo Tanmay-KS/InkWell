@@ -1,4 +1,4 @@
-# Ledger — OpenShell gateway configuration.
+# InkWell — OpenShell gateway configuration.
 #
 # Install location on the gateway host:
 #   ~/.config/openshell/gateway.toml
@@ -75,7 +75,7 @@ socket_path = "/var/run/docker.sock"
 # putting it under [openshell.gateway] or at the top of [openshell] makes the
 # gateway refuse to start (preflight: "category=malformed").
 #
-# Enable it here because the Ledger sandbox attaches its persistent Hermes
+# Enable it here because the InkWell sandbox attaches its persistent Hermes
 # data volume through driver config:
 #
 #   --driver-config-json '{"docker":{"mounts":[{"type":"volume", ...}]}}'
@@ -89,7 +89,7 @@ allow_driver_config = true
 # Label admission stays ENABLED: a caller may not attach arbitrary host
 # resources, only resources an operator has approved by label. These are the
 # OpenShell defaults, written out explicitly so the approval contract for
-# `ledger-hermes-data` is visible next to the volume definition in
+# `inkwell-hermes-data` is visible next to the volume definition in
 # sandbox/setup.sh.
 #
 # `openshell sandbox create` fails with
@@ -130,7 +130,7 @@ enabled = true
 #   4. attach the middleware in sandbox/policy.yaml under `network_middlewares`.
 #
 # Then attach it to traffic with:
-#   openshell policy set ledger-hermes --policy sandbox/policy.yaml --wait
+#   openshell policy set inkwell-hermes --policy sandbox/policy.yaml --wait
 #
 # [[openshell.supervisor.middleware]]
 # name = "ledger-router"

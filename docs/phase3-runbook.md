@@ -8,7 +8,7 @@ video:
 | Leak rate, router OFF → ON | `make leak-test` | `eval/results/leak_test.json` |
 | Memory-with-updates accuracy | `make memory-eval` | `eval/results/memory_eval.json` |
 | Cost and p95 latency per tier | `make bench` | `eval/results/cost_latency.json` |
-| Background job is really firing | `make job-status` | `$LEDGER_STATE_PATH` |
+| Background job is really firing | `make job-status` | `$INKWELL_STATE_PATH` |
 
 Every number is regenerable from the repository. Nothing in this document
 is a hand-typed result.
@@ -35,7 +35,7 @@ name or an account number into a prompt.
 
 `eval/cost_latency_bench.py` resolves each tier slot by role, not by ID:
 
-1. the `LEDGER_MODEL_NANO/SUPER/ULTRA` pin in `.env`, if that exact ID is
+1. the `INKWELL_MODEL_NANO/SUPER/ULTRA` pin in `.env`, if that exact ID is
    still in the live catalog;
 2. otherwise the catalog's own matcher (`nano`, `super`, `ultra`),
    preferring a text-only model because the bench sends text.
@@ -133,7 +133,7 @@ the console. The run record is the difference:
 
 ```bash
 # On the job host / data volume:
-LEDGER_STATE_PATH=/opt/data/state/job_state.json \
+INKWELL_STATE_PATH=/opt/data/state/job_state.json \
   python -m jobs.deadline_monitor --status --max-age-hours 26
 ```
 
@@ -187,7 +187,7 @@ exists to avoid.
 
 `make memory-eval` on 2026-10-28, 30 scenarios across 8 categories:
 
-| Question type | Ledger | Update-blind baseline |
+| Question type | InkWell | Update-blind baseline |
 |---|---:|---:|
 | current fact after a supersession | **100.0%** | 15.8% |
 | the superseded fact, at a point in time | **100.0%** | 83.3% |
@@ -262,6 +262,6 @@ lowering the published number.
 | `make bench` says `cannot resolve tiers` | a pinned model left the catalog and no fallback matches | `make model-catalog`, then update the pin |
 | `make bench` says `no price` | the catalog record has no `pricing` | pick a tier with a published rate; do not guess |
 | every bench call fails with 401 | wrong/missing `NEBIUS_API_KEY` | fix `.env`; `make bench-dry-run` needs it too, because it reads the catalog |
-| `job-status` exits 1 with "never run" | wrong `LEDGER_STATE_PATH`, or the job has not fired | check the volume mount and the schedule |
+| `job-status` exits 1 with "never run" | wrong `INKWELL_STATE_PATH`, or the job has not fired | check the volume mount and the schedule |
 | `job-status` exits 1 with "not firing" | the scheduler stopped, or the job crashes before it writes | read the job log; the record is written last, so a crash shows as staleness |
 | the same renewal is notified twice | the handled-log write failed | check the memory DB is writable and not a bind mount (F-008) |

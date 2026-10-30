@@ -60,7 +60,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "forbidden_flags": ["include_answer", "include_raw_content"],
     "deny_threshold": 3,
     "escalate": False,
-    "audit_log_path": "/var/log/ledger/audit.jsonl",
+    "audit_log_path": "/var/log/inkwell/audit.jsonl",
 }
 
 ENDPOINT_HOSTS = [
@@ -75,7 +75,7 @@ def build_router_entry(audit_log: str, *, escalate: bool = False) -> dict[str, A
     config["escalate"] = escalate
     RouterConfig(**config)  # fail here, not on the gateway
     return {
-        "name": "Ledger privacy router",
+        "name": "InkWell privacy router",
         "middleware": MIDDLEWARE_NAME,
         "order": 10,
         "on_error": "fail_closed",

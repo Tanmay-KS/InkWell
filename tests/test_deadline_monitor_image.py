@@ -100,8 +100,8 @@ def _run_staged(stage: Path, *args: str) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(stage)
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    environment.pop("LEDGER_MEMORY_DB", None)
-    environment.pop("LEDGER_STATE_PATH", None)
+    environment.pop("INKWELL_MEMORY_DB", None)
+    environment.pop("INKWELL_STATE_PATH", None)
     return subprocess.run(
         [sys.executable, "-S", "-m", "jobs.deadline_monitor", *args],
         cwd=stage,
@@ -137,8 +137,8 @@ def test_dockerfile_runs_unprivileged_with_the_expected_entrypoint():
     assert "FROM python:3.12-slim" in text
     assert "USER 10000:10000" in text
     assert 'ENTRYPOINT ["python", "-m", "jobs.deadline_monitor"]' in text
-    assert "LEDGER_MEMORY_DB=/data/ledger_memory.db" in text
-    assert "LEDGER_STATE_PATH=/data/state/job_state.json" in text
+    assert "INKWELL_MEMORY_DB=/data/inkwell_memory.db" in text
+    assert "INKWELL_STATE_PATH=/data/state/job_state.json" in text
 
 
 def test_dockerignore_excludes_credentials_and_host_state():

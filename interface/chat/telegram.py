@@ -2,7 +2,7 @@
 
 The deadline monitor already knows how to *push* a notice to Telegram
 (`jobs/notifier.py`). This module is the other direction: a person talks
-to Ledger in a Telegram chat, and a document dropped into that chat is
+to InkWell in a Telegram chat, and a document dropped into that chat is
 ingested through the same local pipeline the web view uses.
 
 Long polling is deliberate. A webhook would need a public HTTPS endpoint,
@@ -19,7 +19,7 @@ What leaves the machine:
   to Token Factory here.
 
 What comes back into the machine is untrusted text. It is handled by
-`LedgerBot`, which treats it as data and never as instructions; the full
+`InkWellBot`, which treats it as data and never as instructions; the full
 pipeline in `agent/` does the parsing locally.
 """
 
@@ -35,7 +35,7 @@ from typing import Any
 
 import httpx
 
-from interface.bot.handlers import BotMessage, LedgerBot
+from interface.bot.handlers import BotMessage, InkWellBot
 
 __all__ = ["DEFAULT_API_URL", "TelegramAPI", "TelegramAuthError", "TelegramBot", "TelegramError"]
 
@@ -183,7 +183,7 @@ class TelegramAPI:
 
         suffix = Path(name).suffix or Path(remote).suffix
         handle, temporary = tempfile.mkstemp(
-            dir=directory, prefix="ledger-telegram-", suffix=suffix
+            dir=directory, prefix="inkwell-telegram-", suffix=suffix
         )
         destination = Path(temporary)
         url = f"{self.base_url}/file/bot{self.token}/{remote}"
@@ -210,16 +210,16 @@ class TelegramAPI:
 
 
 class TelegramBot:
-    """Turn Telegram updates into Ledger messages and replies.
+    """Turn Telegram updates into InkWell messages and replies.
 
-    The adapter owns transport and temporary files; `LedgerBot` owns the
+    The adapter owns transport and temporary files; `InkWellBot` owns the
     conversation. That split is what keeps the bot testable without a
     network: the adapter can be driven with a fake Bot API.
     """
 
     def __init__(
         self,
-        bot: LedgerBot,
+        bot: InkWellBot,
         api: TelegramAPI,
         *,
         workdir: Path | str | None = None,

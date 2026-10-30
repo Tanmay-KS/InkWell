@@ -16,7 +16,7 @@ HouseholdMemory.due_within(look_ahead_days)
         └── write a small, non-personal job-state file
 ```
 
-The SQLite handled-event table is the idempotency ledger. The job-state
+The SQLite handled-event table is the idempotency inkwell. The job-state
 JSON file is diagnostic metadata only; losing it must not cause a
 notification to be repeated.
 
@@ -35,8 +35,8 @@ Or directly, with an isolated database and state file:
 .venv/bin/python -m jobs.deadline_monitor \
   --dry-run \
   --today 2026-10-20 \
-  --memory-db /tmp/ledger-memory.db \
-  --state-path /tmp/ledger-job-state.json
+  --memory-db /tmp/inkwell-memory.db \
+  --state-path /tmp/inkwell-job-state.json
 ```
 
 A live local run uses the safe stdout notifier unless a command notifier is
@@ -45,21 +45,21 @@ configured:
 ```bash
 .venv/bin/python -m jobs.deadline_monitor \
   --today 2026-10-20 \
-  --memory-db /tmp/ledger-memory.db \
-  --state-path /tmp/ledger-job-state.json
+  --memory-db /tmp/inkwell-memory.db \
+  --state-path /tmp/inkwell-job-state.json
 ```
 
 ## Configuration
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `LEDGER_MEMORY_DB` | Hermes sidecar default | SQLite database containing household items |
-| `LEDGER_STATE_PATH` | `/opt/data/state/job_state.json` | Non-personal job run metadata |
-| `LEDGER_LOOK_AHEAD_DAYS` | `14` | How many days ahead count as due |
-| `LEDGER_NOTIFY` | `true` | Send notifications; set `false` for a dry run |
-| `LEDGER_HOUSEHOLD_ID` | `default` | Household identifier recorded in logs/state |
-| `LEDGER_NOTIFY_COMMAND` | empty | Executable that receives the full notice as JSON on stdin |
-| `LEDGER_NOTIFY_TIMEOUT_SECONDS` | `30` | Maximum time for one command-notifier attempt |
+| `INKWELL_MEMORY_DB` | Hermes sidecar default | SQLite database containing household items |
+| `INKWELL_STATE_PATH` | `/opt/data/state/job_state.json` | Non-personal job run metadata |
+| `INKWELL_LOOK_AHEAD_DAYS` | `14` | How many days ahead count as due |
+| `INKWELL_NOTIFY` | `true` | Send notifications; set `false` for a dry run |
+| `INKWELL_HOUSEHOLD_ID` | `default` | Household identifier recorded in logs/state |
+| `INKWELL_NOTIFY_COMMAND` | empty | Executable that receives the full notice as JSON on stdin |
+| `INKWELL_NOTIFY_TIMEOUT_SECONDS` | `30` | Maximum time for one command-notifier attempt |
 
 CLI flags override the environment for local runs:
 
@@ -102,17 +102,17 @@ trade-off for not losing a deadline.
 Build from the repository root:
 
 ```bash
-docker build -f jobs/Dockerfile -t ledger-deadline-monitor .
+docker build -f jobs/Dockerfile -t inkwell-deadline-monitor .
 ```
 
 Run with a persistent volume mounted at `/data`:
 
 ```bash
 docker run --rm \
-  -v ledger-job-data:/data \
-  -e LEDGER_LOOK_AHEAD_DAYS=14 \
-  -e LEDGER_NOTIFY=false \
-  ledger-deadline-monitor
+  -v inkwell-job-data:/data \
+  -e INKWELL_LOOK_AHEAD_DAYS=14 \
+  -e INKWELL_NOTIFY=false \
+  inkwell-deadline-monitor
 ```
 
 The image runs as UID/GID 10000. The mounted volume must be writable by that
@@ -125,13 +125,13 @@ into the SQLite database:
 
 ```bash
 # Locally via Python:
-.venv/bin/python -m jobs.seed_due_item --memory-db /path/to/ledger_memory.db --days-ahead 5
+.venv/bin/python -m jobs.seed_due_item --memory-db /path/to/inkwell_memory.db --days-ahead 5
 
 # Or inside the container:
 docker run --rm \
-  -v ledger-job-data:/data \
+  -v inkwell-job-data:/data \
   --entrypoint python \
-  ledger-deadline-monitor \
+  inkwell-deadline-monitor \
   -m jobs.seed_due_item --json
 ```
 
@@ -148,9 +148,9 @@ item and test notifications again.
   absent from the image, inspects the image environment, runs `--help`, and
   runs a dry run as UID/GID 10000;
 * only a push to `main` runs the publish job, and only after the build job
-  passes. It publishes `ghcr.io/<owner>/ledger-deadline-monitor` with an
+  passes. It publishes `ghcr.io/<owner>/inkwell-deadline-monitor` with an
   immutable `sha-<full-sha>` tag and `latest`. For this repository the image
-  name is `ghcr.io/tanmay-ks/ledger-deadline-monitor`.
+  name is `ghcr.io/tanmay-ks/inkwell-deadline-monitor`.
 
 Do not treat the image as validated until that workflow is green. The
 development environment used for this repository has no Docker daemon, so a
@@ -195,8 +195,8 @@ For GHCR, `REGISTRY_USERNAME` is the GitHub account that owns the token and
 
 ```bash
 nebius ai job create \
-  --name ledger-deadline-monitor \
-  --image ghcr.io/<owner>/ledger-deadline-monitor@sha256:<digest> \
+  --name inkwell-deadline-monitor \
+  --image ghcr.io/<owner>/inkwell-deadline-monitor@sha256:<digest> \
   --registry-secret <secret-selector> \
   ...
 ```
@@ -227,7 +227,7 @@ kubectl apply -f jobs/nebius-job.yaml
 In addition to stdout and custom command execution, native notification delivery is supported:
 
 1. **Telegram:** Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` (or pass `--telegram-bot-token` and `--telegram-chat-id`).
-2. **Webhook (Slack / Generic):** Set `LEDGER_WEBHOOK_URL` or `SLACK_WEBHOOK_URL` (or pass `--webhook-url`).
+2. **Webhook (Slack / Generic):** Set `INKWELL_WEBHOOK_URL` or `SLACK_WEBHOOK_URL` (or pass `--webhook-url`).
 
 Notifications are formatted cleanly with deadline dates, provider, kind, amounts, and remaining days.
 
@@ -238,9 +238,9 @@ needs:
 
 1. The job image pushed to a registry Nebius can pull from.
 2. A persistent volume mounted at `/data`.
-3. `LEDGER_MEMORY_DB=/data/ledger_memory.db`.
-4. `LEDGER_STATE_PATH=/data/state/job_state.json`.
-5. Either `LEDGER_NOTIFY_COMMAND` for delivery, or the default stdout
+3. `INKWELL_MEMORY_DB=/data/inkwell_memory.db`.
+4. `INKWELL_STATE_PATH=/data/state/job_state.json`.
+5. Either `INKWELL_NOTIFY_COMMAND` for delivery, or the default stdout
    notifier for a log-only proof.
 6. A schedule or a manual trigger.
 

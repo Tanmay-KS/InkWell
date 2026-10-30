@@ -1,4 +1,4 @@
-"""Ledger agent pipeline.
+"""InkWell agent pipeline.
 
 Document in → deadline flagged → draft action out.
 

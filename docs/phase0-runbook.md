@@ -1,4 +1,4 @@
-# Ledger — Phase 0 runbook
+# InkWell — Phase 0 runbook
 
 **Phase 0 — Infra Verification (Oct 19–20)**
 **Goal:** de-risk the stack before building anything user-facing.
@@ -196,7 +196,7 @@ Same for `tavily` and `telegram` once you have those keys.
 ## 5. Build the sandbox image
 
 ```bash
-docker build -t ledger-hermes:local -f sandbox/Dockerfile.hermes .
+docker build -t inkwell-hermes:local -f sandbox/Dockerfile.hermes .
 ```
 
 This inherits `nousresearch/hermes-agent:latest` and adds an OCR fallback
@@ -222,8 +222,8 @@ is the one place we do it, deliberately and with the reasoning written down.
 docker volume create \
   --label openshell.ai/sandbox-attachable=true \
   --label openshell.ai/sandbox-attachable-workspace=default \
-  ledger-hermes-data
-docker run --rm --user 0 -v ledger-hermes-data:/data --entrypoint sh \
+  inkwell-hermes-data
+docker run --rm --user 0 -v inkwell-hermes-data:/data --entrypoint sh \
   nousresearch/hermes-agent:latest -c 'chown 10000:10000 /data'
 ```
 
@@ -244,11 +244,11 @@ rejects volumes without it.
 
 ```bash
 openshell sandbox create \
-  --name ledger-hermes \
-  --from ledger-hermes:local \
+  --name inkwell-hermes \
+  --from inkwell-hermes:local \
   --policy sandbox/policy.yaml \
   --provider nebius \
-  --driver-config-json '{"docker":{"mounts":[{"type":"volume","source":"ledger-hermes-data","target":"/opt/data","read_only":false}]}}' \
+  --driver-config-json '{"docker":{"mounts":[{"type":"volume","source":"inkwell-hermes-data","target":"/opt/data","read_only":false}]}}' \
   --restart-policy on-failure \
   --detach \
   -- /usr/local/bin/hermes-direct chat
@@ -268,7 +268,7 @@ every check in 7.1–7.6 below.
 ### 7.1 The effective policy contains the endpoint
 
 ```bash
-openshell policy get ledger-hermes --full
+openshell policy get inkwell-hermes --full
 ```
 
 Expect `api.tokenfactory.nebius.com:443` and a `_provider_*` rule contributed
@@ -278,7 +278,7 @@ the sandbox actually enforces.
 ### 7.2 The sandbox log shows the connection
 
 ```bash
-openshell logs ledger-hermes --since 10m --source sandbox
+openshell logs inkwell-hermes --since 10m --source sandbox
 ```
 
 Do **not** filter with `--level warn` — that hides policy events, which are
@@ -287,11 +287,11 @@ exactly what we are looking for.
 ### 7.3 A real model call succeeds
 
 ```bash
-openshell sandbox exec -n ledger-hermes --no-login-shell -- \
+openshell sandbox exec -n inkwell-hermes --no-login-shell -- \
   /opt/hermes/.venv/bin/hermes chat \
   --provider nebius \
   --model nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B \
-  -q 'Reply with exactly: LEDGER-OK'
+  -q 'Reply with exactly: INKWELL-OK'
 ```
 
 **Pin the model IDs from the live catalog** rather than trusting any
@@ -323,7 +323,7 @@ Two things this test must not do:
   credential check, so the test would be inconclusive.
 
 ```bash
-openshell sandbox exec -n ledger-hermes --no-login-shell -- \
+openshell sandbox exec -n inkwell-hermes --no-login-shell -- \
   /bin/sh -c 'curl -sS -o /dev/null -w "%{http_code}" \
       -H "Authorization: Bearer $NEBIUS_API_KEY" \
       https://api.tavily.com/search'
@@ -340,7 +340,7 @@ only. This is the strongest form of the routing proof: the agent actively
 tries to leave and the sandbox says no.
 
 ```bash
-openshell sandbox exec -n ledger-hermes --no-login-shell -- \
+openshell sandbox exec -n inkwell-hermes --no-login-shell -- \
   /usr/bin/env NEBIUS_BASE_URL=https://api.example.invalid/v1 \
   /opt/hermes/.venv/bin/hermes chat --provider nebius -q 'ping'
 ```
@@ -348,7 +348,7 @@ openshell sandbox exec -n ledger-hermes --no-login-shell -- \
 ### 7.6 The egress allowlist is exactly what we intended
 
 ```bash
-openshell policy get ledger-hermes --full | grep -oE 'host: [a-z0-9.-]+' | sort -u
+openshell policy get inkwell-hermes --full | grep -oE 'host: [a-z0-9.-]+' | sort -u
 ```
 
 Expect exactly three destinations: `api.tokenfactory.nebius.com`,
@@ -376,8 +376,8 @@ delegates to.
 make pin-models
 ```
 
-Write the results into `.env` as `LEDGER_MODEL_NANO`, `LEDGER_MODEL_SUPER`,
-`LEDGER_MODEL_ULTRA`, `LEDGER_MODEL_OCR`, `LEDGER_MODEL_REDACT`.
+Write the results into `.env` as `INKWELL_MODEL_NANO`, `INKWELL_MODEL_SUPER`,
+`INKWELL_MODEL_ULTRA`, `INKWELL_MODEL_OCR`, `INKWELL_MODEL_REDACT`.
 
 The target reads the live catalog, resolves each role against it,
 **refuses to pin a model the catalog does not serve**, writes those IDs
@@ -547,7 +547,7 @@ confirmed by an automated run · `[ ]` not yet done.
 - [x] 7.1 the effective policy shows the Token Factory endpoint
 - [ ] 7.1 the workload runs as UID 10000, not root
 - [x] 7.2 the log shows a connection to Token Factory
-- [x] 7.3 a real model call returns `LEDGER-OK`
+- [x] 7.3 a real model call returns `INKWELL-OK`
 - [~] 7.4 the placeholder is refused on a host the credential is not bound to
 - [~] 7.5 the agent cannot be pointed at another host
 - [ ] 7.6 the allowlist contains exactly the three intended destinations
@@ -605,8 +605,8 @@ that relies on its own `ENTRYPOINT` to start the agent will not start the
 agent. The image therefore names the program explicitly:
 
 ```bash
-openshell sandbox create --name ledger-hermes \
-  --from ledger-hermes:local --policy sandbox/policy.yaml \
+openshell sandbox create --name inkwell-hermes \
+  --from inkwell-hermes:local --policy sandbox/policy.yaml \
   -- /usr/local/bin/hermes-direct chat
 ```
 

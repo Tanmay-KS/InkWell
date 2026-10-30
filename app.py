@@ -1,4 +1,4 @@
-"""Vercel entrypoint: the public demo of the Ledger web view.
+"""Vercel entrypoint: the public demo of the InkWell web view.
 
 Vercel's Python runtime looks for an `app` callable in `app.py`. It is the
 same handler, routes and static files as `make demo-web`, wrapped in WSGI

@@ -1,4 +1,4 @@
-# ledger-router — the Ledger privacy router (Phase 2)
+# ledger-router — the InkWell privacy router (Phase 2)
 
 The OpenShell **supervisor middleware** that implements the project's
 differentiator: it inspects every allowed outbound HTTP request, strips
@@ -136,7 +136,7 @@ The policy block is validated by `ledger_router.config.RouterConfig`
 | `deny_threshold` | `3` | distinct personal-detail categories before a bulk deny |
 | `escalate` | `false` | optional Nano call for residual spans |
 | `timeout_ms` | `1500` | must be less than the gateway registration timeout |
-| `audit_log_path` | `/var/log/ledger/audit.jsonl` | host path, not a sandbox path |
+| `audit_log_path` | `/var/log/inkwell/audit.jsonl` | host path, not a sandbox path |
 
 An unknown key is rejected rather than ignored: a typo in
 `deny_threshold` must not silently leave the default in place.
@@ -176,7 +176,7 @@ and can fail a run if a forbidden value appears.
 
 ```bash
 # host terminal; binds 0.0.0.0:50051
-LEDGER_ROUTER_AUDIT_LOG=/var/log/ledger/audit.jsonl \
+LEDGER_ROUTER_AUDIT_LOG=/var/log/inkwell/audit.jsonl \
   bash sandbox/middleware/ledger-router/run.sh
 
 # second terminal
@@ -185,7 +185,7 @@ LEDGER_ROUTER_AUDIT_LOG=/var/log/ledger/audit.jsonl \
 
 `run.sh` sources `.env` for `NEBIUS_API_KEY` only when escalation is on; the
 key is never printed or put on a command line. The default audit directory is
-`/var/log/ledger`; set `LEDGER_ROUTER_AUDIT_LOG` to a writable path for a
+`/var/log/inkwell`; set `LEDGER_ROUTER_AUDIT_LOG` to a writable path for a
 local run.
 
 ## Files

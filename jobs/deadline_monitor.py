@@ -3,7 +3,7 @@
 Phase 3 — Person A.
 
 Entrypoint for a Nebius Serverless Job that runs on a schedule and asks
-Ledger what is coming due.
+InkWell what is coming due.
 
 The point of running this as a serverless job rather than a long-lived
 process is that the check has to happen when nobody is looking. A renewal
@@ -99,7 +99,7 @@ class JobConfig:
             deployment in the demo; the field exists so the multi-household
             version does not need a schema change.
         memory_path: The SQLite sidecar. Empty means the standard location
-            (`LEDGER_MEMORY_DB`, else the Hermes data volume).
+            (`INKWELL_MEMORY_DB`, else the Hermes data volume).
         notification_command: Optional executable that receives the notice
             as JSON on stdin.
         notification_timeout_seconds: Timeout for command notifier execution.
@@ -111,20 +111,20 @@ class JobConfig:
     notify: bool = True
     state_path: str = field(
         default_factory=lambda: os.environ.get(
-            "LEDGER_STATE_PATH", "/opt/data/state/job_state.json"
+            "INKWELL_STATE_PATH", "/opt/data/state/job_state.json"
         )
     )
     household_id: str = field(
-        default_factory=lambda: os.environ.get("LEDGER_HOUSEHOLD_ID", "default")
+        default_factory=lambda: os.environ.get("INKWELL_HOUSEHOLD_ID", "default")
     )
     memory_path: str = field(
-        default_factory=lambda: os.environ.get("LEDGER_MEMORY_DB", "")
+        default_factory=lambda: os.environ.get("INKWELL_MEMORY_DB", "")
     )
     notification_command: str = field(
-        default_factory=lambda: os.environ.get("LEDGER_NOTIFY_COMMAND", "")
+        default_factory=lambda: os.environ.get("INKWELL_NOTIFY_COMMAND", "")
     )
     notification_timeout_seconds: float = field(
-        default_factory=lambda: _env_float("LEDGER_NOTIFY_TIMEOUT_SECONDS", 30.0)
+        default_factory=lambda: _env_float("INKWELL_NOTIFY_TIMEOUT_SECONDS", 30.0)
     )
     notifier: Notifier | None = None
     extra: dict[str, Any] = field(default_factory=dict)
@@ -171,8 +171,8 @@ def _write_state(
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
     except OSError:
-        if not os.environ.get("LEDGER_STATE_PATH"):
-            path = Path("/tmp/ledger_job_state.json")
+        if not os.environ.get("INKWELL_STATE_PATH"):
+            path = Path("/tmp/inkwell_job_state.json")
             path.parent.mkdir(parents=True, exist_ok=True)
         else:
             raise
@@ -218,7 +218,7 @@ def run_once(
             )
         elif os.environ.get("TELEGRAM_BOT_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID"):
             deliver = telegram_notifier()
-        elif os.environ.get("LEDGER_WEBHOOK_URL") or os.environ.get("SLACK_WEBHOOK_URL"):
+        elif os.environ.get("INKWELL_WEBHOOK_URL") or os.environ.get("SLACK_WEBHOOK_URL"):
             deliver = webhook_notifier()
         else:
             deliver = _log_notification
@@ -271,7 +271,7 @@ def run_once(
                 summary_record: dict[str, Any] = {
                     "item_id": owner_id,
                     "kind": "findings",
-                    "provider": "Ledger",
+                    "provider": "InkWell",
                     "summary": findings.get("summary", ""),
                     "due_count": len(findings.get("due") or []),
                     "duplicate_count": len(duplicates),
@@ -409,7 +409,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--webhook-url",
         default=None,
-        help="Webhook URL (default: $LEDGER_WEBHOOK_URL or $SLACK_WEBHOOK_URL)",
+        help="Webhook URL (default: $INKWELL_WEBHOOK_URL or $SLACK_WEBHOOK_URL)",
     )
 
     args = parser.parse_args(argv)
@@ -430,7 +430,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.status:
         code, message = state_status(config.state_path, max_age_hours=args.max_age_hours)
-        print(f"ledger: {message}")
+        print(f"inkwell: {message}")
         return code
 
     if args.dry_run:
@@ -446,7 +446,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             elif (
                 args.notify_telegram
-                or os.environ.get("LEDGER_NOTIFY_CHANNEL") == "telegram"
+                or os.environ.get("INKWELL_NOTIFY_CHANNEL") == "telegram"
                 or (
                     (args.telegram_bot_token or os.environ.get("TELEGRAM_BOT_TOKEN"))
                     and (args.telegram_chat_id or os.environ.get("TELEGRAM_CHAT_ID"))
@@ -458,13 +458,13 @@ def main(argv: list[str] | None = None) -> int:
                 )
             elif (
                 args.webhook_url
-                or os.environ.get("LEDGER_WEBHOOK_URL")
+                or os.environ.get("INKWELL_WEBHOOK_URL")
                 or os.environ.get("SLACK_WEBHOOK_URL")
             ):
                 notifier = webhook_notifier(url=args.webhook_url)
         except Exception as exc:
             print(
-                f"ledger: invalid notifier configuration ({type(exc).__name__})",
+                f"inkwell: invalid notifier configuration ({type(exc).__name__})",
                 file=sys.stderr,
             )
             return 1
@@ -473,18 +473,18 @@ def main(argv: list[str] | None = None) -> int:
     try:
         flagged = run_once(config, today=today, notifier=notifier)
     except OSError as exc:
-        print(f"ledger: could not record the run: {exc}", file=sys.stderr)
+        print(f"inkwell: could not record the run: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:
         print(
-            f"ledger: deadline monitor failed ({type(exc).__name__})",
+            f"inkwell: deadline monitor failed ({type(exc).__name__})",
             file=sys.stderr,
         )
         return 1
 
-    print(f"ledger: flagged {len(flagged)} item(s) for {config.household_id}")
+    print(f"inkwell: flagged {len(flagged)} item(s) for {config.household_id}")
     if not config.notify:
-        print("ledger: dry run — nothing notified, nothing recorded")
+        print("inkwell: dry run — nothing notified, nothing recorded")
     return 0
 
 

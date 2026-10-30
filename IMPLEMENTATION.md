@@ -1,6 +1,6 @@
-# Ledger — Implementation Plan (Person A / Person B)
+# InkWell — Implementation Plan (Person A / Person B)
 
-**Project:** Ledger — privacy-routed personal agent for deadlines, renewals, and entitlements
+**Project:** InkWell — privacy-routed personal agent for deadlines, renewals, and entitlements
 **Track:** Personal AI
 **Deadline:** Oct 30, 2026, 10:00 AM PDT (target submit: Oct 29)
 **Roles:** Person A = Infra/Privacy lead · Person B = Agent/Product lead
@@ -32,9 +32,9 @@
 **Exit condition (joint):** Hermes+OpenShell+Token Factory confirmed working by EOD Oct 20. If not, jointly decide to pivot to the simpler/fallback stack before Phase 1 starts.
 
 **Status (closed 2026-10-21, one day past the EOD Oct 20 target).** The exit
-condition is met: Hermes v0.22.2 ran inside the `ledger-hermes` sandbox, a
+condition is met: Hermes v0.22.2 ran inside the `inkwell-hermes` sandbox, a
 real inference call on `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` returned
-`LEDGER-OK`, the effective policy carries the provider rule naming the
+`INKWELL-OK`, the effective policy carries the provider rule naming the
 actual Python interpreter, and an outbound request to `https://example.com/`
 was refused. Evidence and the per-item breakdown are in
 `docs/phase0-runbook.md`; the full record of what broke is in
@@ -71,7 +71,7 @@ was refused. Evidence and the per-item breakdown are in
 - [x] Build first draft-action generation (e.g. "draft cancellation email," "draft refund request") — `agent/actions/draft_actions.py`
 
 ### Person A
-- [x] Wire Hermes/OpenShell so B's pipeline runs on the real sandbox from day one, not bolted on later — Ledger's packages ship in the image at `/opt/ledger` and are launched past Hermes's own `agent` package; the live-sandbox run is the last §5 acceptance check
+- [x] Wire Hermes/OpenShell so B's pipeline runs on the real sandbox from day one, not bolted on later — InkWell's packages ship in the image at `/opt/inkwell` and are launched past Hermes's own `agent` package; the live-sandbox run is the last §5 acceptance check
 - [x] Start scaffolding egress policy rules in OpenShell (what's allowed to leave the sandbox, to where) — not enforcing yet, just structure — `sandbox/policy.yaml`
 - [x] Review B's pipeline for anywhere sensitive data might leak outside the sandbox unguarded — nine surfaces reviewed; F-038 and F-039 found and fixed
 
@@ -117,7 +117,7 @@ in `docs/phase2-runbook.md`. The exit condition is not closed until
 - [x] Build memory-with-updates eval: test questions where underlying facts changed (e.g. "I cancelled that plan in March")
   - `make memory-eval` — 30 isolated scenarios across 8 categories (status, amount, renewal_date, holder, contact, preference, confidence, restatement). The `never_stated` type queries the store instead of short-circuiting to "", so abstention is actually tested. `eval/scenarios/memory_updates.json`, `tests/test_memory_updates_eval.py`.
 - [x] Score accuracy, since most demos only test simple recall — this is meant to stand out
-  - Ledger **100.0%** overall (30/30) against an update-blind baseline of **43.3%**; on current facts after a supersession the baseline gets **15.8%**. Per-category and per-answer-type tables in `docs/phase3-runbook.md` §3. Deterministic SQLite supersession, no model call.
+  - InkWell **100.0%** overall (30/30) against an update-blind baseline of **43.3%**; on current facts after a supersession the baseline gets **15.8%**. Per-category and per-answer-type tables in `docs/phase3-runbook.md` §3. Deterministic SQLite supersession, no model call.
 
 ### Person A
 - [x] Verify Nebius Serverless Jobs background deadline monitoring is actually running live (not just scheduled)
@@ -139,7 +139,7 @@ in `docs/phase2-runbook.md`. The exit condition is not closed until
 
 ### Person B
 - [x] Polish the chat interface (Telegram) and simple web view — `interface/bot/handlers.py`, the Telegram long-polling adapter in `interface/chat/telegram.py` (`make telegram-bot`), `interface/web/server.py`, `make demo-web`; offline adapter tests in `tests/test_chat_telegram.py`. Telegram was verified live on 2026-10-30 (`@arcky_bot` processed a pending update); Slack is notification-only through an incoming webhook (see `docs/telegram.md`)
-- [x] Test the demo fully logged-out, fix any auth-wall issues — the local demo needs no login or credentials, and the public demo at <https://ledger-nine-theta.vercel.app> is reachable without authentication (fictional data, deployment protection off; see `docs/demo.md`)
+- [x] Test the demo fully logged-out, fix any auth-wall issues — the local demo needs no login or credentials, and the public demo at <https://inkwell-nine-theta.vercel.app> is reachable without authentication (fictional data, deployment protection off; see `docs/demo.md`)
 
 ### Person A
 - [x] Write README: highlight Nemotron + Token Factory usage, setup steps, architecture overview — `README.md`
@@ -173,7 +173,7 @@ See `docs/demo.md` and the residual risks in `docs/packaging-review.md`.
 ## Repo File Structure
 
 ```
-ledger/
+inkwell/
 ├── README.md                      # Setup, Nemotron/Token Factory usage, friction log (Person A)
 ├── LICENSE
 ├── .env.example
@@ -280,7 +280,7 @@ nothing in them is replaced.
 
 ## Upgrade 0 — Goal
 
-Ledger currently feels like a chatbot with an agent behind it. This plan
+InkWell currently feels like a chatbot with an agent behind it. This plan
 makes the work **visible and verifiable**:
 
 1. A **glass-box trace panel** showing every step, model tier, latency, and
@@ -378,7 +378,7 @@ LangSmith tracing is explicitly disabled.*
 - [x] All model calls point at Token Factory (no default-provider fallback).
       *Benchmarks and OCR resolve through the pinned catalog in
       `eval/tokenfactory.py`; the graph's client is `agent/model.py`, which
-      reads the pinned `LEDGER_MODEL_*` IDs, uses
+      reads the pinned `INKWELL_MODEL_*` IDs, uses
       `https://api.tokenfactory.nebius.com/v1`, and raises if the key or ID
       is missing. There is no alternate provider.*
 - [x] Third-party tracing/telemetry disabled. *`agent/graph.py` sets
@@ -400,7 +400,7 @@ LangSmith tracing is explicitly disabled.*
 - [x] Confirm one end-to-end run works on Token Factory with a Nemotron
       model. *`eval/results/cost_latency.json`, measured 2026-10-28: 60
       calls, 0 errors across Nano, Super and Ultra; the Phase 0 run also
-      returned `LEDGER-OK` from inside the sandbox (see the Phase 0 status
+      returned `INKWELL-OK` from inside the sandbox (see the Phase 0 status
       above).*
 - [x] Repo is public, `LICENSE` (MIT) at the repo root, shows in the GitHub
       sidebar. *The licence is **MIT** and visible at the root. The repo is
@@ -585,7 +585,7 @@ metrics. Report the true sample size.
 
 **Demo URL**
 
-- [x] Works without login. *<https://ledger-nine-theta.vercel.app> is
+- [x] Works without login. *<https://inkwell-nine-theta.vercel.app> is
       public and needs no account. It runs the same handler against a
       throwaway fictional database; the household view remains loopback-only
       by design. See `docs/demo.md`.*
@@ -649,7 +649,7 @@ the video itself is the open item.*
 graph** with a plain-Python fallback, a deterministic Auditor and a code
 Verifier, scopes the leak claim to the router's coverage rather than
 sandbox enforcement, labels every number as a synthetic test-set result,
-and states that Ledger never sends. The model Drafter uses Token Factory
+and states that InkWell never sends. The model Drafter uses Token Factory
 only and its output is still checked by the deterministic Auditor. The
 open items are the intentionally private repo and the missing provider-side
 spending cap.

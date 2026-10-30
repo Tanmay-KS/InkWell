@@ -1,13 +1,13 @@
 # Feedback
 
-This is the written feedback submission for Ledger. The full, dated,
+This is the written feedback submission for InkWell. The full, dated,
 entry-by-entry record is in [`friction_log.md`](friction_log.md) (F-001 to
 F-050); this page is the short version a reviewer can read in a few
 minutes.
 
 ## What we built
 
-Ledger is a household agent for renewals, deadlines and entitlements. It
+InkWell is a household agent for renewals, deadlines and entitlements. It
 reads a notice, extracts the dates and the reference, keeps a history of
 facts that change, and drafts the letter or cancellation the user can send
 themselves. It never sends anything on its own.

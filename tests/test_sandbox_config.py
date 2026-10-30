@@ -391,7 +391,7 @@ def test_pipeline_harness_documents_its_entry_point_contract():
     actionable.
     """
     text = (SANDBOX / "run_pipeline.sh").read_text(encoding="utf-8")
-    assert "LEDGER_PIPELINE_CMD" in text, (
+    assert "INKWELL_PIPELINE_CMD" in text, (
         "the entry point must be overridable, so the harness works before the"
         " pipeline exists"
     )

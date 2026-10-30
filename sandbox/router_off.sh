@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Detach the Ledger privacy router from a live sandbox.
+# Detach the InkWell privacy router from a live sandbox.
 #
 # Applies the base policy (no `network_middlewares` entry) with --wait and
 # verifies that the middleware is gone from the effective policy. The service
@@ -17,8 +17,8 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-SANDBOX_NAME="${LEDGER_SANDBOX_NAME:-ledger-hermes}"
-GATEWAY_NAME="${LEDGER_GATEWAY_NAME:-}"
+SANDBOX_NAME="${INKWELL_SANDBOX_NAME:-inkwell-hermes}"
+GATEWAY_NAME="${INKWELL_GATEWAY_NAME:-}"
 
 BOLD=$'\033[1m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'; RESET=$'\033[0m'
 

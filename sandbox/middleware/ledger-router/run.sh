@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the Ledger privacy router middleware.
+# Run the InkWell privacy router middleware.
 #
 # The router has to be reachable from BOTH the gateway host and the sandbox
 # supervisors. OpenShell's registration points at
@@ -34,7 +34,7 @@ if [ ! -x "${PYTHON}" ]; then
     PYTHON="python3"
 fi
 
-AUDIT_LOG="${LEDGER_ROUTER_AUDIT_LOG:-/var/log/ledger/audit.jsonl}"
+AUDIT_LOG="${LEDGER_ROUTER_AUDIT_LOG:-/var/log/inkwell/audit.jsonl}"
 AUDIT_DIR="$(dirname "${AUDIT_LOG}")"
 if [ -d "${AUDIT_DIR}" ] && [ -w "${AUDIT_DIR}" ]; then
     :

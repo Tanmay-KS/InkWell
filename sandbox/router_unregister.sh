@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Remove the Ledger privacy router from the OpenShell gateway config.
+# Remove the InkWell privacy router from the OpenShell gateway config.
 #
 # Do this AFTER detaching the policy (`sandbox/router_off.sh`). A live
 # policy that names a middleware which is no longer registered is a broken
@@ -20,10 +20,10 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-SANDBOX_NAME="${LEDGER_SANDBOX_NAME:-ledger-hermes}"
-GATEWAY_NAME="${LEDGER_GATEWAY_NAME:-}"
-CONFIG="${LEDGER_GATEWAY_CONFIG:-${HOME}/.config/openshell/gateway.toml}"
-RESTART_CMD="${LEDGER_GATEWAY_RESTART_CMD:-systemctl --user restart openshell-gateway}"
+SANDBOX_NAME="${INKWELL_SANDBOX_NAME:-inkwell-hermes}"
+GATEWAY_NAME="${INKWELL_GATEWAY_NAME:-}"
+CONFIG="${INKWELL_GATEWAY_CONFIG:-${HOME}/.config/openshell/gateway.toml}"
+RESTART_CMD="${INKWELL_GATEWAY_RESTART_CMD:-systemctl --user restart openshell-gateway}"
 DRY_RUN=0
 NO_RESTART=0
 FORCE=0
@@ -75,7 +75,7 @@ if [ "$FORCE" -eq 0 ]; then
     fi
 fi
 
-TMP_CONFIG="$(mktemp "${TMPDIR:-/tmp}/ledger-gateway-base-XXXXXX.toml")"
+TMP_CONFIG="$(mktemp "${TMPDIR:-/tmp}/inkwell-gateway-base-XXXXXX.toml")"
 BACKUP=""
 cleanup() {
     if [ "$DRY_RUN" -eq 0 ]; then
